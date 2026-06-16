@@ -7,6 +7,7 @@ end
 
 @testset "expert" begin
     include("expert/elementary_matrices.jl")
+    include("expert/cohn_type.jl")
 end
 
 @testset "internal" begin
