@@ -5,11 +5,13 @@ using Oscar
 export suslin_polynomial_ring
 export elementary_matrix
 export realize_cohn_type
+export realize_conjugate_elementary
 
 include("core/rings.jl")
 include("core/polynomials.jl")
 include("core/elementary_matrices.jl")
 include("algorithm/cohn_type.jl")
+include("algorithm/normality.jl")
 
 function _coerce_into_ring(R, value, label::AbstractString)
     try
