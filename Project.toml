@@ -3,6 +3,11 @@ uuid = "9b0768fe-2bc7-4d3e-8b99-f9be6b03d456"
 authors = ["nzy1997"]
 version = "0.1.0-DEV"
 
+[deps]
+AbstractAlgebra = "c3fe647b-3220-5bb0-a1ea-a7954cac585d"
+Oscar = "f1435218-dba5-11e9-1e4d-f1a5fab5fc13"
+Singular = "bcd08a7b-43d2-5ff7-b6d4-c458787f915c"
+
 [compat]
 julia = "1"
 
