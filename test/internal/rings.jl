@@ -1,5 +1,10 @@
-using SuslinStability
 using Test
+using SuslinStability
+using Oscar
 
-@testset "rings" begin
+@testset "suslin polynomial ring" begin
+    R, vars = suslin_polynomial_ring(GF(2), ["x", "y"])
+    @test length(vars) == 2
+    @test string(vars[1]) == "x"
+    @test string(vars[2]) == "y"
 end

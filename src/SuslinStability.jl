@@ -1,5 +1,10 @@
 module SuslinStability
 
-# Write your package code here.
+using Oscar
+
+export suslin_polynomial_ring
+
+include("core/rings.jl")
+include("core/polynomials.jl")
 
 end
