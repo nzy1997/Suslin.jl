@@ -6,6 +6,7 @@ using Test
 end
 
 @testset "expert" begin
+    include("expert/elementary_matrices.jl")
 end
 
 @testset "internal" begin
