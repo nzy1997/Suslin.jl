@@ -27,6 +27,10 @@ end
     @test certificate.indices == [1, 3]
     @test certificate.denominators == [r + 1, X^2 + 1]
     @test SuslinStability.common_denominator_factor(local_entries) == (r + 1) * (X^2 + 1)
+    @test SuslinStability.common_denominator_factor([local_entries[1], X + g]) == (r + 1)
+
+    @test_throws ArgumentError SuslinStability.LocalCertificate([1], [r + 1, X^2 + 1])
+    @test_throws ArgumentError SuslinStability.common_denominator_factor(typeof(local_entries)())
 
     A = matrix(R, [
         X^2 + r  g + 1  0;
@@ -62,4 +66,10 @@ end
 
     @test patch_factor == expected_factor
     @test product_of_factors(realized, R, 3) == expected_factor
+
+    @test_throws ArgumentError SuslinStability.patched_substitution(A, X, r, -1, g)
+    @test_throws ArgumentError SuslinStability.patched_substitution(A, one(R), r, 2, g)
+
+    S, (y,) = Oscar.polynomial_ring(QQ, ["y"])
+    @test_throws ArgumentError SuslinStability.patched_substitution(A, X, y, 2, g)
 end

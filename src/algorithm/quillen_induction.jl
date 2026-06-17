@@ -9,6 +9,7 @@ function patched_substitution(A, X, r, l::Integer, g)
     values = copy(ring_gens)
     values[variable_idx] = ring_gens[variable_idx] + _coerce_into_ring(R, r, "r")^l * _coerce_into_ring(R, g, "g")
 
+    # Oscar's dense matrix constructor consumes entries in column-major order.
     entries = [
         _coerce_into_ring(R, evaluate(A[row, col], values), "patched matrix entry")
         for col in 1:ncols(A), row in 1:nrows(A)

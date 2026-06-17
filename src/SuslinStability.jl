@@ -21,7 +21,13 @@ function _coerce_into_ring(R, value, label::AbstractString)
     try
         return R(value)
     catch err
-        if err isa ArgumentError || err isa MethodError || err isa ErrorException
+        if err isa ArgumentError || err isa MethodError
+            throw(ArgumentError("$label must be coercible into the target ring"))
+        end
+        if err isa ErrorException && (
+            occursin("Coercion not supported", err.msg) ||
+            occursin("Unable to coerce polynomial", err.msg)
+        )
             throw(ArgumentError("$label must be coercible into the target ring"))
         end
         rethrow()
