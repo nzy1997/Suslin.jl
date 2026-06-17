@@ -9,6 +9,7 @@ end
     include("expert/elementary_matrices.jl")
     include("expert/cohn_type.jl")
     include("expert/normality.jl")
+    include("expert/quillen_induction.jl")
     include("expert/unimodular_columns.jl")
 end
 

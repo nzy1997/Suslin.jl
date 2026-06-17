@@ -9,11 +9,13 @@ export realize_conjugate_elementary
 
 include("core/rings.jl")
 include("core/polynomials.jl")
+include("core/groebner_tools.jl")
 include("core/elementary_matrices.jl")
 include("core/unimodular.jl")
 include("algorithm/cohn_type.jl")
 include("algorithm/column_reduction.jl")
 include("algorithm/normality.jl")
+include("algorithm/quillen_induction.jl")
 
 function _coerce_into_ring(R, value, label::AbstractString)
     try
