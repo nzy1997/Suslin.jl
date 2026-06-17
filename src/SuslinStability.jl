@@ -15,6 +15,7 @@ include("core/unimodular.jl")
 include("algorithm/cohn_type.jl")
 include("algorithm/column_reduction.jl")
 include("algorithm/normality.jl")
+include("algorithm/sl3_local.jl")
 include("algorithm/quillen_induction.jl")
 
 function _coerce_into_ring(R, value, label::AbstractString)
