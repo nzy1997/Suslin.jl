@@ -7,6 +7,7 @@ end
 
 @testset "expert" begin
     include("expert/elementary_matrices.jl")
+    include("expert/factorization_small_examples.jl")
     include("expert/cohn_type.jl")
     include("expert/normality.jl")
     include("expert/sl3_local.jl")
