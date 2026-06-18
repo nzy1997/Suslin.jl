@@ -72,8 +72,14 @@ using Oscar
     @test occursin("unsupported Laurent GL_n determinant", sprint(showerror, err))
     @test occursin("outside the staged SL_n factorization path", sprint(showerror, err))
 
+    Z4, _ = residue_ring(ZZ, 4)
+    S, (u,) = laurent_polynomial_ring(Z4, ["u"])
+    other_unit_value = one(S) + S(Z4(2)) * u
+    other_unit = matrix(S, [other_unit_value;;])
+    other_unit_profile = classify_laurent_determinant(other_unit)
+    @test other_unit_profile.classification == :other_unit
     other_unit_err = try
-        Suslin._throw_unsupported_laurent_gl_determinant(:other_unit)
+        normalize_laurent_gl_matrix(other_unit)
         nothing
     catch caught
         caught

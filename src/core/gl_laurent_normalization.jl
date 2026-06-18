@@ -14,6 +14,38 @@ function _laurent_monomial_metadata(value)
     end
 end
 
+function _laurent_monomial_term(R, coeff, exponent_vector)
+    term = R(coeff)
+    for (j, exponent) in enumerate(exponent_vector)
+        exponent == 0 && continue
+        term *= gen(R, j)^exponent
+    end
+    return term
+end
+
+function _is_laurent_other_unit_via_nilpotent_perturbation(determinant, R)::Bool
+    exponent_vectors = collect(exponents(determinant))
+    coeffs = collect(coefficients(determinant))
+    length(exponent_vectors) == length(coeffs) || return false
+    length(coeffs) > 1 || return false
+
+    for (coeff, raw_exponents) in zip(coeffs, exponent_vectors)
+        coeff_is_unit = try
+            is_unit(coeff)
+        catch err
+            err isa MethodError || rethrow()
+            false
+        end
+        coeff_is_unit || continue
+
+        exponent_vector = Int.(collect(raw_exponents))
+        term = _laurent_monomial_term(R, coeff, exponent_vector)
+        is_nilpotent(inv(term) * determinant - one(R)) && return true
+    end
+
+    return false
+end
+
 function classify_laurent_determinant(A)
     nrows(A) == ncols(A) || throw(ArgumentError("Laurent GL_n determinant classification requires a square matrix"))
     R = _require_laurent_polynomial_ring(base_ring(A); label="A base ring")
@@ -35,19 +67,33 @@ function classify_laurent_determinant(A)
         )
     end
 
-    is_unit(determinant) || return (;
-        determinant,
-        classification = :non_unit,
-        monomial_exponents = nothing,
-        monomial_coefficient = nothing,
-    )
-
     monomial = _laurent_monomial_metadata(determinant)
     monomial !== nothing && return (;
         determinant,
         classification = :laurent_monomial_unit,
         monomial_exponents = monomial.monomial_exponents,
         monomial_coefficient = monomial.monomial_coefficient,
+    )
+
+    _is_laurent_other_unit_via_nilpotent_perturbation(determinant, R) && return (;
+        determinant,
+        classification = :other_unit,
+        monomial_exponents = nothing,
+        monomial_coefficient = nothing,
+    )
+
+    determinant_is_unit = try
+        is_unit(determinant)
+    catch err
+        err isa MethodError || rethrow()
+        false
+    end
+
+    determinant_is_unit || return (;
+        determinant,
+        classification = :non_unit,
+        monomial_exponents = nothing,
+        monomial_coefficient = nothing,
     )
 
     return (;
