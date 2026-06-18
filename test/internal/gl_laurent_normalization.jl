@@ -74,6 +74,18 @@ using Oscar
 
     Z4, _ = residue_ring(ZZ, 4)
     S, (u,) = laurent_polynomial_ring(Z4, ["u"])
+    monomial_nonunit = matrix(S, [S(Z4(2)) * u;;])
+    monomial_nonunit_profile = classify_laurent_determinant(monomial_nonunit)
+    @test monomial_nonunit_profile.classification == :non_unit
+    monomial_nonunit_err = try
+        normalize_laurent_gl_matrix(monomial_nonunit)
+        nothing
+    catch caught
+        caught
+    end
+    @test monomial_nonunit_err isa ArgumentError
+    @test occursin("unsupported Laurent GL_n determinant", sprint(showerror, monomial_nonunit_err))
+
     other_unit_value = one(S) + S(Z4(2)) * u
     other_unit = matrix(S, [other_unit_value;;])
     other_unit_profile = classify_laurent_determinant(other_unit)

@@ -46,6 +46,15 @@ function _is_laurent_other_unit_via_nilpotent_perturbation(determinant, R)::Bool
     return false
 end
 
+function _is_supported_laurent_monomial_unit(monomial)::Bool
+    try
+        return is_unit(monomial.monomial_coefficient)
+    catch err
+        err isa MethodError || rethrow()
+        return false
+    end
+end
+
 function classify_laurent_determinant(A)
     nrows(A) == ncols(A) || throw(ArgumentError("Laurent GL_n determinant classification requires a square matrix"))
     R = _require_laurent_polynomial_ring(base_ring(A); label="A base ring")
@@ -68,12 +77,23 @@ function classify_laurent_determinant(A)
     end
 
     monomial = _laurent_monomial_metadata(determinant)
-    monomial !== nothing && return (;
-        determinant,
-        classification = :laurent_monomial_unit,
-        monomial_exponents = monomial.monomial_exponents,
-        monomial_coefficient = monomial.monomial_coefficient,
-    )
+    if monomial !== nothing
+        if _is_supported_laurent_monomial_unit(monomial)
+            return (;
+                determinant,
+                classification = :laurent_monomial_unit,
+                monomial_exponents = monomial.monomial_exponents,
+                monomial_coefficient = monomial.monomial_coefficient,
+            )
+        end
+
+        return (;
+            determinant,
+            classification = :non_unit,
+            monomial_exponents = nothing,
+            monomial_coefficient = nothing,
+        )
+    end
 
     _is_laurent_other_unit_via_nilpotent_perturbation(determinant, R) && return (;
         determinant,
