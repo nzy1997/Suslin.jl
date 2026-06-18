@@ -71,4 +71,14 @@ using Oscar
     @test err isa ArgumentError
     @test occursin("unsupported Laurent GL_n determinant", sprint(showerror, err))
     @test occursin("outside the staged SL_n factorization path", sprint(showerror, err))
+
+    other_unit_err = try
+        Suslin._throw_unsupported_laurent_gl_determinant(:other_unit)
+        nothing
+    catch caught
+        caught
+    end
+    @test other_unit_err isa ArgumentError
+    @test occursin("unsupported Laurent GL_n determinant", sprint(showerror, other_unit_err))
+    @test occursin("non-monomial units are outside the staged SL_n factorization path", sprint(showerror, other_unit_err))
 end

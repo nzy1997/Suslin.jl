@@ -83,6 +83,16 @@ function _left_diagonal_determinant_correction(R, n::Int, determinant)
     )
 end
 
+function _throw_unsupported_laurent_gl_determinant(classification)
+    if classification == :non_unit
+        throw(ArgumentError("unsupported Laurent GL_n determinant: determinant is non-unit, so the input is outside the staged SL_n factorization path"))
+    elseif classification == :other_unit
+        throw(ArgumentError("unsupported Laurent GL_n determinant: non-monomial units are outside the staged SL_n factorization path"))
+    end
+
+    return nothing
+end
+
 function normalize_laurent_gl_matrix(A)
     nrows(A) == ncols(A) || throw(ArgumentError("Laurent GL_n normalization requires a square matrix"))
     R = _require_laurent_polynomial_ring(base_ring(A); label="A base ring")
@@ -90,11 +100,7 @@ function normalize_laurent_gl_matrix(A)
     determinant_profile = classify_laurent_determinant(A)
     classification = determinant_profile.classification
 
-    if classification == :non_unit
-        throw(ArgumentError("unsupported Laurent GL_n determinant: determinant is non-unit, so the input is outside the staged SL_n factorization path"))
-    elseif classification == :other_unit
-        throw(ArgumentError("unsupported Laurent GL_n determinant: non-monomial units are outside the staged SL_n factorization path"))
-    end
+    _throw_unsupported_laurent_gl_determinant(classification)
 
     correction = classification == :one ?
         _identity_correction(R, n, determinant_profile.determinant) :
