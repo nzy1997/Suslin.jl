@@ -29,7 +29,7 @@ verify_factorization(A, factors)
 This repository does not commit a `Manifest.toml`. In a fresh checkout,
 instantiate dependencies before running tests:
 
-```julia
+```bash
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ```
 

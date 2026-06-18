@@ -36,7 +36,7 @@
 - Consumes: existing `test/runtests.jl` command-line groups: no args, `expert`, `all`.
 - Produces: contributor-facing command table for CI and local verification.
 
-- [ ] **Step 1: Add the Testing section after Current scope**
+- [x] **Step 1: Add the Testing section after Current scope**
 
 Update `README.md` so the content after the Current scope list includes:
 
@@ -46,7 +46,7 @@ Update `README.md` so the content after the Current scope list includes:
 This repository does not commit a `Manifest.toml`. In a fresh checkout,
 instantiate dependencies before running tests:
 
-```julia
+```bash
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ```
 
@@ -60,7 +60,7 @@ The test runner separates routine checks from expert algorithm checks:
 | `julia --project=. -e 'using Pkg; Pkg.test()'` | Package test entry point; runs the default fast tests |
 ~~~
 
-- [ ] **Step 2: Review the rendered Markdown structure**
+- [x] **Step 2: Review the rendered Markdown structure**
 
 Run:
 
@@ -70,7 +70,7 @@ sed -n '1,220p' README.md
 
 Expected: README shows exactly one `## Testing` section, the code fence is closed, and the command table appears before `## References`.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 Run:
 
@@ -90,7 +90,7 @@ git commit -m "docs: document test suite commands"
 - Consumes: README command contract from Task 1.
 - Produces: CI jobs named `Instantiate Dependencies`, `Default Fast Tests`, and `Full Suite Tests`.
 
-- [ ] **Step 1: Replace the workflow test jobs**
+- [x] **Step 1: Replace the workflow test jobs**
 
 Update `.github/workflows/CI.yml` so the workflow keeps the existing triggers and `docs` job, but the test section is:
 
@@ -154,7 +154,7 @@ jobs:
 
 Keep the existing manual `docs` job after these jobs. Remove the old manual-only `expert` job because the full-suite job now covers expert tests on every pull request and push.
 
-- [ ] **Step 2: Check workflow text for stale labels**
+- [x] **Step 2: Check workflow text for stale labels**
 
 Run:
 
@@ -164,7 +164,7 @@ rg -n "lightweight|expert test suite|run_expert|Pkg.test|coverage|Full Suite|Def
 
 Expected: no stale `lightweight`, manual `run_expert`, `Pkg.test`, or coverage labels remain in CI. `Instantiate`, `Default Fast`, and `Full Suite` labels are present.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 Run:
 
@@ -186,7 +186,7 @@ git commit -m "ci: run explicit default and full test suites"
 - Consumes: documented and CI commands from Tasks 1 and 2.
 - Produces: verification evidence for the PR.
 
-- [ ] **Step 1: Verify dependency instantiation**
+- [x] **Step 1: Verify dependency instantiation**
 
 Run:
 
@@ -196,7 +196,7 @@ julia --project=. -e 'using Pkg; Pkg.instantiate()'
 
 Expected: command exits 0.
 
-- [ ] **Step 2: Verify default fast tests**
+- [x] **Step 2: Verify default fast tests**
 
 Run:
 
@@ -206,7 +206,7 @@ julia --project=. test/runtests.jl
 
 Expected: command exits 0 and testsets include `public` and `internal`, not `expert`.
 
-- [ ] **Step 3: Verify full suite tests**
+- [x] **Step 3: Verify full suite tests**
 
 Run:
 
@@ -216,7 +216,7 @@ julia --project=. test/runtests.jl all
 
 Expected: command exits 0 and testsets include `public`, `internal`, and `expert`.
 
-- [ ] **Step 4: Verify the package test entry point**
+- [x] **Step 4: Verify the package test entry point**
 
 Run:
 
@@ -226,7 +226,7 @@ julia --project=. -e 'using Pkg; Pkg.test()'
 
 Expected: command exits 0 and runs the default fast tests.
 
-- [ ] **Step 5: Check GitHub Actions syntax enough for review**
+- [x] **Step 5: Check GitHub Actions syntax enough for review**
 
 Run:
 
@@ -236,7 +236,7 @@ sed -n '1,260p' .github/workflows/CI.yml
 
 Expected: YAML indentation is consistent and each named test job runs the documented command.
 
-- [ ] **Step 6: Commit any verification-only doc fixes**
+- [x] **Step 6: Commit any verification-only doc fixes**
 
 If verification finds wording or label drift, update the relevant file and run:
 
