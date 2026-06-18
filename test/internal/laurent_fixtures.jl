@@ -106,6 +106,16 @@ function _assert_negative_normalization_fixture(entry)
     parent(normalization_unit) == base_ring(input_vector) || throw(ArgumentError("fixture $(entry.id) normalization unit uses the wrong ring"))
     entry.expected_relation.kind == :negative_exponent_normalization || throw(ArgumentError("fixture $(entry.id) has wrong expected relation kind"))
     normalization_unit * input_vector == normalized_vector || throw(ArgumentError("fixture $(entry.id) normalization relation failed"))
+    _normalized_vector_has_only_nonnegative_exponents(normalized_vector) || throw(ArgumentError("fixture $(entry.id) normalized vector still contains negative exponents"))
+    return true
+end
+
+function _normalized_vector_has_only_nonnegative_exponents(normalized_vector)
+    for value in normalized_vector
+        for exponent_vector in collect(exponents(value))
+            all(exponent -> exponent >= 0, exponent_vector) || return false
+        end
+    end
     return true
 end
 
@@ -178,6 +188,26 @@ end
 
     bad_det = merge(solvable, (; determinant_profile = merge(solvable.determinant_profile, (; expected_class = "non-unit"))))
     @test_throws ArgumentError validate_laurent_fixture(bad_det)
+
+    negative_normalization = fixture_by_id["laurent-negative-exponent-normalization"]
+    R = negative_normalization.ring.object
+    x, y = negative_normalization.ring.generators
+    bad_normalized_vector = zero_matrix(R, 2, 1)
+    bad_normalized_vector[1, 1] = y
+    bad_normalized_vector[2, 1] = x^-1
+    bad_normalization = merge(
+        negative_normalization,
+        (;
+            inputs = merge(
+                negative_normalization.inputs,
+                (;
+                    normalization_unit = x,
+                    normalized_vector = bad_normalized_vector,
+                ),
+            ),
+        ),
+    )
+    @test_throws ArgumentError validate_laurent_fixture(bad_normalization)
 
     toricbuilder = fixture_by_id["toricbuilder-factor-toric-block-3-pinv"]
     corrupted_source = copy(toricbuilder.inputs.source_matrix)
