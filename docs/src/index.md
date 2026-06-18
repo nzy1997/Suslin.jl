@@ -28,6 +28,9 @@ verify_factorization(A, factors)
 - `verify_factorization(A, factors)` checks exact multiplication against `A`.
 - The implementation is staged and does not yet cover the full theorem.
 
+See [ToricBuilder Integration Contract](@ref) for the first recorded
+consumer-boundary fixture contract.
+
 ## References
 
 - Park and Woodburn, *An algorithmic proof of Suslin's stability theorem for polynomial rings*.
