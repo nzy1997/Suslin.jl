@@ -71,7 +71,18 @@ jobs:
       - name: Instantiate dependencies
         run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
       - name: julia --project=. test/runtests.jl all
-        run: julia --project=. test/runtests.jl all
+        run: julia --project=. --code-coverage=user test/runtests.jl all
+      - uses: julia-actions/julia-processcoverage@v1
+        with:
+          directories: src
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v6
+        with:
+          files: lcov.info
+          flags: full-suite
+          name: suslin-full-suite
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true
   docs:
     name: Documentation
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_docs }}
