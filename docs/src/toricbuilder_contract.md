@@ -44,6 +44,23 @@ Fixture metadata records one of:
 
 The current fixture entries both use `one`.
 
+## GL_n Laurent Normalization Boundary
+
+Suslin exposes `normalize_laurent_gl_matrix(A)` for exact Laurent `GL_n`
+inputs before any staged `SL_n` factorization attempt. The boundary computes
+and classifies the determinant, then either returns a determinant-one core
+with explicit correction metadata or throws a staged `ArgumentError`.
+
+Supported corrections are determinant `1`, permutation/sign determinant `-1`
+where the coefficient ring distinguishes it from `1`, and Laurent monomial
+unit determinants such as `x^-1*y` over `GF(2)`. The correction metadata stores
+a left diagonal factor `D` and verifies exact reconstruction as
+`D * normalized_matrix == A`.
+
+Non-unit determinants and non-monomial units remain outside the staged `SL_n`
+path. `elementary_factorization` calls this boundary for Laurent matrices
+before it continues to the current narrow `3 x 3` univariate algorithm checks.
+
 ## Suslin Output Contract
 
 ToricBuilder ultimately needs a verified transformation certificate. For this

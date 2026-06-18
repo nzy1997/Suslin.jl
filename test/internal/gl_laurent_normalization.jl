@@ -100,3 +100,34 @@ using Oscar
     @test occursin("unsupported Laurent GL_n determinant", sprint(showerror, other_unit_err))
     @test occursin("non-monomial units are outside the staged SL_n factorization path", sprint(showerror, other_unit_err))
 end
+
+@testset "elementary factorization Laurent GL_n boundary" begin
+    R, (x,) = suslin_laurent_polynomial_ring(GF(2), ["x"])
+
+    normalized_then_rejected = matrix(R, [
+        x zero(R);
+        zero(R) one(R)
+    ])
+    err = try
+        elementary_factorization(normalized_then_rejected)
+        nothing
+    catch caught
+        caught
+    end
+    @test err isa ArgumentError
+    @test occursin("currently supports only 3x3 matrices", sprint(showerror, err))
+
+    non_unit = matrix(R, [
+        x + one(R) zero(R) zero(R);
+        zero(R) one(R) zero(R);
+        zero(R) zero(R) one(R)
+    ])
+    non_unit_err = try
+        elementary_factorization(non_unit)
+        nothing
+    catch caught
+        caught
+    end
+    @test non_unit_err isa ArgumentError
+    @test occursin("unsupported Laurent GL_n determinant", sprint(showerror, non_unit_err))
+end

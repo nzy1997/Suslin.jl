@@ -1,4 +1,9 @@
 function elementary_factorization(A)
+    if _is_laurent_polynomial_ring(base_ring(A))
+        normalization = normalize_laurent_gl_matrix(A)
+        A = normalization.normalized_matrix
+    end
+
     nrows(A) == ncols(A) || throw(ArgumentError("A must be square"))
     nrows(A) == 3 || throw(ArgumentError("elementary_factorization currently supports only 3x3 matrices"))
 
