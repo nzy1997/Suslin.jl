@@ -3,6 +3,7 @@ module Suslin
 using Oscar
 
 export suslin_polynomial_ring
+export suslin_laurent_polynomial_ring
 export elementary_matrix
 export elementary_factorization
 export realize_cohn_type
