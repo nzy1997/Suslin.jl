@@ -1,21 +1,49 @@
 using Suslin
 using Test
 
-@testset "public" begin
-    include("public/api_surface.jl")
+const TEST_GROUP_FILES = Dict(
+    "public" => [
+        "public/api_surface.jl",
+    ],
+    "internal" => [
+        "internal/rings.jl",
+    ],
+    "expert" => [
+        "expert/elementary_matrices.jl",
+        "expert/documentation_smoke.jl",
+        "expert/factorization_small_examples.jl",
+        "expert/cohn_type.jl",
+        "expert/normality.jl",
+        "expert/sl3_local.jl",
+        "expert/quillen_induction.jl",
+        "expert/unimodular_columns.jl",
+    ],
+)
+
+function requested_test_groups(args::Vector{String})
+    if isempty(args)
+        return ["public", "internal"]
+    end
+
+    groups = String[]
+    for arg in args
+        append!(groups, filter(!isempty, split(arg, ',')))
+    end
+
+    if "all" in groups
+        return ["public", "internal", "expert"]
+    end
+
+    invalid = sort(setdiff(unique(groups), collect(keys(TEST_GROUP_FILES))))
+    isempty(invalid) || throw(ArgumentError("unknown test groups: $(join(invalid, ", "))"))
+
+    return unique(groups)
 end
 
-@testset "expert" begin
-    include("expert/elementary_matrices.jl")
-    include("expert/documentation_smoke.jl")
-    include("expert/factorization_small_examples.jl")
-    include("expert/cohn_type.jl")
-    include("expert/normality.jl")
-    include("expert/sl3_local.jl")
-    include("expert/quillen_induction.jl")
-    include("expert/unimodular_columns.jl")
-end
-
-@testset "internal" begin
-    include("internal/rings.jl")
+for group in requested_test_groups(copy(ARGS))
+    @testset "$group" begin
+        for file in TEST_GROUP_FILES[group]
+            include(file)
+        end
+    end
 end

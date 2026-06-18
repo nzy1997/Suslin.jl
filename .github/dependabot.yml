@@ -5,20 +5,30 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    # To group all GitHub Actions updates into a single PR, uncomment the following:
-    # groups:
-    #   github-actions:
-    #     patterns:
-    #       - "*"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
   - package-ecosystem: "julia"
     directories:
       - "/"
-      - "/docs"
       - "/test"
     schedule:
       interval: "weekly"
-    # To group all Julia dependency updates into a single PR, uncomment the following:
-    # groups:
-    #   julia-dependencies:
-    #     patterns:
-    #       - "*"
+    groups:
+      julia-runtime:
+        patterns:
+          - "*"
+    ignore:
+      - dependency-name: "AbstractAlgebra"
+        versions:
+          - "0.50.x"
+  - package-ecosystem: "julia"
+    directories:
+      - "/docs"
+    schedule:
+      interval: "weekly"
+    groups:
+      julia-docs:
+        patterns:
+          - "*"

@@ -6,6 +6,17 @@ on:
     tags: ['*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      run_expert:
+        description: Run expert tests
+        required: false
+        default: false
+        type: boolean
+      run_docs:
+        description: Build and deploy documentation
+        required: false
+        default: false
+        type: boolean
 concurrency:
   # Skip intermediate builds: always.
   # Cancel intermediate builds: only if it is a pull request build.
@@ -13,41 +24,55 @@ concurrency:
   cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
 jobs:
   test:
-    name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    name: Julia 1.12 - ubuntu-latest - x64
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions: # needed to allow julia-actions/cache to proactively delete old caches that it has created
       actions: write
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        version:
-          - '1.10'
-          - '1.12'
-          - 'pre'
-        os:
-          - ubuntu-latest
-        arch:
-          - x64
-          - x86
     steps:
       - uses: actions/checkout@v6
-      - uses: julia-actions/setup-julia@v2
+      - uses: julia-actions/setup-julia@v3
         with:
-          version: ${{ matrix.version }}
-          arch: ${{ matrix.arch }}
-      - uses: julia-actions/cache@v2
+          version: '1.12'
+          arch: x64
+      - uses: julia-actions/cache@v3
       - uses: julia-actions/julia-buildpkg@v1
-      - uses: julia-actions/julia-runtest@v1
+      - name: Run lightweight test suite
+        shell: julia --project=@. --color=yes {0}
+        run: |
+          using Pkg
+          Pkg.test(; coverage=true)
       - uses: julia-actions/julia-processcoverage@v1
-      - uses: codecov/codecov-action@v4
+      - uses: codecov/codecov-action@v7
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
+  expert:
+    name: Expert Tests
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_expert }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.12'
+          arch: x64
+      - uses: julia-actions/cache@v3
+      - uses: julia-actions/julia-buildpkg@v1
+      - name: Run expert test suite
+        shell: julia --project=@. --color=yes {0}
+        run: |
+          using Pkg
+          Pkg.test(; test_args=["expert"])
   docs:
     name: Documentation
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_docs }}
     runs-on: ubuntu-latest
     permissions:
       actions: write # needed to allow julia-actions/cache to proactively delete old caches that it has created
@@ -55,10 +80,10 @@ jobs:
       statuses: write
     steps:
       - uses: actions/checkout@v6
-      - uses: julia-actions/setup-julia@v2
+      - uses: julia-actions/setup-julia@v3
         with:
           version: '1'
-      - uses: julia-actions/cache@v2
+      - uses: julia-actions/cache@v3
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-docdeploy@v1
         env:
