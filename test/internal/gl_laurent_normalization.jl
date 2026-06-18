@@ -43,6 +43,23 @@ using Oscar
         ),
     )
     @test !verify_laurent_gl_normalization(monomial_unit, tampered)
+    tampered_determinant = merge(monomial_normalization, (; determinant = one(R)))
+    @test !verify_laurent_gl_normalization(monomial_unit, tampered_determinant)
+    tampered_classification = merge(monomial_normalization, (; determinant_classification = :one))
+    @test !verify_laurent_gl_normalization(monomial_unit, tampered_classification)
+    tampered_correction_metadata = merge(
+        monomial_normalization,
+        (;
+            correction = merge(
+                monomial_normalization.correction,
+                (;
+                    kind = :identity,
+                    determinant = one(R),
+                ),
+            ),
+        ),
+    )
+    @test !verify_laurent_gl_normalization(monomial_unit, tampered_correction_metadata)
 
     Q, (t,) = suslin_laurent_polynomial_ring(QQ, ["t"])
     transposition = matrix(Q, [
@@ -130,4 +147,19 @@ end
     end
     @test non_unit_err isa ArgumentError
     @test occursin("unsupported Laurent GL_n determinant", sprint(showerror, non_unit_err))
+
+    normalized_laurent_sl3 = matrix(R, [
+        one(R) x zero(R);
+        zero(R) one(R) zero(R);
+        zero(R) zero(R) one(R)
+    ])
+    sl3_err = try
+        elementary_factorization(normalized_laurent_sl3)
+        nothing
+    catch caught
+        caught
+    end
+    @test sl3_err isa ArgumentError
+    @test occursin("Laurent matrices are normalized at the GL_n boundary", sprint(showerror, sl3_err))
+    @test occursin("SL_n factorization core currently supports only polynomial rings", sprint(showerror, sl3_err))
 end

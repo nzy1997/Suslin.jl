@@ -1,4 +1,5 @@
 function elementary_factorization(A)
+    laurent_input = _is_laurent_polynomial_ring(base_ring(A))
     if _is_laurent_polynomial_ring(base_ring(A))
         normalization = normalize_laurent_gl_matrix(A)
         A = normalization.normalized_matrix
@@ -9,6 +10,9 @@ function elementary_factorization(A)
 
     R = base_ring(A)
     ring_gens = collect(gens(R))
+    if laurent_input
+        throw(ArgumentError("Laurent matrices are normalized at the GL_n boundary, but the SL_n factorization core currently supports only polynomial rings"))
+    end
     length(ring_gens) == 1 || throw(ArgumentError("elementary_factorization currently supports only univariate polynomial rings"))
     det(A) == one(R) || throw(ArgumentError("elementary_factorization currently supports only matrices in SL_3"))
 

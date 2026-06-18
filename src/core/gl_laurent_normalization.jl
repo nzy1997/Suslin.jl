@@ -135,6 +135,10 @@ function _identity_correction(R, n::Int, determinant)
     )
 end
 
+function _expected_laurent_correction_kind(classification::Symbol)
+    return classification == :one ? :identity : :left_diagonal_determinant_correction
+end
+
 function _left_diagonal_determinant_correction(R, n::Int, determinant)
     factor = identity_matrix(R, n)
     factor[1, 1] = determinant
@@ -194,11 +198,16 @@ function verify_laurent_gl_normalization(A, normalization)::Bool
         _require_laurent_polynomial_ring(R; label="A base ring")
         normalization.input_size == (n, n) || return false
         (normalization.ring === R || normalization.ring == R) || return false
+        determinant_profile = classify_laurent_determinant(A)
+        normalization.determinant == determinant_profile.determinant || return false
+        normalization.determinant_classification == determinant_profile.classification || return false
         nrows(normalization.normalized_matrix) == n || return false
         ncols(normalization.normalized_matrix) == n || return false
         base_ring(normalization.normalized_matrix) == R || return false
         correction = normalization.correction
         correction.side == :left || return false
+        correction.kind == _expected_laurent_correction_kind(normalization.determinant_classification) || return false
+        correction.determinant == normalization.determinant || return false
         nrows(correction.factor) == n || return false
         ncols(correction.factor) == n || return false
         nrows(correction.inverse_factor) == n || return false
