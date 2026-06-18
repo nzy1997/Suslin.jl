@@ -14,7 +14,9 @@ Julia `.cov` files under `src` to `lcov.info` with
 
 README displays the existing CI status and the Codecov badge for the `main`
 branch. `codecov.yml` enables a PR comment using Codecov's standard diff,
-flags, and files layout.
+flags, and files layout. It does not require a base report so the first
+coverage PR can still receive a Codecov comment before `main` has historical
+coverage data.
 
 ## Operational Notes
 
