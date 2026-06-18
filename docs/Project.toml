@@ -1,3 +1,6 @@
 [deps]
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 Suslin = "47b4a9d4-42d3-414b-bb10-8db3ed793992"
+
+[compat]
+Documenter = "1.17.0"
