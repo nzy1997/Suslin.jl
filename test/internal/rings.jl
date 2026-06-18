@@ -1,5 +1,5 @@
 using Test
-using SuslinStability
+using Suslin
 using Oscar
 
 @testset "suslin polynomial ring" begin

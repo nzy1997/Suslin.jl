@@ -1,5 +1,5 @@
 using Test
-using SuslinStability
+using Suslin
 using Oscar
 
 function product_of_factors(factors)
@@ -22,7 +22,7 @@ end
     ])
     E = elementary_matrix(3, 1, 3, x + 1, R)
 
-    factors = SuslinStability.realize_conjugate_elementary(B, 1, 3, x + 1)
+    factors = Suslin.realize_conjugate_elementary(B, 1, 3, x + 1)
 
     @test B * E * inv(B) == product_of_factors(factors)
 
@@ -33,11 +33,11 @@ end
         0 0 x 1
     ])
     E4 = elementary_matrix(4, 1, 4, x + 1, R)
-    factors4 = SuslinStability.realize_conjugate_elementary(B4, 1, 4, x + 1)
+    factors4 = Suslin.realize_conjugate_elementary(B4, 1, 4, x + 1)
 
     @test B4 * E4 * inv(B4) == product_of_factors(factors4)
 
-    zero_factors = SuslinStability.realize_conjugate_elementary(B, 1, 3, zero(R))
+    zero_factors = Suslin.realize_conjugate_elementary(B, 1, 3, zero(R))
     @test isempty(zero_factors)
 
     singular = matrix(R, [
@@ -46,7 +46,7 @@ end
         0 0 1
     ])
 
-    @test_throws ArgumentError SuslinStability.realize_conjugate_elementary(B, 1, 1, x + 1)
-    @test_throws ArgumentError SuslinStability.realize_conjugate_elementary(matrix(R, [1 0; x 1]), 1, 2, x + 1)
-    @test_throws ErrorException SuslinStability.realize_conjugate_elementary(singular, 1, 3, x + 1)
+    @test_throws ArgumentError Suslin.realize_conjugate_elementary(B, 1, 1, x + 1)
+    @test_throws ArgumentError Suslin.realize_conjugate_elementary(matrix(R, [1 0; x 1]), 1, 2, x + 1)
+    @test_throws ErrorException Suslin.realize_conjugate_elementary(singular, 1, 3, x + 1)
 end

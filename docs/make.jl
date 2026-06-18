@@ -1,14 +1,14 @@
-using SuslinStability
+using Suslin
 using Documenter
 
-DocMeta.setdocmeta!(SuslinStability, :DocTestSetup, :(using SuslinStability); recursive=true)
+DocMeta.setdocmeta!(Suslin, :DocTestSetup, :(using Suslin); recursive=true)
 
 makedocs(;
-    modules=[SuslinStability],
+    modules=[Suslin],
     authors="nzy1997",
-    sitename="SuslinStability.jl",
+    sitename="Suslin.jl",
     format=Documenter.HTML(;
-        canonical="https://nzy1997.github.io/SuslinStability.jl",
+        canonical="https://nzy1997.github.io/Suslin.jl",
         edit_link="main",
         assets=String[],
     ),
@@ -18,6 +18,6 @@ makedocs(;
 )
 
 deploydocs(;
-    repo="github.com/nzy1997/SuslinStability.jl",
+    repo="github.com/nzy1997/Suslin.jl",
     devbranch="main",
 )

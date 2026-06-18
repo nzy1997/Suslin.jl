@@ -1,4 +1,4 @@
-module SuslinStability
+module Suslin
 
 using Oscar
 

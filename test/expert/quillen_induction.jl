@@ -1,5 +1,5 @@
 using Test
-using SuslinStability
+using Suslin
 using Oscar
 
 function product_of_factors(factors, R, n)
@@ -19,18 +19,18 @@ end
         K((X + 1) // (r + 1)),
         K((g + 2) // (X^2 + 1)),
     ]
-    certificate = SuslinStability.LocalCertificate(
+    certificate = Suslin.LocalCertificate(
         [1, 3],
         [denominator(entry) for entry in local_entries],
     )
 
     @test certificate.indices == [1, 3]
     @test certificate.denominators == [r + 1, X^2 + 1]
-    @test SuslinStability.common_denominator_factor(local_entries) == (r + 1) * (X^2 + 1)
-    @test SuslinStability.common_denominator_factor([local_entries[1], X + g]) == (r + 1)
+    @test Suslin.common_denominator_factor(local_entries) == (r + 1) * (X^2 + 1)
+    @test Suslin.common_denominator_factor([local_entries[1], X + g]) == (r + 1)
 
-    @test_throws ArgumentError SuslinStability.LocalCertificate([1], [r + 1, X^2 + 1])
-    @test_throws ArgumentError SuslinStability.common_denominator_factor(typeof(local_entries)())
+    @test_throws ArgumentError Suslin.LocalCertificate([1], [r + 1, X^2 + 1])
+    @test_throws ArgumentError Suslin.common_denominator_factor(typeof(local_entries)())
 
     A = matrix(R, [
         X^2 + r  g + 1  0;
@@ -38,7 +38,7 @@ end
         0        r      1
     ])
     shift = X + r^2 * g
-    patched = SuslinStability.patched_substitution(A, X, r, 2, g)
+    patched = Suslin.patched_substitution(A, X, r, 2, g)
     expected = matrix(R, [
         shift^2 + r  g + 1      0;
         r * shift    shift + g  1;
@@ -47,7 +47,7 @@ end
 
     @test patched == expected
 
-    patch_factor = SuslinStability.patched_substitution(
+    patch_factor = Suslin.patched_substitution(
         elementary_matrix(3, 1, 2, X, R),
         X,
         r,
@@ -55,7 +55,7 @@ end
         g,
     )
     expected_factor = elementary_matrix(3, 1, 2, shift, R)
-    realized = SuslinStability.realize_cohn_type(
+    realized = Suslin.realize_cohn_type(
         3,
         2,
         1,
@@ -67,9 +67,9 @@ end
     @test patch_factor == expected_factor
     @test product_of_factors(realized, R, 3) == expected_factor
 
-    @test_throws ArgumentError SuslinStability.patched_substitution(A, X, r, -1, g)
-    @test_throws ArgumentError SuslinStability.patched_substitution(A, one(R), r, 2, g)
+    @test_throws ArgumentError Suslin.patched_substitution(A, X, r, -1, g)
+    @test_throws ArgumentError Suslin.patched_substitution(A, one(R), r, 2, g)
 
     S, (y,) = Oscar.polynomial_ring(QQ, ["y"])
-    @test_throws ArgumentError SuslinStability.patched_substitution(A, X, y, 2, g)
+    @test_throws ArgumentError Suslin.patched_substitution(A, X, y, 2, g)
 end

@@ -68,6 +68,6 @@ jobs:
         shell: julia --project=docs --color=yes {0}
         run: |
           using Documenter: DocMeta, doctest
-          using SuslinStability
-          DocMeta.setdocmeta!(SuslinStability, :DocTestSetup, :(using SuslinStability); recursive=true)
-          doctest(SuslinStability)
+          using Suslin
+          DocMeta.setdocmeta!(Suslin, :DocTestSetup, :(using Suslin); recursive=true)
+          doctest(Suslin)

@@ -1,11 +1,11 @@
-# SuslinStability
+# Suslin
 
 Constructive elementary-matrix factorizations for small supported `SL_3` slices over polynomial rings.
 
 ## Example
 
 ```julia
-using SuslinStability, Oscar
+using Suslin, Oscar
 
 R, (X,) = Oscar.polynomial_ring(QQ, ["X"])
 A = matrix(R, [

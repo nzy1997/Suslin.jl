@@ -1,4 +1,4 @@
-using SuslinStability
+using Suslin
 using Test
 
 @testset "public" begin

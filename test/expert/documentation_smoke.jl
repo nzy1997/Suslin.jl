@@ -1,5 +1,5 @@
 using Test
-using SuslinStability
+using Suslin
 using Oscar
 
 @testset "documentation smoke" begin

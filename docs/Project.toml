@@ -1,3 +1,3 @@
 [deps]
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
-SuslinStability = "9b0768fe-2bc7-4d3e-8b99-f9be6b03d456"
+Suslin = "47b4a9d4-42d3-414b-bb10-8db3ed793992"

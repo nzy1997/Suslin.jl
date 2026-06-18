@@ -1,5 +1,5 @@
 using Test
-using SuslinStability
+using Suslin
 using Oscar
 
 function product_of_factors(factors, R, n)
@@ -24,7 +24,7 @@ end
         0 0 1
     ])
 
-    factors = SuslinStability.realize_sl3_local(p, q, r, s, X)
+    factors = Suslin.realize_sl3_local(p, q, r, s, X)
 
     @test target == product_of_factors(factors, R, 3)
 
@@ -37,7 +37,7 @@ end
         r_dual s_dual 0;
         0      0      1
     ])
-    dual_factors = SuslinStability.realize_sl3_local(p_dual, q_dual, r_dual, s_dual, X)
+    dual_factors = Suslin.realize_sl3_local(p_dual, q_dual, r_dual, s_dual, X)
 
     @test dual_target == product_of_factors(dual_factors, R, 3)
 
@@ -49,7 +49,7 @@ end
         r_nonmonic one(R)     0;
         0         0           1
     ])
-    nonmonic_factors = SuslinStability.realize_sl3_local(
+    nonmonic_factors = Suslin.realize_sl3_local(
         p_nonmonic,
         q_nonmonic,
         r_nonmonic,
@@ -60,7 +60,7 @@ end
 
     @test nonmonic_target == product_of_factors(nonmonic_factors, R, 3)
 
-    @test_throws ArgumentError SuslinStability.realize_sl3_local(
+    @test_throws ArgumentError Suslin.realize_sl3_local(
         one(R) + X,
         X,
         -X,
@@ -69,7 +69,7 @@ end
     )
 
     monic_err = try
-        SuslinStability.realize_sl3_local(
+        Suslin.realize_sl3_local(
             one(R) + 2 * X^2,
             2 * X,
             X,
@@ -84,7 +84,7 @@ end
     @test occursin("p must be monic in X", sprint(showerror, monic_err))
 
     S, (Y,) = Oscar.polynomial_ring(QQ, ["Y"])
-    @test_throws ArgumentError SuslinStability.realize_sl3_local(
+    @test_throws ArgumentError Suslin.realize_sl3_local(
         p,
         q,
         r,
