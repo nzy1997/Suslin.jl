@@ -27,6 +27,8 @@ verify_factorization(A, factors)
 - `elementary_factorization(A)` currently supports only a narrow 3x3 univariate `SL_3` slice.
 - `verify_factorization(A, factors)` checks exact multiplication against `A`.
 - The implementation is staged and does not yet cover the full theorem.
+See [ToricBuilder Integration Contract](@ref) for the first recorded
+consumer-boundary fixture contract.
 
 ## References
 

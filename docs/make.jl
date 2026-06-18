@@ -14,6 +14,7 @@ makedocs(;
     ),
     pages=[
         "Home" => "index.md",
+        "ToricBuilder Integration Contract" => "toricbuilder_contract.md",
     ],
 )
 
