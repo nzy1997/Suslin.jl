@@ -7,11 +7,6 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
-      run_expert:
-        description: Run expert tests
-        required: false
-        default: false
-        type: boolean
       run_docs:
         description: Build and deploy documentation
         required: false
@@ -23,11 +18,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
 jobs:
-  test:
-    name: Julia 1.12 - ubuntu-latest - x64
+  instantiate:
+    name: Instantiate Dependencies
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    permissions: # needed to allow julia-actions/cache to proactively delete old caches that it has created
+    permissions:
       actions: write
       contents: read
     steps:
@@ -37,21 +32,30 @@ jobs:
           version: '1.12'
           arch: x64
       - uses: julia-actions/cache@v3
-      - uses: julia-actions/julia-buildpkg@v1
-      - name: Run lightweight test suite
-        shell: julia --project=@. --color=yes {0}
-        run: |
-          using Pkg
-          Pkg.test(; coverage=true)
-      - uses: julia-actions/julia-processcoverage@v1
-      - uses: codecov/codecov-action@v7
+      - name: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+        run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+
+  default-tests:
+    name: Default Fast Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v3
         with:
-          files: lcov.info
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
-  expert:
-    name: Expert Tests
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_expert }}
+          version: '1.12'
+          arch: x64
+      - uses: julia-actions/cache@v3
+      - name: Instantiate dependencies
+        run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+      - name: julia --project=. test/runtests.jl
+        run: julia --project=. test/runtests.jl
+
+  full-suite-tests:
+    name: Full Suite Tests
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -64,12 +68,10 @@ jobs:
           version: '1.12'
           arch: x64
       - uses: julia-actions/cache@v3
-      - uses: julia-actions/julia-buildpkg@v1
-      - name: Run expert test suite
-        shell: julia --project=@. --color=yes {0}
-        run: |
-          using Pkg
-          Pkg.test(; test_args=["expert"])
+      - name: Instantiate dependencies
+        run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+      - name: julia --project=. test/runtests.jl all
+        run: julia --project=. test/runtests.jl all
   docs:
     name: Documentation
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_docs }}
