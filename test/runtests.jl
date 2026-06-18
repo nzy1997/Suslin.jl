@@ -9,6 +9,7 @@ const TEST_GROUP_FILES = Dict(
         "internal/rings.jl",
         "internal/laurent_rings.jl",
         "internal/laurent_fixtures.jl",
+        "internal/gl_laurent_normalization.jl",
         "internal/toricbuilder_contract.jl",
     ],
     "expert" => [

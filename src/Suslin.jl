@@ -6,8 +6,11 @@ export suslin_polynomial_ring
 export suslin_laurent_polynomial_ring
 export elementary_matrix
 export elementary_factorization
+export classify_laurent_determinant
+export normalize_laurent_gl_matrix
 export realize_cohn_type
 export realize_conjugate_elementary
+export verify_laurent_gl_normalization
 export verify_factorization
 
 include("core/rings.jl")
@@ -15,6 +18,7 @@ include("core/polynomials.jl")
 include("core/groebner_tools.jl")
 include("core/elementary_matrices.jl")
 include("core/unimodular.jl")
+include("core/gl_laurent_normalization.jl")
 include("algorithm/cohn_type.jl")
 include("algorithm/column_reduction.jl")
 include("algorithm/normality.jl")
