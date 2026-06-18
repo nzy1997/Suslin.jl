@@ -24,6 +24,24 @@ verify_factorization(A, factors)
 - `verify_factorization(A, factors)` checks exact multiplication against `A`.
 - The implementation is staged; it is not yet the full Park-Woodburn algorithm.
 
+## Testing
+
+This repository does not commit a `Manifest.toml`. In a fresh checkout,
+instantiate dependencies before running tests:
+
+```bash
+julia --project=. -e 'using Pkg; Pkg.instantiate()'
+```
+
+The test runner separates routine checks from expert algorithm checks:
+
+| Command | Coverage |
+| --- | --- |
+| `julia --project=. test/runtests.jl` | Default fast tests: `public` and `internal` groups |
+| `julia --project=. test/runtests.jl expert` | Expert-only algorithm and documentation checks |
+| `julia --project=. test/runtests.jl all` | Full suite: `public`, `internal`, and `expert` groups |
+| `julia --project=. -e 'using Pkg; Pkg.test()'` | Package test entry point; runs the default fast tests |
+
 ## References
 
 - Park and Woodburn, *An algorithmic proof of Suslin's stability theorem for polynomial rings*.
