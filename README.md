@@ -1,5 +1,8 @@
 # Suslin
 
+[![CI](https://github.com/nzy1997/Suslin.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/nzy1997/Suslin.jl/actions/workflows/CI.yml)
+[![codecov](https://codecov.io/gh/nzy1997/Suslin.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/nzy1997/Suslin.jl)
+
 Constructive elementary-matrix factorizations for small supported `SL_3` slices over polynomial rings.
 
 ## Example
@@ -41,6 +44,10 @@ The test runner separates routine checks from expert algorithm checks:
 | `julia --project=. test/runtests.jl expert` | Expert-only algorithm and documentation checks |
 | `julia --project=. test/runtests.jl all` | Full suite: `public`, `internal`, and `expert` groups |
 | `julia --project=. -e 'using Pkg; Pkg.test()'` | Package test entry point; runs the default fast tests |
+
+CI uploads full-suite coverage to Codecov for the `main` branch and pull
+requests. Private repositories need a `CODECOV_TOKEN` GitHub Actions secret for
+coverage uploads.
 
 ## References
 
