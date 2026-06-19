@@ -19,6 +19,16 @@ export lift_laurent_normalization
 export verify_laurent_gl_normalization
 export verify_laurent_normalization
 export verify_factorization
+export LocalCertificate
+export common_denominator_factor
+export patched_substitution
+export QuillenDenominatorData
+export QuillenElementaryCorrection
+export QuillenLocalContribution
+export QuillenPatchVerification
+export QuillenPatch
+export construct_quillen_patch
+export verify_quillen_patch
 
 include("core/rings.jl")
 include("core/polynomials.jl")
