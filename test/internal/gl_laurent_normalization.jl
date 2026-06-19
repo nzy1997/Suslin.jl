@@ -134,7 +134,7 @@ end
     end
     @test err isa ArgumentError
     @test occursin("Laurent GL_n normalization boundary", sprint(showerror, err))
-    @test occursin("Laurent SL_n reduction layer", sprint(showerror, err))
+    @test occursin("determinant-correction/driver path cannot yet return elementary factors that reconstruct the original input", sprint(showerror, err))
 
     non_unit = matrix(R, [
         x + one(R) zero(R) zero(R);

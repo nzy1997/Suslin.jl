@@ -86,8 +86,7 @@ end
     laurent_err = _captured_error(() -> elementary_factorization(normalizable_laurent))
     @test laurent_err isa ArgumentError
     @test occursin("Laurent GL_n normalization boundary", sprint(showerror, laurent_err))
-    @test occursin("Laurent SL_n reduction layer", sprint(showerror, laurent_err))
-    @test occursin("not yet implemented", sprint(showerror, laurent_err))
+    @test occursin("determinant-correction/driver path cannot yet return elementary factors that reconstruct the original input", sprint(showerror, laurent_err))
 
     non_normalizable_laurent = matrix(L, [
         x + one(L) zero(L) zero(L);
