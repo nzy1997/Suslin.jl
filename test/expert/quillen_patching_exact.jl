@@ -157,6 +157,26 @@ end
     )
     @test !verify_quillen_patch(tampered_verification_patch)
 
+    tampered_correction_contributions = copy(patch.local_contributions)
+    tampered_correction_contributions[1] = QuillenLocalContribution(
+        tampered_correction_contributions[1].certificate,
+        tampered_correction_contributions[1].denominator,
+        tampered_correction_contributions[1].coverage_multiplier,
+        QuillenElementaryCorrection(1, 2, target_entry + X),
+    )
+    tampered_correction_patch = QuillenPatch(
+        patch.ring,
+        patch.size,
+        patch.substitution_variable,
+        patch.denominator_data,
+        tampered_correction_contributions,
+        patch.factors,
+        patch.product,
+        patch.target,
+        patch.verification,
+    )
+    @test !verify_quillen_patch(tampered_correction_patch)
+
     RR, (Y, s) = Oscar.polynomial_ring(RealField(), ["Y", "s"])
     inexact_target_entry = Y + 1
     inexact_target = elementary_matrix(n, 1, 2, inexact_target_entry, RR)

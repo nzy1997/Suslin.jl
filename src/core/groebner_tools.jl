@@ -171,6 +171,14 @@ function _same_quillen_denominator_data(left, right)::Bool
     return true
 end
 
+function _same_quillen_factors(left, right)::Bool
+    length(left) == length(right) || return false
+    for idx in eachindex(left)
+        left[idx] == right[idx] || return false
+    end
+    return true
+end
+
 function _quillen_patch_verification(R, n::Int, denominator_data, local_contributions, factors, product, target)
     normalized_local_contributions = [
         _normalize_quillen_contribution(contribution, R, n)
@@ -180,8 +188,10 @@ function _quillen_patch_verification(R, n::Int, denominator_data, local_contribu
     denominator_data_ok = _same_quillen_denominator_data(denominator_data, expected_denominator_data)
     coverage_sum = _quillen_coverage_sum(R, denominator_data)
     coverage_ok = coverage_sum == one(R)
+    expected_factors = _quillen_factors(R, n, normalized_local_contributions)
+    factors_ok = _same_quillen_factors(factors, expected_factors)
     actual_product = _quillen_product(R, n, factors)
-    product_ok = actual_product == target && product == actual_product
+    product_ok = factors_ok && actual_product == target && product == actual_product
     return QuillenPatchVerification(denominator_data_ok, coverage_sum, coverage_ok, actual_product, target, product_ok)
 end
 
