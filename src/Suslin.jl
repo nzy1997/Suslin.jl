@@ -9,6 +9,10 @@ export block_embedding
 export embed_factor_sequence
 export compose_factor_sequences
 export elementary_factorization
+export SL3LocalObligation
+export SLNToSL3Reduction
+export reduce_sln_to_sl3
+export verify_sln_to_sl3_reduction
 export classify_laurent_determinant
 export normalize_laurent_object
 export normalize_laurent_gl_matrix
@@ -42,6 +46,7 @@ include("algorithm/column_reduction.jl")
 include("algorithm/normality.jl")
 include("algorithm/sl3_local.jl")
 include("algorithm/factorization.jl")
+include("algorithm/sln_to_sl3_reduction.jl")
 include("algorithm/quillen_induction.jl")
 
 function _coerce_into_ring(R, value, label::AbstractString)
