@@ -76,7 +76,8 @@ end
                 caught
             end
             @test err isa ArgumentError
-            @test occursin("currently supports only 3x3 matrices", sprint(showerror, err))
+            @test occursin("Laurent GL_n normalization boundary", sprint(showerror, err))
+            @test occursin("Laurent SL_n reduction layer", sprint(showerror, err))
         end
 
         qinv = only(filter(entry -> entry.toricbuilder_role == "Qinv", fixture.cases))
