@@ -59,7 +59,11 @@ end
     reduction6 = _issue15_assert_reduction(matrix6, 2)
     @test reduction6.obligations[1].block_location == [1, 2, 3]
     @test reduction6.obligations[2].block_location == [4, 5, 6]
-    @test elementary_factorization(matrix6) == reduction6.factors
+    elementary_err = _issue15_captured_error(() -> elementary_factorization(matrix6))
+    @test elementary_err isa ArgumentError
+    @test occursin("SL_n reduction layer for n > 3 is not yet implemented in elementary_factorization", sprint(showerror, elementary_err))
+    deleteat!(reduction6.obligations[1].embedded_factors, 1)
+    @test !verify_sln_to_sl3_reduction(reduction6)
 
     dropped6 = reduction6.obligations[1].embedded_factors
     @test !verify_factorization(matrix6, dropped6)

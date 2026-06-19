@@ -157,13 +157,38 @@ function _factor_product(factors, R, n::Int)
 end
 
 function _sln_to_sl3_reduction_verification(reduction::SLNToSL3Reduction)
-    obligations_ok = all(_verify_sl3_local_obligation, reduction.obligations)
-    factors_ok = verify_factorization(reduction.normalized_matrix, reduction.factors)
-    product_ok = reduction.product == reduction.normalized_matrix
-    normalization_ok = reduction.normalization === nothing || verify_laurent_gl_normalization(reduction.original_matrix, reduction.normalization)
-    original_reconstruction_ok = reduction.normalization === nothing ?
-        reduction.product == reduction.original_matrix :
-        reduction.normalization.correction.factor * reduction.product == reduction.original_matrix
+    obligations_ok = try
+        all(_verify_sl3_local_obligation, reduction.obligations)
+    catch err
+        err isa InterruptException && rethrow()
+        false
+    end
+    factors_ok = try
+        verify_factorization(reduction.normalized_matrix, reduction.factors)
+    catch err
+        err isa InterruptException && rethrow()
+        false
+    end
+    product_ok = try
+        reduction.product == reduction.normalized_matrix
+    catch err
+        err isa InterruptException && rethrow()
+        false
+    end
+    normalization_ok = try
+        reduction.normalization === nothing || verify_laurent_gl_normalization(reduction.original_matrix, reduction.normalization)
+    catch err
+        err isa InterruptException && rethrow()
+        false
+    end
+    original_reconstruction_ok = try
+        reduction.normalization === nothing ?
+            reduction.product == reduction.original_matrix :
+            reduction.normalization.correction.factor * reduction.product == reduction.original_matrix
+    catch err
+        err isa InterruptException && rethrow()
+        false
+    end
 
     return (
         obligations_ok = obligations_ok,
@@ -176,7 +201,14 @@ function _sln_to_sl3_reduction_verification(reduction::SLNToSL3Reduction)
 end
 
 function _verify_sl3_local_obligation(obligation::SL3LocalObligation)::Bool
-    return obligation.reassembly_data.local_product_ok && obligation.reassembly_data.embedded_product_ok
+    try
+        local_product = _factor_product(obligation.local_factors, obligation.ring, 3)
+        embedded_product = _factor_product(obligation.embedded_factors, obligation.ring, nrows(obligation.embedded_target))
+        return local_product == obligation.target_local_matrix && embedded_product == obligation.embedded_target
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
 end
 
 function _throw_staged_sln_to_sl3_failure(reason::AbstractString)
