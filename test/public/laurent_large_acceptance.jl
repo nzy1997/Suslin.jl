@@ -55,7 +55,7 @@ end
 
     @test any(case -> case.kind == :toricbuilder_normalized_contract, cases)
     @test any(case -> case.size == (40, 40), cases)
-    @test any(case -> case.size[1] > 40, cases)
+    @test any(case -> case.size == (48, 48), cases)
 
     for case in cases
         if case.expected_path == :normalized_contract
