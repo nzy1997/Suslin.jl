@@ -13,6 +13,10 @@ function _require_square_matrix(M, label::AbstractString)
 end
 
 function _same_base_ring(left, right)::Bool
+    if _is_laurent_polynomial_ring(left) || _is_laurent_polynomial_ring(right)
+        return left === right
+    end
+
     return left == right || left === right
 end
 

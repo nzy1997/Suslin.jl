@@ -9,7 +9,7 @@ function realize_conjugate_elementary(B, i::Int, j::Int, a)
 
     R = base_ring(B)
     coerced_a = _coerce_into_ring(R, a, "a")
-    Binv = inv(B)
+    Binv = _inverse_matrix_over_base_ring(B)
 
     v = [B[row, i] for row in 1:n]
     w = [coerced_a * Binv[j, col] for col in 1:n]
@@ -25,6 +25,71 @@ function realize_conjugate_elementary(B, i::Int, j::Int, a)
         append!(factors, realize_cohn_type(n, p, q, coeff, v, R))
     end
     return factors
+end
+
+function _inverse_matrix_over_base_ring(M)
+    R = base_ring(M)
+    _is_laurent_polynomial_ring(R) && return _laurent_inverse_matrix(M)
+
+    return inv(M)
+end
+
+function _laurent_inverse_matrix(M)
+    n = _require_square_matrix(M, "B")
+    R = _require_laurent_polynomial_ring(base_ring(M); label="B base ring")
+    determinant = det(M)
+    determinant == zero(R) && throw(ArgumentError("B must be invertible over its Laurent polynomial ring"))
+
+    is_unit(determinant) || throw(ArgumentError("B must have a Laurent-unit determinant"))
+    determinant_inverse = inv(determinant)
+
+    inverse = _adjugate_matrix(M)
+    for row in 1:n, col in 1:n
+        inverse[row, col] *= determinant_inverse
+    end
+
+    identity = identity_matrix(R, n)
+    inverse * M == identity || throw(ArgumentError("failed to invert B over its Laurent polynomial ring"))
+    M * inverse == identity || throw(ArgumentError("failed to invert B over its Laurent polynomial ring"))
+    return inverse
+end
+
+function _adjugate_matrix(M)
+    n = _require_square_matrix(M, "matrix")
+    R = base_ring(M)
+
+    if n == 1
+        adjugate = zero_matrix(R, 1, 1)
+        adjugate[1, 1] = one(R)
+        return adjugate
+    end
+
+    adjugate = zero_matrix(R, n, n)
+    for row in 1:n, col in 1:n
+        sign = isodd(row + col) ? -one(R) : one(R)
+        adjugate[col, row] = sign * det(_matrix_without_row_col(M, row, col))
+    end
+    return adjugate
+end
+
+function _matrix_without_row_col(M, skipped_row::Int, skipped_col::Int)
+    n = _require_square_matrix(M, "matrix")
+    R = base_ring(M)
+    minor = zero_matrix(R, n - 1, n - 1)
+    minor_row = 1
+
+    for row in 1:n
+        row == skipped_row && continue
+        minor_col = 1
+        for col in 1:n
+            col == skipped_col && continue
+            minor[minor_row, minor_col] = M[row, col]
+            minor_col += 1
+        end
+        minor_row += 1
+    end
+
+    return minor
 end
 
 function _dot(v::AbstractVector, w::AbstractVector, R)

@@ -21,6 +21,7 @@ const TEST_GROUP_FILES = Dict(
         "expert/factorization_small_examples.jl",
         "expert/cohn_type.jl",
         "expert/normality.jl",
+        "expert/laurent_elementary_core.jl",
         "expert/sl3_local.jl",
         "expert/quillen_induction.jl",
         "expert/unimodular_columns.jl",
