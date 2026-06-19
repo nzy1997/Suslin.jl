@@ -44,7 +44,7 @@
 - Consumes: existing `elementary_matrix(n::Int, i::Int, j::Int, a, R)`, `identity_matrix`, `base_ring`, `nrows`, `ncols`, and Suslin ring constructors.
 - Produces: `block_embedding(block, n::Int, indices)`, `embed_factor_sequence(factors, n::Int, indices)`, and `compose_factor_sequences(sequences...)`.
 
-- [ ] **Step 1: Write the failing expert tests and public API assertions**
+- [x] **Step 1: Write the failing expert tests and public API assertions**
 
 Create `test/expert/block_embeddings.jl` with this content:
 
@@ -187,7 +187,7 @@ Modify `test/public/api_surface.jl` in the public API testset by adding:
 @test Suslin.compose_factor_sequences === compose_factor_sequences
 ```
 
-- [ ] **Step 2: Run the new expert test and confirm the expected red failure**
+- [x] **Step 2: Run the new expert test and confirm the expected red failure**
 
 Run:
 
@@ -198,7 +198,7 @@ julia --project=. -e 'include("test/expert/block_embeddings.jl")'
 Expected: FAIL/UndefVarError because `block_embedding` is not defined yet. This
 is the required TDD red step.
 
-- [ ] **Step 3: Implement the helper layer and exports**
+- [x] **Step 3: Implement the helper layer and exports**
 
 Modify `src/Suslin.jl` exports:
 
@@ -307,7 +307,7 @@ function compose_factor_sequences(sequences...)
 end
 ```
 
-- [ ] **Step 4: Run the focused test and confirm green**
+- [x] **Step 4: Run the focused test and confirm green**
 
 Run:
 
@@ -317,7 +317,7 @@ julia --project=. -e 'include("test/expert/block_embeddings.jl")'
 
 Expected: PASS with all block-embedding tests passing.
 
-- [ ] **Step 5: Run public API coverage**
+- [x] **Step 5: Run public API coverage**
 
 Run:
 
@@ -327,7 +327,7 @@ julia --project=. -e 'include("test/public/api_surface.jl")'
 
 Expected: PASS, including the new exported helper checks.
 
-- [ ] **Step 6: Run package and full-suite verification**
+- [x] **Step 6: Run package and full-suite verification**
 
 Run:
 
@@ -340,7 +340,7 @@ Expected: `Pkg.test()` passes the default public/internal groups, and the full
 suite passes public, internal, and expert groups including
 `expert/block_embeddings.jl`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 Run:
 
