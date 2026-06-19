@@ -7,10 +7,13 @@ export suslin_laurent_polynomial_ring
 export elementary_matrix
 export elementary_factorization
 export classify_laurent_determinant
+export normalize_laurent_object
 export normalize_laurent_gl_matrix
 export realize_cohn_type
 export realize_conjugate_elementary
+export lift_laurent_normalization
 export verify_laurent_gl_normalization
+export verify_laurent_normalization
 export verify_factorization
 
 include("core/rings.jl")
