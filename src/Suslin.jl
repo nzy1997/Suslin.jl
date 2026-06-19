@@ -12,6 +12,7 @@ export elementary_factorization
 export classify_laurent_determinant
 export normalize_laurent_object
 export normalize_laurent_gl_matrix
+export solve_laurent_linear
 export realize_cohn_type
 export realize_conjugate_elementary
 export lift_laurent_normalization
@@ -22,6 +23,7 @@ export verify_factorization
 include("core/rings.jl")
 include("core/polynomials.jl")
 include("core/groebner_tools.jl")
+include("core/laurent_linear_solve.jl")
 include("core/elementary_matrices.jl")
 include("core/unimodular.jl")
 include("core/gl_laurent_normalization.jl")
