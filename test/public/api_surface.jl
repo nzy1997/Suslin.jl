@@ -20,6 +20,10 @@ using Oscar
     @test isdefined(Suslin, :verify_laurent_gl_normalization)
     @test isdefined(Suslin, :verify_laurent_normalization)
     @test isdefined(Suslin, :verify_factorization)
+    @test isdefined(Suslin, :SL3LocalObligation)
+    @test isdefined(Suslin, :SLNToSL3Reduction)
+    @test isdefined(Suslin, :reduce_sln_to_sl3)
+    @test isdefined(Suslin, :verify_sln_to_sl3_reduction)
     @test isdefined(Suslin, :LocalCertificate)
     @test isdefined(Suslin, :common_denominator_factor)
     @test isdefined(Suslin, :patched_substitution)
@@ -46,6 +50,10 @@ using Oscar
     @test Suslin.verify_laurent_gl_normalization === verify_laurent_gl_normalization
     @test Suslin.verify_laurent_normalization === verify_laurent_normalization
     @test Suslin.verify_factorization === verify_factorization
+    @test Suslin.SL3LocalObligation === SL3LocalObligation
+    @test Suslin.SLNToSL3Reduction === SLNToSL3Reduction
+    @test Suslin.reduce_sln_to_sl3 === reduce_sln_to_sl3
+    @test Suslin.verify_sln_to_sl3_reduction === verify_sln_to_sl3_reduction
     @test Suslin.LocalCertificate === LocalCertificate
     @test Suslin.common_denominator_factor === common_denominator_factor
     @test Suslin.patched_substitution === patched_substitution

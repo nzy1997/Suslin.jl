@@ -23,10 +23,15 @@ end
     @test verify_factorization(supported, factors)
 
     larger_sl = identity_matrix(R, 4)
-    larger_err = _captured_error(() -> elementary_factorization(larger_sl))
+    larger_factors = elementary_factorization(larger_sl)
+    @test isempty(larger_factors)
+    @test verify_factorization(larger_sl, larger_factors)
+
+    unsupported_larger = identity_matrix(R, 4)
+    unsupported_larger[1, 4] = X
+    larger_err = _captured_error(() -> elementary_factorization(unsupported_larger))
     @test larger_err isa ArgumentError
-    @test occursin("SL_n reduction layer", sprint(showerror, larger_err))
-    @test occursin("not yet implemented", sprint(showerror, larger_err))
+    @test occursin("staged SL_n to local SL_3 reduction failure", sprint(showerror, larger_err))
     @test !occursin("currently supports only 3x3 matrices", sprint(showerror, larger_err))
 
     nonsquare = zero_matrix(R, 3, 4)
