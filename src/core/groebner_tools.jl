@@ -70,7 +70,7 @@ struct QuillenPatch
 end
 
 function _require_supported_quillen_ring(R)
-    (_is_laurent_polynomial_ring(R) || R isa MPolyRing) ||
+    (_is_laurent_polynomial_ring(R) || R isa MPolyRing || R isa PolyRing) ||
         throw(ArgumentError("target base ring must be a supported exact polynomial or Laurent polynomial ring"))
 
     Oscar.is_exact_type(typeof(zero(coefficient_ring(R)))) ||
@@ -185,6 +185,15 @@ function _quillen_patch_verification(R, n::Int, denominator_data, local_contribu
     return QuillenPatchVerification(denominator_data_ok, coverage_sum, coverage_ok, actual_product, target, product_ok)
 end
 
+function _same_quillen_patch_verification(left::QuillenPatchVerification, right::QuillenPatchVerification)::Bool
+    return left.denominator_data_ok == right.denominator_data_ok &&
+           left.coverage_sum == right.coverage_sum &&
+           left.coverage_ok == right.coverage_ok &&
+           left.product == right.product &&
+           left.target == right.target &&
+           left.product_ok == right.product_ok
+end
+
 function construct_quillen_patch(n::Int, X, contributions; target)
     collected = collect(contributions)
     isempty(collected) && throw(ArgumentError("local contributions must be nonempty"))
@@ -217,7 +226,10 @@ function verify_quillen_patch(patch::QuillenPatch)::Bool
             patch.product,
             patch.target,
         )
-        return verification.denominator_data_ok && verification.coverage_ok && verification.product_ok
+        return _same_quillen_patch_verification(patch.verification, verification) &&
+               verification.denominator_data_ok &&
+               verification.coverage_ok &&
+               verification.product_ok
     catch err
         err isa InterruptException && rethrow()
         return false

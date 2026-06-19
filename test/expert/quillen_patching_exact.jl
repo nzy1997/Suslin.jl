@@ -136,6 +136,27 @@ end
     )
     @test !verify_quillen_patch(tampered_certificate_patch)
 
+    tampered_verification = QuillenPatchVerification(
+        patch.verification.denominator_data_ok,
+        patch.verification.coverage_sum,
+        patch.verification.coverage_ok,
+        patch.verification.product + elementary_matrix(n, 1, 3, one(R), R),
+        patch.verification.target,
+        patch.verification.product_ok,
+    )
+    tampered_verification_patch = QuillenPatch(
+        patch.ring,
+        patch.size,
+        patch.substitution_variable,
+        patch.denominator_data,
+        patch.local_contributions,
+        patch.factors,
+        patch.product,
+        patch.target,
+        tampered_verification,
+    )
+    @test !verify_quillen_patch(tampered_verification_patch)
+
     RR, (Y, s) = Oscar.polynomial_ring(RealField(), ["Y", "s"])
     inexact_target_entry = Y + 1
     inexact_target = elementary_matrix(n, 1, 2, inexact_target_entry, RR)
@@ -177,4 +198,26 @@ end
     @test laurent_patch.product == laurent_target
     @test quillen_patch_product(laurent_patch.factors, L, n) == laurent_target
     @test laurent_patch.verification.coverage_sum == one(L)
+
+    S, t = Oscar.polynomial_ring(QQ, "t")
+    univariate_target_entry = t + 1
+    univariate_target = elementary_matrix(n, 1, 2, univariate_target_entry, S)
+    univariate_contributions = [
+        QuillenLocalContribution(
+            LocalCertificate([1, 2], [t, t]),
+            t,
+            one(S),
+            QuillenElementaryCorrection(1, 2, univariate_target_entry),
+        ),
+        QuillenLocalContribution(
+            LocalCertificate([1, 2], [one(S) - t, one(S) - t]),
+            one(S) - t,
+            one(S),
+            QuillenElementaryCorrection(1, 2, univariate_target_entry),
+        ),
+    ]
+    univariate_patch = construct_quillen_patch(n, t, univariate_contributions; target = univariate_target)
+    @test verify_quillen_patch(univariate_patch)
+    @test univariate_patch.product == univariate_target
+    @test quillen_patch_product(univariate_patch.factors, S, n) == univariate_target
 end
