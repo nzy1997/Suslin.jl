@@ -1,26 +1,89 @@
-function elementary_factorization(A)
-    laurent_input = _is_laurent_polynomial_ring(base_ring(A))
-    if _is_laurent_polynomial_ring(base_ring(A))
+function _validate_factorization_matrix(A)
+    nrows(A) == ncols(A) || throw(ArgumentError("A must be square"))
+    n = nrows(A)
+    n >= 3 || throw(ArgumentError("elementary_factorization requires matrices of size at least 3"))
+    return n
+end
+
+function _factorization_ring_profile(R)
+    _is_laurent_polynomial_ring(R) && return :laurent
+    try
+        collect(gens(R))
+        return :polynomial
+    catch err
+        err isa MethodError || rethrow()
+        throw(ArgumentError("A base ring is outside the supported exact polynomial or Laurent polynomial factorization path"))
+    end
+end
+
+function _normalize_factorization_input(A, ring_profile::Symbol)
+    if ring_profile == :laurent
         normalization = normalize_laurent_gl_matrix(A)
-        A = normalization.normalized_matrix
+        return normalization.normalized_matrix, normalization
     end
 
-    nrows(A) == ncols(A) || throw(ArgumentError("A must be square"))
-    nrows(A) == 3 || throw(ArgumentError("elementary_factorization currently supports only 3x3 matrices"))
+    return A, nothing
+end
+
+function _require_polynomial_sl_determinant(A)
+    R = base_ring(A)
+    det(A) == one(R) || throw(ArgumentError("determinant/unit precondition failed: polynomial inputs must have determinant 1; otherwise the input is outside the staged SL_n factorization path"))
+    return nothing
+end
+
+function _supported_local_sl3_generator(A, R, ring_profile::Symbol)
+    ring_profile == :polynomial || return nothing
+    nrows(A) == 3 || return nothing
+
+    ring_gens = collect(gens(R))
+    length(ring_gens) == 1 || return nothing
+
+    if A[1, 3] != zero(R) || A[2, 3] != zero(R) ||
+            A[3, 1] != zero(R) || A[3, 2] != zero(R) ||
+            A[3, 3] != one(R)
+        return nothing
+    end
+
+    return ring_gens[1]
+end
+
+function _throw_staged_factorization_failure(A, ring_profile::Symbol, normalization)
+    n = nrows(A)
+
+    if ring_profile == :laurent
+        classification = normalization.determinant_classification
+        throw(ArgumentError("Laurent GL_n normalization boundary succeeded with determinant classification $(classification), but the Laurent SL_n reduction layer is not yet implemented"))
+    end
+
+    if n > 3
+        throw(ArgumentError("SL_n reduction layer for n > 3 is not yet implemented in elementary_factorization"))
+    end
+
+    throw(ArgumentError("staged reduction to the supported univariate local SL_3 slice is not yet implemented in elementary_factorization"))
+end
+
+function elementary_factorization(A)
+    _validate_factorization_matrix(A)
 
     R = base_ring(A)
-    ring_gens = collect(gens(R))
-    if laurent_input
-        throw(ArgumentError("Laurent matrices are normalized at the GL_n boundary, but the SL_n factorization core currently supports only polynomial rings"))
-    end
-    length(ring_gens) == 1 || throw(ArgumentError("elementary_factorization currently supports only univariate polynomial rings"))
-    det(A) == one(R) || throw(ArgumentError("elementary_factorization currently supports only matrices in SL_3"))
+    ring_profile = _factorization_ring_profile(R)
+    normalized_A, normalization = _normalize_factorization_input(A, ring_profile)
+    normalized_R = base_ring(normalized_A)
 
-    if A[1, 3] != zero(R) || A[2, 3] != zero(R) || A[3, 1] != zero(R) || A[3, 2] != zero(R) || A[3, 3] != one(R)
-        throw(ArgumentError("elementary_factorization currently supports only the local SL_3 slice with zero third row and column except the (3,3) entry"))
+    if ring_profile == :polynomial
+        _require_polynomial_sl_determinant(normalized_A)
     end
 
-    return realize_sl3_local(A[1, 1], A[1, 2], A[2, 1], A[2, 2], ring_gens[1])
+    X = _supported_local_sl3_generator(normalized_A, normalized_R, ring_profile)
+    X === nothing && _throw_staged_factorization_failure(normalized_A, ring_profile, normalization)
+
+    return realize_sl3_local(
+        normalized_A[1, 1],
+        normalized_A[1, 2],
+        normalized_A[2, 1],
+        normalized_A[2, 2],
+        X,
+    )
 end
 
 function verify_factorization(A, factors)::Bool

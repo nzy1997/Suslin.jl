@@ -122,8 +122,9 @@ end
     R, (x,) = suslin_laurent_polynomial_ring(GF(2), ["x"])
 
     normalized_then_rejected = matrix(R, [
-        x zero(R);
-        zero(R) one(R)
+        x zero(R) zero(R);
+        zero(R) one(R) zero(R);
+        zero(R) zero(R) one(R)
     ])
     err = try
         elementary_factorization(normalized_then_rejected)
@@ -132,7 +133,8 @@ end
         caught
     end
     @test err isa ArgumentError
-    @test occursin("currently supports only 3x3 matrices", sprint(showerror, err))
+    @test occursin("Laurent GL_n normalization boundary", sprint(showerror, err))
+    @test occursin("Laurent SL_n reduction layer", sprint(showerror, err))
 
     non_unit = matrix(R, [
         x + one(R) zero(R) zero(R);
@@ -160,8 +162,8 @@ end
         caught
     end
     @test sl3_err isa ArgumentError
-    @test occursin("Laurent matrices are normalized at the GL_n boundary", sprint(showerror, sl3_err))
-    @test occursin("SL_n factorization core currently supports only polynomial rings", sprint(showerror, sl3_err))
+    @test occursin("Laurent GL_n normalization boundary", sprint(showerror, sl3_err))
+    @test occursin("Laurent SL_n reduction layer", sprint(showerror, sl3_err))
 end
 
 @testset "Laurent GL_n defensive classification branches" begin
