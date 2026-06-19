@@ -80,6 +80,22 @@ end
     @test length(laurent_factors) > 2
     _test_exact_sl3_factorization(laurent_target, laurent_factors)
 
+    laurent_monic_err = _sl3_extended_captured_error(() -> Suslin.realize_sl3_local(
+        p_laurent,
+        q_laurent,
+        r_laurent,
+        s_laurent,
+        x,
+    ))
+    @test laurent_monic_err isa ArgumentError
+    @test occursin("p monicity check is only supported", sprint(showerror, laurent_monic_err))
+
+    malformed_embedded = copy(unit_s_target)
+    malformed_embedded[1, 3] = one(R)
+    malformed_err = _sl3_extended_captured_error(() -> Suslin.realize_sl3_local(malformed_embedded, X))
+    @test malformed_err isa ArgumentError
+    @test occursin("embedded 2x2 block with trailing identity", sprint(showerror, malformed_err))
+
     unsupported = _sl3_extended_target(X, -one(R), one(R), zero(R), R)
     unsupported_err = _sl3_extended_captured_error(() -> Suslin.realize_sl3_local(unsupported, X))
     @test unsupported_err isa ArgumentError

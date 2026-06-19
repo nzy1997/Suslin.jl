@@ -117,15 +117,8 @@ function _sl3_diagonal_unit_factors(u, R)
 end
 
 function _unit_inverse_or_nothing(value)
-    try
-        is_unit(value) || return nothing
-        return inv(value)
-    catch err
-        if err isa ArgumentError || err isa MethodError || err isa ErrorException
-            return nothing
-        end
-        rethrow()
-    end
+    is_unit(value) || return nothing
+    return inv(value)
 end
 
 function _verify_sl3_local_factorization(target, factors)
