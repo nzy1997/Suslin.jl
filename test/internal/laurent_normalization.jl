@@ -60,12 +60,15 @@ end
 
     R = column_fixture.ring.object
     x, y = column_fixture.ring.generators
-    vector_normalization = normalize_laurent_object([x^-1, x^-2 * y])
+    vector = [column[i, 1] for i in 1:nrows(column)]
+    vector_normalization = normalize_laurent_object(vector)
     @test vector_normalization.metadata.kind == :vector
     @test vector_normalization.metadata.shape == (2,)
     @test vector_normalization.metadata.column_shifts == ((2, 0),)
     @test _all_polynomial_vector_entries_have_nonnegative_exponents(vector_normalization.normalized_object)
-    @test lift_laurent_normalization(vector_normalization) == [x^-1, x^-2 * y]
+    lifted_vector = lift_laurent_normalization(vector_normalization)
+    @test eltype(lifted_vector) == typeof(first(vector))
+    @test lifted_vector == vector
 
     S, (u, v) = suslin_laurent_polynomial_ring(GF(2), ["u", "v"])
     @test_throws ArgumentError normalize_laurent_object([x, u])

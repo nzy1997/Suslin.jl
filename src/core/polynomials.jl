@@ -199,12 +199,10 @@ function _lift_laurent_vector(polynomial_object, metadata)
     length(metadata.column_shifts) == 1 || throw(ArgumentError("vector metadata must record exactly one shift"))
     inverse_shift = only(metadata.inverse_shift_monomials)
 
-    lifted = Vector{Any}(undef, length(polynomial_object))
-    for (i, value) in enumerate(polynomial_object)
+    for value in polynomial_object
         parent(value) == P || throw(ArgumentError("normalized vector entry parent does not match metadata"))
-        lifted[i] = inverse_shift * R(value)
     end
-    return lifted
+    return [inverse_shift * R(value) for value in polynomial_object]
 end
 
 function lift_laurent_normalization(polynomial_object, metadata)
