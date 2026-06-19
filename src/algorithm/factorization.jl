@@ -75,15 +75,22 @@ function elementary_factorization(A)
     end
 
     X = _supported_local_sl3_generator(normalized_A, normalized_R, ring_profile)
-    X === nothing && _throw_staged_factorization_failure(normalized_A, ring_profile, normalization)
+    if X !== nothing
+        return realize_sl3_local(
+            normalized_A[1, 1],
+            normalized_A[1, 2],
+            normalized_A[2, 1],
+            normalized_A[2, 2],
+            X,
+        )
+    end
 
-    return realize_sl3_local(
-        normalized_A[1, 1],
-        normalized_A[1, 2],
-        normalized_A[2, 1],
-        normalized_A[2, 2],
-        X,
-    )
+    if ring_profile == :polynomial && nrows(normalized_A) > 3
+        reduction = reduce_sln_to_sl3(A)
+        verify_factorization(A, reduction.factors) && return reduction.factors
+    end
+
+    _throw_staged_factorization_failure(normalized_A, ring_profile, normalization)
 end
 
 function verify_factorization(A, factors)::Bool
