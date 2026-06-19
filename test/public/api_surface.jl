@@ -13,6 +13,7 @@ using Oscar
     @test isdefined(Suslin, :classify_laurent_determinant)
     @test isdefined(Suslin, :normalize_laurent_gl_matrix)
     @test isdefined(Suslin, :normalize_laurent_object)
+    @test isdefined(Suslin, :solve_laurent_linear)
     @test isdefined(Suslin, :realize_cohn_type)
     @test isdefined(Suslin, :realize_conjugate_elementary)
     @test isdefined(Suslin, :lift_laurent_normalization)
@@ -28,6 +29,7 @@ using Oscar
     @test Suslin.normalize_laurent_gl_matrix === normalize_laurent_gl_matrix
     @test Suslin.normalize_laurent_object === normalize_laurent_object
     @test Suslin.suslin_laurent_polynomial_ring === suslin_laurent_polynomial_ring
+    @test Suslin.solve_laurent_linear === solve_laurent_linear
     @test Suslin.elementary_factorization === elementary_factorization
     @test Suslin.realize_cohn_type === realize_cohn_type
     @test Suslin.realize_conjugate_elementary === realize_conjugate_elementary

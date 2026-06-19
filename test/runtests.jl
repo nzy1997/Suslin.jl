@@ -11,6 +11,7 @@ const TEST_GROUP_FILES = Dict(
         "internal/laurent_rings.jl",
         "internal/laurent_fixtures.jl",
         "internal/laurent_normalization.jl",
+        "internal/laurent_linear_solve.jl",
         "internal/gl_laurent_normalization.jl",
         "internal/toricbuilder_contract.jl",
     ],
