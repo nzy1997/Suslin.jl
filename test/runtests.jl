@@ -23,6 +23,7 @@ const TEST_GROUP_FILES = Dict(
         "expert/normality.jl",
         "expert/laurent_elementary_core.jl",
         "expert/sl3_local.jl",
+        "expert/sl3_local_extended.jl",
         "expert/quillen_induction.jl",
         "expert/unimodular_columns.jl",
     ],
