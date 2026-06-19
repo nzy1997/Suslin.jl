@@ -45,7 +45,7 @@ function _construct_sln_to_sl3_reduction(A, block_locations)
     obligations = SL3LocalObligation[]
     for indices in locations
         _is_identity_local_block(normalized_A, normalized_R, indices) && continue
-        push!(obligations, _build_sl3_local_obligation(normalized_A, normalized_R, indices, X))
+        push!(obligations, _build_sl3_local_obligation(normalized_A, normalized_R, indices, X, ring_profile))
     end
 
     factors = _compose_obligation_factors(obligations, normalized_R, n)
@@ -82,12 +82,13 @@ function _construct_sln_to_sl3_reduction(A, block_locations)
 end
 
 function _reduction_generator(R, ring_profile::Symbol)
-    if ring_profile == :laurent
-        _throw_staged_sln_to_sl3_failure("Laurent SL_n to local SL_3 reduction is not yet implemented")
+    ring_gens = collect(gens(R))
+    isempty(ring_gens) && throw(ArgumentError("reduction requires a polynomial or Laurent generator"))
+
+    if ring_profile == :polynomial
+        length(ring_gens) == 1 || throw(ArgumentError("ordinary polynomial reduction currently requires a univariate base ring"))
     end
 
-    ring_gens = collect(gens(R))
-    length(ring_gens) == 1 || throw(ArgumentError("ordinary polynomial reduction currently requires a univariate base ring"))
     return ring_gens[1]
 end
 
@@ -112,10 +113,18 @@ function _normalize_reduction_block_locations(n::Int, block_locations)
     return locations
 end
 
-function _build_sl3_local_obligation(A, R, indices::Vector{Int}, X)
+function _local_obligation_assumptions(ring_profile::Symbol)
+    if ring_profile == :laurent
+        return Symbol[:disjoint_block_support, :determinant_one_core, :laurent_normalized_check_monic_false]
+    end
+
+    return Symbol[:univariate_base_ring, :determinant_one]
+end
+
+function _build_sl3_local_obligation(A, R, indices::Vector{Int}, X, ring_profile::Symbol)
     local_target = _principal_submatrix(A, indices)
     local_factors = try
-        realize_sl3_local(local_target, X)
+        realize_sl3_local(local_target, X; check_monic = ring_profile != :laurent)
     catch err
         err isa InterruptException && rethrow()
         _throw_staged_sln_to_sl3_failure("failed to solve local SL_3 obligation on block $(indices)")
@@ -136,12 +145,18 @@ function _build_sl3_local_obligation(A, R, indices::Vector{Int}, X)
         copy(indices),
         R,
         local_target,
-        Symbol[:univariate_base_ring, :determinant_one],
+        _local_obligation_assumptions(ring_profile),
         embedded_target,
         local_factors,
         embedded_factors,
         reassembly_data,
     )
+end
+
+function _expected_obligation_assumptions(R)
+    return _is_laurent_polynomial_ring(R) ?
+        Symbol[:disjoint_block_support, :determinant_one_core, :laurent_normalized_check_monic_false] :
+        Symbol[:univariate_base_ring, :determinant_one]
 end
 
 function _is_identity_local_block(A, R, indices::Vector{Int})::Bool
@@ -260,7 +275,7 @@ end
 function _verify_sl3_local_obligation(obligation::SL3LocalObligation, normalized_matrix, R, n::Int)::Bool
     try
         _same_base_ring(obligation.ring, R) || return false
-        obligation.required_assumptions == Symbol[:univariate_base_ring, :determinant_one] || return false
+        obligation.required_assumptions == _expected_obligation_assumptions(R) || return false
 
         target_local_matrix = _principal_submatrix(normalized_matrix, obligation.block_location)
         target_local_matrix == obligation.target_local_matrix || return false

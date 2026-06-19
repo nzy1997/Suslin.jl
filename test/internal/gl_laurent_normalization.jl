@@ -155,15 +155,8 @@ end
         zero(R) one(R) zero(R);
         zero(R) zero(R) one(R)
     ])
-    sl3_err = try
-        elementary_factorization(normalized_laurent_sl3)
-        nothing
-    catch caught
-        caught
-    end
-    @test sl3_err isa ArgumentError
-    @test occursin("Laurent GL_n normalization boundary", sprint(showerror, sl3_err))
-    @test occursin("Laurent SL_n reduction layer", sprint(showerror, sl3_err))
+    sl3_factors = elementary_factorization(normalized_laurent_sl3)
+    @test verify_factorization(normalized_laurent_sl3, sl3_factors)
 end
 
 @testset "Laurent GL_n defensive classification branches" begin

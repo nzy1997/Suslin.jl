@@ -85,7 +85,7 @@ function elementary_factorization(A)
         )
     end
 
-    if ring_profile == :polynomial && nrows(normalized_A) > 3
+    if nrows(normalized_A) > 3 || ring_profile == :laurent
         reduction = reduce_sln_to_sl3(A)
         verify_factorization(A, reduction.factors) && return reduction.factors
     end
