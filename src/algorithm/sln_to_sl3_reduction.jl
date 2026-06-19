@@ -42,12 +42,13 @@ function _construct_sln_to_sl3_reduction(A, block_locations)
 
     X = _reduction_generator(normalized_R, ring_profile)
     locations = _normalize_reduction_block_locations(n, block_locations)
-    obligations = [
-        _build_sl3_local_obligation(normalized_A, normalized_R, indices, X)
-        for indices in locations
-    ]
+    obligations = SL3LocalObligation[]
+    for indices in locations
+        _is_identity_local_block(normalized_A, normalized_R, indices) && continue
+        push!(obligations, _build_sl3_local_obligation(normalized_A, normalized_R, indices, X))
+    end
 
-    factors = compose_factor_sequences((obligation.embedded_factors for obligation in obligations)...)
+    factors = _compose_obligation_factors(obligations, normalized_R, n)
     product = _factor_product(factors, normalized_R, n)
     product == normalized_A || _throw_staged_sln_to_sl3_failure("embedded local SL_3 obligations did not exactly reconstruct the normalized matrix")
 
@@ -143,9 +144,26 @@ function _build_sl3_local_obligation(A, R, indices::Vector{Int}, X)
     )
 end
 
+function _is_identity_local_block(A, R, indices::Vector{Int})::Bool
+    return _principal_submatrix(A, indices) == identity_matrix(R, 3)
+end
+
 function _principal_submatrix(A, indices::Vector{Int})
     R = base_ring(A)
     return matrix(R, [A[row, col] for row in indices, col in indices])
+end
+
+function _compose_obligation_factors(obligations::AbstractVector, R, n::Int)
+    isempty(obligations) && return typeof(identity_matrix(R, n))[]
+    return compose_factor_sequences((obligation.embedded_factors for obligation in obligations)...)
+end
+
+function _same_factor_sequence(left, right)::Bool
+    length(left) == length(right) || return false
+    for idx in eachindex(left)
+        left[idx] == right[idx] || return false
+    end
+    return true
 end
 
 function _factor_product(factors, R, n::Int)
@@ -189,14 +207,24 @@ function _sln_to_sl3_reduction_verification(reduction::SLNToSL3Reduction)
         err isa InterruptException && rethrow()
         false
     end
+    obligation_factors_ok = try
+        _same_factor_sequence(
+            _compose_obligation_factors(reduction.obligations, reduction.ring, reduction.size),
+            reduction.factors,
+        )
+    catch err
+        err isa InterruptException && rethrow()
+        false
+    end
 
     return (
         obligations_ok = obligations_ok,
+        obligation_factors_ok = obligation_factors_ok,
         factors_ok = factors_ok,
         product_ok = product_ok,
         normalization_ok = normalization_ok,
         original_reconstruction_ok = original_reconstruction_ok,
-        overall_ok = obligations_ok && factors_ok && product_ok && normalization_ok && original_reconstruction_ok,
+        overall_ok = obligations_ok && obligation_factors_ok && factors_ok && product_ok && normalization_ok && original_reconstruction_ok,
     )
 end
 
