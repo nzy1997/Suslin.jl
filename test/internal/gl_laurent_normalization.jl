@@ -163,3 +163,19 @@ end
     @test occursin("Laurent matrices are normalized at the GL_n boundary", sprint(showerror, sl3_err))
     @test occursin("SL_n factorization core currently supports only polynomial rings", sprint(showerror, sl3_err))
 end
+
+@testset "Laurent GL_n defensive classification branches" begin
+    @test Suslin._laurent_monomial_metadata(ZZ(1)) === nothing
+    @test !Suslin._is_supported_laurent_monomial_unit((;
+        monomial_coefficient = Suslin._is_supported_laurent_monomial_unit,
+    ))
+
+    Z9, _ = residue_ring(ZZ, 9)
+    S, (u,) = laurent_polynomial_ring(Z9, ["u"])
+    zero_divisor_nonunit = matrix(S, [one(S) + S(Z9(2)) * u;;])
+    @test classify_laurent_determinant(zero_divisor_nonunit).classification == :non_unit
+
+    R, (x,) = suslin_laurent_polynomial_ring(GF(2), ["x"])
+    monomial_unit = matrix(R, [x;;])
+    @test !verify_laurent_gl_normalization(monomial_unit, (;))
+end
