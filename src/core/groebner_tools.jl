@@ -70,15 +70,12 @@ struct QuillenPatch
 end
 
 function _require_supported_quillen_ring(R)
-    _is_laurent_polynomial_ring(R) && return R
-    try
-        gens(R)
-        coefficient_ring(R)
-        return R
-    catch err
-        err isa MethodError || err isa ErrorException || rethrow()
+    (_is_laurent_polynomial_ring(R) || R isa MPolyRing) ||
         throw(ArgumentError("target base ring must be a supported exact polynomial or Laurent polynomial ring"))
-    end
+
+    Oscar.is_exact_type(typeof(zero(coefficient_ring(R)))) ||
+        throw(ArgumentError("target base ring must be a supported exact polynomial or Laurent polynomial ring"))
+    return R
 end
 
 function _require_quillen_target(target, n::Int)
@@ -106,6 +103,15 @@ function _coerced_certificate_denominators(certificate::LocalCertificate, R)
     return [_coerce_into_ring(R, denominator, "certificate denominator") for denominator in certificate.denominators]
 end
 
+function _validate_certificate_denominator_pairing(certificate::LocalCertificate, certificate_denominators, denominator, row::Int, col::Int)
+    for (index, certificate_denominator) in zip(certificate.indices, certificate_denominators)
+        if (index == row || index == col) && certificate_denominator != denominator
+            throw(ArgumentError("local contribution denominator must match the certificate denominator paired with each correction index"))
+        end
+    end
+    return nothing
+end
+
 function _normalize_quillen_contribution(contribution::QuillenLocalContribution, R, n::Int)
     correction = contribution.correction
     row, col = _require_elementary_indices(n, correction.row, correction.col)
@@ -114,8 +120,7 @@ function _normalize_quillen_contribution(contribution::QuillenLocalContribution,
 
     denominator = _coerce_into_ring(R, contribution.denominator, "denominator")
     certificate_denominators = _coerced_certificate_denominators(contribution.certificate, R)
-    any(certificate_denominator -> certificate_denominator == denominator, certificate_denominators) ||
-        throw(ArgumentError("local contribution denominator must be present in its certificate denominators"))
+    _validate_certificate_denominator_pairing(contribution.certificate, certificate_denominators, denominator, row, col)
 
     coverage_multiplier = _coerce_into_ring(R, contribution.coverage_multiplier, "coverage multiplier")
     entry = _coerce_into_ring(R, correction.entry, "correction entry")
@@ -167,7 +172,11 @@ function _same_quillen_denominator_data(left, right)::Bool
 end
 
 function _quillen_patch_verification(R, n::Int, denominator_data, local_contributions, factors, product, target)
-    expected_denominator_data = _quillen_denominator_data(local_contributions)
+    normalized_local_contributions = [
+        _normalize_quillen_contribution(contribution, R, n)
+        for contribution in local_contributions
+    ]
+    expected_denominator_data = _quillen_denominator_data(normalized_local_contributions)
     denominator_data_ok = _same_quillen_denominator_data(denominator_data, expected_denominator_data)
     coverage_sum = _quillen_coverage_sum(R, denominator_data)
     coverage_ok = coverage_sum == one(R)

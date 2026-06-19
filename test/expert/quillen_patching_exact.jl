@@ -99,6 +99,62 @@ end
     @test_throws ArgumentError construct_quillen_patch(n, X, certificate_mismatch; target)
     @test_throws ArgumentError construct_quillen_patch(n, one(R), contributions; target)
 
+    certificate_pair_mismatch = [
+        QuillenLocalContribution(
+            LocalCertificate([1, 2, 3], [r + 1, r, r]),
+            r,
+            one(R),
+            QuillenElementaryCorrection(1, 3, X + r),
+        ),
+        QuillenLocalContribution(
+            LocalCertificate([1, 3], [-r, -r]),
+            -r,
+            one(R),
+            QuillenElementaryCorrection(1, 3, X + r),
+        ),
+    ]
+    pair_target = elementary_matrix(n, 1, 3, X + r, R)
+    @test_throws ArgumentError construct_quillen_patch(n, X, certificate_pair_mismatch; target = pair_target)
+
+    tampered_local_contributions = copy(patch.local_contributions)
+    tampered_local_contributions[1] = QuillenLocalContribution(
+        LocalCertificate([1, 2, 3], [r + 1, r, r]),
+        tampered_local_contributions[1].denominator,
+        tampered_local_contributions[1].coverage_multiplier,
+        QuillenElementaryCorrection(1, 3, tampered_local_contributions[1].correction.entry),
+    )
+    tampered_certificate_patch = QuillenPatch(
+        patch.ring,
+        patch.size,
+        patch.substitution_variable,
+        patch.denominator_data,
+        tampered_local_contributions,
+        patch.factors,
+        patch.product,
+        patch.target,
+        patch.verification,
+    )
+    @test !verify_quillen_patch(tampered_certificate_patch)
+
+    RR, (Y, s) = Oscar.polynomial_ring(RealField(), ["Y", "s"])
+    inexact_target_entry = Y + 1
+    inexact_target = elementary_matrix(n, 1, 2, inexact_target_entry, RR)
+    inexact_contributions = [
+        QuillenLocalContribution(
+            LocalCertificate([1, 2], [s, s]),
+            s,
+            one(RR),
+            QuillenElementaryCorrection(1, 2, inexact_target_entry),
+        ),
+        QuillenLocalContribution(
+            LocalCertificate([1, 2], [one(RR) - s, one(RR) - s]),
+            one(RR) - s,
+            one(RR),
+            QuillenElementaryCorrection(1, 2, inexact_target_entry),
+        ),
+    ]
+    @test_throws ArgumentError construct_quillen_patch(n, Y, inexact_contributions; target = inexact_target)
+
     L, (x, u) = suslin_laurent_polynomial_ring(QQ, ["x", "u"])
     laurent_target_entry = x^-1 + u
     laurent_target = elementary_matrix(n, 2, 3, laurent_target_entry, L)
