@@ -40,14 +40,8 @@ function _laurent_inverse_matrix(M)
     determinant = det(M)
     determinant == zero(R) && throw(ArgumentError("B must be invertible over its Laurent polynomial ring"))
 
-    determinant_inverse = try
-        inv(determinant)
-    catch err
-        if err isa ArgumentError || err isa ErrorException || err isa MethodError
-            throw(ArgumentError("B must have a Laurent-unit determinant"))
-        end
-        rethrow()
-    end
+    is_unit(determinant) || throw(ArgumentError("B must have a Laurent-unit determinant"))
+    determinant_inverse = inv(determinant)
 
     inverse = _adjugate_matrix(M)
     for row in 1:n, col in 1:n

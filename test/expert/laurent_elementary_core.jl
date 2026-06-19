@@ -80,6 +80,16 @@ end
     @test verify_factorization(normality_target, normality_factors)
     @test all(factor -> base_ring(factor) === R, normality_factors)
 
+    one_by_one_unit = matrix(R, [x;;])
+    @test Suslin._laurent_inverse_matrix(one_by_one_unit) * one_by_one_unit == identity_matrix(R, 1)
+
+    non_unit_determinant = matrix(R, [
+        x + 1  0  0;
+        0      1  0;
+        0      0  1
+    ])
+    @test_throws ArgumentError Suslin.realize_conjugate_elementary(non_unit_determinant, 1, 3, one(R))
+
     S, (u, _) = suslin_laurent_polynomial_ring(QQ, ["u", "v"])
     wrong_parent_factor = elementary_matrix(3, 1, 2, u, S)
 
