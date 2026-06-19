@@ -169,8 +169,14 @@ function _embedded_three_block_reduction(column::AbstractVector, R, indices, sub
         push!(elimination_factors, elementary_matrix(n, row, pivot_idx, coeff, R))
     end
 
+    move_factors = typeof(identity_matrix(R, n))[]
+    if pivot_idx != n
+        push!(move_factors, elementary_matrix(n, pivot_idx, n, -one(R), R))
+        push!(move_factors, elementary_matrix(n, n, pivot_idx, one(R), R))
+    end
+
     return _checked_reduction_factors(
-        vcat(elimination_factors, embedded_factors),
+        vcat(move_factors, elimination_factors, embedded_factors),
         column,
         R,
         "embedded 3-entry reduction",

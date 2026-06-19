@@ -28,6 +28,12 @@ function assert_reduces_to_last_unit(v, R)
     return factors
 end
 
+function assert_factors_reduce_to_last_unit(factors, v, R)
+    @test factors !== nothing
+    @test exact_apply_factors(factors, v, R) == exact_target_column(R, length(v))
+    return factors
+end
+
 function captured_reduction_error(v, R)
     try
         Suslin.reduce_unimodular_column(v, R)
@@ -63,6 +69,7 @@ end
     ]
     @test Suslin.is_unimodular_column(length8, R)
     assert_reduces_to_last_unit(length8, R)
+    assert_factors_reduce_to_last_unit(Suslin._reduce_via_supported_three_block(length8, R), length8, R)
 
     witness_slice = [x, y, x + one(R)]
     length12 = [
@@ -97,6 +104,26 @@ end
 
     @test Suslin.is_unimodular_column(v, R)
     assert_reduces_to_last_unit(v, R)
+
+    normalized = [
+        x^-1 + x^-2 * y^2,
+        x^-1 * y + x^-1 + x^-2,
+        one(R) + x^-1 * y + x^-2 * y + x^-2,
+        x^-1 + x^-2 * y,
+        x^-1 * y + x^-2 * y^2,
+        x^-2 * y + x^-1 * y^2,
+    ]
+    @test !any(is_unit, normalized)
+    @test Suslin.is_unimodular_column(normalized, R)
+    assert_reduces_to_last_unit(normalized, R)
+
+    non_unimodular_normalized = [x + y, x * y + y, x^2 + x * y]
+    @test !Suslin.is_unimodular_column(non_unimodular_normalized, R)
+    @test Suslin._reduce_laurent_unimodular_column(non_unimodular_normalized, R) === nothing
+
+    unsupported_normalized = [x + y, x * y + x + one(R), x^2 + x * y + y^2 + one(R)]
+    @test Suslin.is_unimodular_column(unsupported_normalized, R)
+    @test Suslin._reduce_laurent_unimodular_column(unsupported_normalized, R) === nothing
 end
 
 @testset "exact unimodular reduction preserves old small cases" begin
@@ -133,4 +160,12 @@ end
     @test unsupported_err isa ArgumentError
     @test occursin("unsupported exact unimodular column reduction", sprint(showerror, unsupported_err))
     @test !occursin("not unimodular", sprint(showerror, unsupported_err))
+
+    short_err = captured_reduction_error([one(R), zero(R)], R)
+    @test short_err isa ArgumentError
+    @test occursin("length at least 3", sprint(showerror, short_err))
+
+    @test !Suslin._has_at_least_two_generators(:not_a_ring)
+    @test Suslin._reduce_via_supported_three_block([x, y, x + one(R)], R) === nothing
+    @test Suslin._reduce_via_supported_three_block([x, x * y, y, x^2 * y], R) === nothing
 end
