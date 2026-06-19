@@ -69,6 +69,10 @@ end
     deleteat!(tampered_obligations.obligations, 1)
     @test !verify_sln_to_sl3_reduction(tampered_obligations)
 
+    tampered_metadata = reduce_sln_to_sl3(matrix6)
+    tampered_metadata.obligations[1].block_location[1] = 2
+    @test !verify_sln_to_sl3_reduction(tampered_metadata)
+
     dropped6 = reduction6.obligations[1].embedded_factors
     @test !verify_factorization(matrix6, dropped6)
 

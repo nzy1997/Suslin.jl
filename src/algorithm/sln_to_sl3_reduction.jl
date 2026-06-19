@@ -123,13 +123,13 @@ function _build_sl3_local_obligation(A, R, indices::Vector{Int}, X)
     embedded_target = block_embedding(local_target, nrows(A), indices)
     embedded_factors = embed_factor_sequence(local_factors, nrows(A), indices)
 
-    local_product = _factor_product(local_factors, R, 3)
-    embedded_product = _factor_product(embedded_factors, R, nrows(A))
-    reassembly_data = (
-        local_product = local_product,
-        local_product_ok = local_product == local_target,
-        embedded_product = embedded_product,
-        embedded_product_ok = embedded_product == embedded_target,
+    reassembly_data = _sl3_obligation_reassembly_data(
+        local_factors,
+        embedded_factors,
+        R,
+        nrows(A),
+        local_target,
+        embedded_target,
     )
 
     return SL3LocalObligation(
@@ -166,6 +166,17 @@ function _same_factor_sequence(left, right)::Bool
     return true
 end
 
+function _sl3_obligation_reassembly_data(local_factors, embedded_factors, R, n::Int, local_target, embedded_target)
+    local_product = _factor_product(local_factors, R, 3)
+    embedded_product = _factor_product(embedded_factors, R, n)
+    return (
+        local_product = local_product,
+        local_product_ok = local_product == local_target,
+        embedded_product = embedded_product,
+        embedded_product_ok = embedded_product == embedded_target,
+    )
+end
+
 function _factor_product(factors, R, n::Int)
     product = identity_matrix(R, n)
     for factor in factors
@@ -175,8 +186,25 @@ function _factor_product(factors, R, n::Int)
 end
 
 function _sln_to_sl3_reduction_verification(reduction::SLNToSL3Reduction)
+    obligation_locations_ok = try
+        _normalize_reduction_block_locations(
+            reduction.size,
+            [obligation.block_location for obligation in reduction.obligations],
+        )
+        true
+    catch err
+        err isa InterruptException && rethrow()
+        false
+    end
     obligations_ok = try
-        all(_verify_sl3_local_obligation, reduction.obligations)
+        all(obligation -> _verify_sl3_local_obligation(
+                obligation,
+                reduction.normalized_matrix,
+                reduction.ring,
+                reduction.size,
+            ),
+            reduction.obligations,
+        )
     catch err
         err isa InterruptException && rethrow()
         false
@@ -218,21 +246,42 @@ function _sln_to_sl3_reduction_verification(reduction::SLNToSL3Reduction)
     end
 
     return (
+        obligation_locations_ok = obligation_locations_ok,
         obligations_ok = obligations_ok,
         obligation_factors_ok = obligation_factors_ok,
         factors_ok = factors_ok,
         product_ok = product_ok,
         normalization_ok = normalization_ok,
         original_reconstruction_ok = original_reconstruction_ok,
-        overall_ok = obligations_ok && obligation_factors_ok && factors_ok && product_ok && normalization_ok && original_reconstruction_ok,
+        overall_ok = obligation_locations_ok && obligations_ok && obligation_factors_ok && factors_ok && product_ok && normalization_ok && original_reconstruction_ok,
     )
 end
 
-function _verify_sl3_local_obligation(obligation::SL3LocalObligation)::Bool
+function _verify_sl3_local_obligation(obligation::SL3LocalObligation, normalized_matrix, R, n::Int)::Bool
     try
+        _same_base_ring(obligation.ring, R) || return false
+        obligation.required_assumptions == Symbol[:univariate_base_ring, :determinant_one] || return false
+
+        target_local_matrix = _principal_submatrix(normalized_matrix, obligation.block_location)
+        target_local_matrix == obligation.target_local_matrix || return false
+
+        embedded_target = block_embedding(target_local_matrix, n, obligation.block_location)
+        embedded_target == obligation.embedded_target || return false
+
         local_product = _factor_product(obligation.local_factors, obligation.ring, 3)
-        embedded_product = _factor_product(obligation.embedded_factors, obligation.ring, nrows(obligation.embedded_target))
-        return local_product == obligation.target_local_matrix && embedded_product == obligation.embedded_target
+        embedded_product = _factor_product(obligation.embedded_factors, obligation.ring, n)
+        reassembly_data = _sl3_obligation_reassembly_data(
+            obligation.local_factors,
+            obligation.embedded_factors,
+            obligation.ring,
+            n,
+            obligation.target_local_matrix,
+            obligation.embedded_target,
+        )
+
+        return local_product == obligation.target_local_matrix &&
+               embedded_product == obligation.embedded_target &&
+               reassembly_data == obligation.reassembly_data
     catch err
         err isa InterruptException && rethrow()
         return false
