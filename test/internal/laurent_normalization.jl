@@ -97,4 +97,30 @@ end
     )
     @test_throws ArgumentError lift_laurent_normalization(laurent_ring_tampered)
     @test !verify_laurent_normalization(column, laurent_ring_tampered)
+
+    invalid_polynomial_ring_metadata = merge(column_normalization.metadata, (; polynomial_ring = 42))
+    invalid_polynomial_ring_tampered = (;
+        normalized_object = column_normalization.normalized_object,
+        metadata = invalid_polynomial_ring_metadata,
+    )
+    @test_throws ArgumentError lift_laurent_normalization(invalid_polynomial_ring_tampered)
+
+    @test_throws ArgumentError normalize_laurent_object(one(R))
+
+    determinant_on_column_metadata = merge(
+        column_normalization.metadata,
+        (; determinant_shift_exponents = (2, 0)),
+    )
+    determinant_on_column_tampered = (;
+        normalized_object = column_normalization.normalized_object,
+        metadata = determinant_on_column_metadata,
+    )
+    @test_throws ArgumentError lift_laurent_normalization(determinant_on_column_tampered)
+
+    unsupported_kind_metadata = merge(vector_normalization.metadata, (; kind = :scalar))
+    unsupported_kind_tampered = (;
+        normalized_object = vector_normalization.normalized_object,
+        metadata = unsupported_kind_metadata,
+    )
+    @test_throws ArgumentError lift_laurent_normalization(unsupported_kind_tampered)
 end
