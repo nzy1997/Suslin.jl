@@ -5,6 +5,9 @@ using Oscar
 export suslin_polynomial_ring
 export suslin_laurent_polynomial_ring
 export elementary_matrix
+export block_embedding
+export embed_factor_sequence
+export compose_factor_sequences
 export elementary_factorization
 export realize_cohn_type
 export realize_conjugate_elementary
