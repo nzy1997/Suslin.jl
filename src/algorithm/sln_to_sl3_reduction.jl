@@ -38,6 +38,8 @@ function _construct_sln_to_sl3_reduction(A, block_locations)
 
     if ring_profile == :polynomial
         _require_polynomial_sl_determinant(normalized_A)
+    elseif normalization.determinant_classification != :one
+        _throw_staged_sln_to_sl3_failure("Laurent determinant correction $(normalization.determinant_classification) cannot yet be represented by elementary reduction factors")
     end
 
     X = _reduction_generator(normalized_R, ring_profile)

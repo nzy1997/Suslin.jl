@@ -183,6 +183,16 @@ end
     @test laurent_reduction.verification.overall_ok
     @test laurent_reduction.product == laurent_identity
 
+    t = gen(L, 1)
+    laurent_corrected = matrix(L, [
+        t zero(L) zero(L);
+        zero(L) one(L) zero(L);
+        zero(L) zero(L) one(L)
+    ])
+    corrected_err = _issue15_captured_error(() -> reduce_sln_to_sl3(laurent_corrected))
+    @test corrected_err isa ArgumentError
+    @test occursin("Laurent determinant correction", sprint(showerror, corrected_err))
+
     malformed_local = identity_matrix(R, 6)
     malformed_local[1, 3] = X
     malformed_local_err = _issue15_captured_error(() -> reduce_sln_to_sl3(malformed_local))
