@@ -20,6 +20,16 @@ using Oscar
     @test isdefined(Suslin, :verify_laurent_gl_normalization)
     @test isdefined(Suslin, :verify_laurent_normalization)
     @test isdefined(Suslin, :verify_factorization)
+    @test isdefined(Suslin, :LocalCertificate)
+    @test isdefined(Suslin, :common_denominator_factor)
+    @test isdefined(Suslin, :patched_substitution)
+    @test isdefined(Suslin, :QuillenDenominatorData)
+    @test isdefined(Suslin, :QuillenElementaryCorrection)
+    @test isdefined(Suslin, :QuillenLocalContribution)
+    @test isdefined(Suslin, :QuillenPatchVerification)
+    @test isdefined(Suslin, :QuillenPatch)
+    @test isdefined(Suslin, :construct_quillen_patch)
+    @test isdefined(Suslin, :verify_quillen_patch)
     @test Suslin.classify_laurent_determinant === classify_laurent_determinant
     @test Suslin.elementary_matrix === elementary_matrix
     @test Suslin.block_embedding === block_embedding
@@ -36,6 +46,16 @@ using Oscar
     @test Suslin.verify_laurent_gl_normalization === verify_laurent_gl_normalization
     @test Suslin.verify_laurent_normalization === verify_laurent_normalization
     @test Suslin.verify_factorization === verify_factorization
+    @test Suslin.LocalCertificate === LocalCertificate
+    @test Suslin.common_denominator_factor === common_denominator_factor
+    @test Suslin.patched_substitution === patched_substitution
+    @test Suslin.QuillenDenominatorData === QuillenDenominatorData
+    @test Suslin.QuillenElementaryCorrection === QuillenElementaryCorrection
+    @test Suslin.QuillenLocalContribution === QuillenLocalContribution
+    @test Suslin.QuillenPatchVerification === QuillenPatchVerification
+    @test Suslin.QuillenPatch === QuillenPatch
+    @test Suslin.construct_quillen_patch === construct_quillen_patch
+    @test Suslin.verify_quillen_patch === verify_quillen_patch
 
     R, (X,) = Oscar.polynomial_ring(QQ, ["X"])
     A = matrix(R, [
