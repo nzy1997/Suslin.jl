@@ -47,7 +47,7 @@ end
         x^2 + x * y + y + one(R),
     ]
 
-    length6 = [zero(R), x^2, x * y + one(R), zero(R), zero(R), zero(R)]
+    length6 = vcat(hard_slice, [x^2, x * y, y^2 + x])
     @test Suslin.is_unimodular_column(length6, R)
     assert_reduces_to_last_unit(length6, R)
 
@@ -131,6 +131,6 @@ end
     @test Suslin.is_unimodular_column(unsupported, R)
     unsupported_err = captured_reduction_error(unsupported, R)
     @test unsupported_err isa ArgumentError
-    @test occursin("reduce_unimodular_column currently supports only small unimodular columns reducible by direct unit witnesses or by a finite monicity-normalization search in the last variable", sprint(showerror, unsupported_err))
+    @test occursin("unsupported exact unimodular column reduction", sprint(showerror, unsupported_err))
     @test !occursin("not unimodular", sprint(showerror, unsupported_err))
 end
