@@ -81,13 +81,13 @@ end
     target = elementary_matrix(n, 1, 2, target_entry, R)
     contributions = [
         QuillenLocalContribution(
-            LocalCertificate([1, 2], [r]),
+            LocalCertificate([1, 2], [r, r]),
             r,
             one(R),
             QuillenElementaryCorrection(1, 2, target_entry),
         ),
         QuillenLocalContribution(
-            LocalCertificate([1, 2], [one(R) - r]),
+            LocalCertificate([1, 2], [one(R) - r, one(R) - r]),
             one(R) - r,
             one(R),
             QuillenElementaryCorrection(1, 2, target_entry),
@@ -120,12 +120,15 @@ end
     @test [data.denominator for data in patch.denominator_data] == [r, one(R) - r]
     @test [data.coverage_multiplier for data in patch.denominator_data] == [one(R), one(R)]
     @test [contribution.certificate.indices for contribution in patch.local_contributions] == [[1, 2], [1, 2]]
-    @test [only(contribution.certificate.denominators) for contribution in patch.local_contributions] == [r, one(R) - r]
+    @test [contribution.certificate.denominators for contribution in patch.local_contributions] == [
+        [r, r],
+        [one(R) - r, one(R) - r],
+    ]
 
     uncovered_contributions = [
         contributions[1],
         QuillenLocalContribution(
-            LocalCertificate([1, 2], [one(R) - r]),
+            LocalCertificate([1, 2], [one(R) - r, one(R) - r]),
             one(R) - r,
             r,
             QuillenElementaryCorrection(1, 2, target_entry),
@@ -150,7 +153,7 @@ end
 
     certificate_mismatch = [
         QuillenLocalContribution(
-            LocalCertificate([1, 2], [r + 1]),
+            LocalCertificate([1, 2], [r + 1, r + 1]),
             r,
             one(R),
             QuillenElementaryCorrection(1, 2, target_entry),
@@ -165,13 +168,13 @@ end
     laurent_target = elementary_matrix(n, 2, 3, laurent_target_entry, L)
     laurent_contributions = [
         QuillenLocalContribution(
-            LocalCertificate([2, 3], [u]),
+            LocalCertificate([2, 3], [u, u]),
             u,
             one(L),
             QuillenElementaryCorrection(2, 3, laurent_target_entry),
         ),
         QuillenLocalContribution(
-            LocalCertificate([2, 3], [one(L) - u]),
+            LocalCertificate([2, 3], [one(L) - u, one(L) - u]),
             one(L) - u,
             one(L),
             QuillenElementaryCorrection(2, 3, laurent_target_entry),

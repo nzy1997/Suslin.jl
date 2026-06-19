@@ -6,8 +6,8 @@ struct LocalCertificate
     function LocalCertificate(indices::AbstractVector{<:Integer}, denominators::AbstractVector)
         Base.require_one_based_indexing(indices)
         Base.require_one_based_indexing(denominators)
-        (length(denominators) == 1 || length(indices) == length(denominators)) ||
-            throw(ArgumentError("indices and denominators must have the same length unless a single denominator covers all indices"))
+        length(indices) == length(denominators) ||
+            throw(ArgumentError("indices and denominators must have the same length"))
         return new(Int.(collect(indices)), collect(denominators))
     end
 end
