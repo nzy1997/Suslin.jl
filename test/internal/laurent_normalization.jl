@@ -88,4 +88,13 @@ end
     )
     @test lift_laurent_normalization(tampered) != column
     @test !verify_laurent_normalization(column, tampered)
+
+    laurent_normalized_column = only(column_normalization.metadata.shift_monomials) * column
+    laurent_ring_metadata = merge(column_normalization.metadata, (; polynomial_ring = R))
+    laurent_ring_tampered = (;
+        normalized_object = laurent_normalized_column,
+        metadata = laurent_ring_metadata,
+    )
+    @test_throws ArgumentError lift_laurent_normalization(laurent_ring_tampered)
+    @test !verify_laurent_normalization(column, laurent_ring_tampered)
 end

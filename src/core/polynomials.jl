@@ -9,6 +9,24 @@ function _ordinary_polynomial_ring_for_laurent(R)
     return P
 end
 
+function _require_ordinary_polynomial_ring_for_laurent(P, R)
+    if _is_laurent_polynomial_ring(P)
+        throw(ArgumentError("metadata polynomial ring must be an ordinary polynomial ring, not a Laurent polynomial ring"))
+    end
+
+    try
+        ngens(P) == ngens(R) || throw(ArgumentError("metadata polynomial ring generator count does not match the Laurent ring"))
+        coefficient_ring(P) == coefficient_ring(R) || throw(ArgumentError("metadata polynomial ring coefficient ring does not match the Laurent ring"))
+        Tuple(string.(symbols(P))) == _laurent_normalization_variable_names(R) ||
+            throw(ArgumentError("metadata polynomial ring variable names do not match the Laurent ring"))
+        return P
+    catch err
+        err isa ArgumentError && rethrow()
+        err isa MethodError || err isa ErrorException || rethrow()
+        throw(ArgumentError("metadata polynomial ring must be an ordinary polynomial ring compatible with the Laurent ring"))
+    end
+end
+
 function _laurent_monomial_from_exponents(R, exponent_vector)
     length(exponent_vector) == ngens(R) || throw(ArgumentError("shift exponent vector length must match the Laurent ring generators"))
     term = one(R)
@@ -147,6 +165,7 @@ function _require_laurent_normalization_metadata(metadata)
     end
 
     R = _require_laurent_polynomial_ring(metadata.laurent_ring; label="metadata Laurent ring")
+    _require_ordinary_polynomial_ring_for_laurent(metadata.polynomial_ring, R)
     metadata.variable_names == _laurent_normalization_variable_names(R) || throw(ArgumentError("normalization metadata variable names do not match the Laurent ring"))
     metadata.column_shifts isa Tuple || throw(ArgumentError("normalization metadata column shifts must be a tuple"))
 
