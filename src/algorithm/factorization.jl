@@ -32,7 +32,7 @@ function verify_factorization(A, factors)::Bool
     for factor in factors
         nrows(factor) == nrows(A) || throw(ArgumentError("all factors must have the same size as A"))
         ncols(factor) == ncols(A) || throw(ArgumentError("all factors must have the same size as A"))
-        base_ring(factor) == R || base_ring(factor) === R || throw(ArgumentError("all factors must lie in the same base ring as A"))
+        _same_base_ring(base_ring(factor), R) || throw(ArgumentError("all factors must lie in the same base ring as A"))
         product *= factor
     end
 
