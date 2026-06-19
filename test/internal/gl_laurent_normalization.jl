@@ -134,7 +134,7 @@ end
     end
     @test err isa ArgumentError
     @test occursin("Laurent GL_n normalization boundary", sprint(showerror, err))
-    @test occursin("Laurent SL_n reduction layer", sprint(showerror, err))
+    @test occursin("determinant-correction/driver path cannot yet return elementary factors that reconstruct the original input", sprint(showerror, err))
 
     non_unit = matrix(R, [
         x + one(R) zero(R) zero(R);
@@ -155,15 +155,8 @@ end
         zero(R) one(R) zero(R);
         zero(R) zero(R) one(R)
     ])
-    sl3_err = try
-        elementary_factorization(normalized_laurent_sl3)
-        nothing
-    catch caught
-        caught
-    end
-    @test sl3_err isa ArgumentError
-    @test occursin("Laurent GL_n normalization boundary", sprint(showerror, sl3_err))
-    @test occursin("Laurent SL_n reduction layer", sprint(showerror, sl3_err))
+    sl3_factors = elementary_factorization(normalized_laurent_sl3)
+    @test verify_factorization(normalized_laurent_sl3, sl3_factors)
 end
 
 @testset "Laurent GL_n defensive classification branches" begin

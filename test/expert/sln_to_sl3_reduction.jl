@@ -175,9 +175,23 @@ end
     reduction = reduce_sln_to_sl3(matrix6)
 
     L, _ = suslin_laurent_polynomial_ring(QQ, ["t"])
-    laurent_err = _issue15_captured_error(() -> reduce_sln_to_sl3(identity_matrix(L, 3)))
-    @test laurent_err isa ArgumentError
-    @test occursin("Laurent SL_n to local SL_3 reduction is not yet implemented", sprint(showerror, laurent_err))
+    laurent_identity = identity_matrix(L, 3)
+    laurent_reduction = reduce_sln_to_sl3(laurent_identity)
+    @test laurent_reduction isa SLNToSL3Reduction
+    @test length(laurent_reduction.obligations) == 0
+    @test verify_sln_to_sl3_reduction(laurent_reduction)
+    @test laurent_reduction.verification.overall_ok
+    @test laurent_reduction.product == laurent_identity
+
+    t = gen(L, 1)
+    laurent_corrected = matrix(L, [
+        t zero(L) zero(L);
+        zero(L) one(L) zero(L);
+        zero(L) zero(L) one(L)
+    ])
+    corrected_err = _issue15_captured_error(() -> reduce_sln_to_sl3(laurent_corrected))
+    @test corrected_err isa ArgumentError
+    @test occursin("Laurent determinant correction", sprint(showerror, corrected_err))
 
     malformed_local = identity_matrix(R, 6)
     malformed_local[1, 3] = X

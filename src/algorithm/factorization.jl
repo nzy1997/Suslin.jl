@@ -52,7 +52,7 @@ function _throw_staged_factorization_failure(A, ring_profile::Symbol, normalizat
 
     if ring_profile == :laurent
         classification = normalization.determinant_classification
-        throw(ArgumentError("Laurent GL_n normalization boundary succeeded with determinant classification $(classification), but the Laurent SL_n reduction layer is not yet implemented"))
+        throw(ArgumentError("Laurent GL_n normalization boundary succeeded with determinant classification $(classification), but the determinant-correction/driver path cannot yet return elementary factors that reconstruct the original input"))
     end
 
     if n > 3
@@ -85,7 +85,8 @@ function elementary_factorization(A)
         )
     end
 
-    if ring_profile == :polynomial && nrows(normalized_A) > 3
+    if (ring_profile == :polynomial && nrows(normalized_A) > 3) ||
+            (ring_profile == :laurent && normalization.determinant_classification == :one)
         reduction = reduce_sln_to_sl3(A)
         verify_factorization(A, reduction.factors) && return reduction.factors
     end

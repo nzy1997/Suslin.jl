@@ -76,8 +76,8 @@ end
                 caught
             end
             @test err isa ArgumentError
-            @test occursin("Laurent GL_n normalization boundary", sprint(showerror, err))
-            @test occursin("Laurent SL_n reduction layer", sprint(showerror, err))
+            @test occursin("staged SL_n to local SL_3 reduction failure", sprint(showerror, err))
+            @test occursin("failed to solve local SL_3 obligation", sprint(showerror, err))
         end
 
         qinv = only(filter(entry -> entry.toricbuilder_role == "Qinv", fixture.cases))
