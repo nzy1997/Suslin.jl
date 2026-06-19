@@ -224,7 +224,7 @@ end
 
     @test any(case -> case.kind == :toricbuilder_normalized_contract, cases)
     @test any(case -> case.size == (40, 40), cases)
-    @test any(case -> case.size[1] > 40, cases)
+    @test any(case -> case.size == (48, 48), cases)
 
     for case in cases
         if case.expected_path == :normalized_contract
@@ -258,7 +258,9 @@ Run:
 julia --project=. -e 'include("test/public/laurent_large_acceptance.jl")'
 ```
 
-Expected: FAIL because `reduce_sln_to_sl3` or `elementary_factorization` still reports `Laurent SL_n to local SL_3 reduction is not yet implemented` for the 40x40 Laurent case.
+Expected: FAIL because `reduce_sln_to_sl3` or `elementary_factorization`
+still reports a staged `SL_n` to local `SL_3` reduction failure for the
+40x40 Laurent case.
 
 - [ ] **Step 5: Commit the failing harness**
 
