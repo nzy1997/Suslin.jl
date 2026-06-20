@@ -18,6 +18,14 @@ function _issue41_failure_diagnostics(diagnostic)
     return filter(block -> block.status == :failure, diagnostic.block_diagnostics)
 end
 
+struct Issue41DetErrorMatrix
+    ring
+    error
+end
+
+Oscar.base_ring(A::Issue41DetErrorMatrix) = A.ring
+Oscar.det(A::Issue41DetErrorMatrix) = throw(A.error)
+
 function _issue41_assert_issue38_diagnostic(core)
     diagnostic = diagnose_sln_to_sl3_reduction(core)
     @test diagnostic isa SLNToSL3ReductionDiagnostic
@@ -114,6 +122,67 @@ end
     @test diagnostic.partition_search.attempted_count == 0
     @test diagnostic.message !== nothing
     @test occursin("unsupported Laurent GL_n determinant", diagnostic.message)
+end
+
+@testset "Laurent determinant correction diagnostic uses stable failure code" begin
+    L, (t,) = suslin_laurent_polynomial_ring(QQ, ["t"])
+    A = diagonal_matrix(L, [t, one(L), one(L)])
+
+    diagnostic = diagnose_sln_to_sl3_reduction(A)
+    @test diagnostic.status == :failure
+    @test diagnostic.failure_code == :determinant_failure
+    @test diagnostic.determinant_status == :determinant_requires_correction
+    @test diagnostic.determinant_classification == :laurent_monomial_unit
+    @test occursin("Laurent determinant correction", diagnostic.message)
+end
+
+@testset "Diagnostic determinant fallback helpers are stable" begin
+    R, (X,) = Oscar.polynomial_ring(QQ, ["X"])
+
+    status, classification = Suslin._sln_determinant_status(
+        Issue41DetErrorMatrix(R, ArgumentError("issue 41 determinant sentinel")),
+        :polynomial,
+        nothing,
+    )
+    @test status == :determinant_check_failed
+    @test classification === nothing
+
+    @test Suslin._sl3_local_determinant_status(
+        Issue41DetErrorMatrix(R, ArgumentError("issue 41 local determinant sentinel")),
+        R,
+    ) == :determinant_check_failed
+
+    @test Suslin._diagnostic_message_for_determinant_failure(:polynomial, :determinant_check_failed, nothing) ==
+          "determinant check failed for the staged SL_n to local SL_3 reduction path"
+    @test Suslin._determinant_status_from_laurent_classification(:one) == :determinant_one
+    @test Suslin._determinant_status_from_laurent_classification(:laurent_monomial_unit) == :determinant_requires_correction
+
+    @test_throws InterruptException Suslin._sln_determinant_status(
+        Issue41DetErrorMatrix(R, InterruptException()),
+        :polynomial,
+        nothing,
+    )
+    @test_throws InterruptException Suslin._sl3_local_determinant_status(
+        Issue41DetErrorMatrix(R, InterruptException()),
+        R,
+    )
+end
+
+@testset "Local determinant failure reports local solver diagnostic" begin
+    R, (X,) = Oscar.polynomial_ring(QQ, ["X"])
+    A = identity_matrix(R, 6)
+    A[1:3, 1:3] = matrix(R, [
+        X zero(R) zero(R);
+        zero(R) one(R) zero(R);
+        zero(R) zero(R) one(R)
+    ])
+
+    diagnostic = Suslin._diagnose_sl3_local_obligation(A, R, [1, 2, 3], X, :polynomial)
+    @test diagnostic.status == :failure
+    @test diagnostic.failure_code == :local_solver_failure
+    @test diagnostic.determinant_status == :determinant_not_one
+    @test diagnostic.local_shape_reason == :embedded_2x2_with_trailing_identity
+    @test diagnostic.solver_status == :not_attempted
 end
 
 @testset "Embedded unsupported local solver failure uses stable diagnostic enums" begin
