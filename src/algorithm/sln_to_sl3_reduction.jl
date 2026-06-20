@@ -21,8 +21,33 @@ struct SLNToSL3Reduction
     verification
 end
 
+struct SL3LocalReductionDiagnostic
+    block_location::Vector{Int}
+    status::Symbol
+    failure_code::Union{Nothing, Symbol}
+    determinant_status::Symbol
+    local_shape_reason::Symbol
+    solver_status::Symbol
+    message::Union{Nothing, String}
+end
+
+struct SLNToSL3ReductionDiagnostic
+    status::Symbol
+    failure_code::Union{Nothing, Symbol}
+    ring_profile::Symbol
+    determinant_status::Symbol
+    determinant_classification::Union{Nothing, Symbol}
+    block_diagnostics::Vector{SL3LocalReductionDiagnostic}
+    partition_search
+    message::Union{Nothing, String}
+end
+
 function reduce_sln_to_sl3(A; block_locations=nothing)
     return _construct_sln_to_sl3_reduction(A, block_locations)
+end
+
+function diagnose_sln_to_sl3_reduction(A; block_locations=nothing, search_partitions::Bool=true)
+    return _diagnose_sln_to_sl3_reduction(A, block_locations, search_partitions)
 end
 
 function verify_sln_to_sl3_reduction(reduction::SLNToSL3Reduction)::Bool
@@ -307,4 +332,266 @@ end
 
 function _throw_staged_sln_to_sl3_failure(reason::AbstractString)
     throw(ArgumentError("staged SL_n to local SL_3 reduction failure: $(reason)"))
+end
+
+function _sln_determinant_status(normalized_A, ring_profile::Symbol, normalization)
+    R = base_ring(normalized_A)
+    determinant_classification = normalization === nothing ? nothing : normalization.determinant_classification
+
+    try
+        if ring_profile == :laurent && determinant_classification != :one
+            return :determinant_requires_correction, determinant_classification
+        end
+
+        if det(normalized_A) == one(R)
+            return :determinant_one, determinant_classification
+        end
+
+        return :determinant_not_one, determinant_classification
+    catch err
+        err isa InterruptException && rethrow()
+        return :determinant_check_failed, determinant_classification
+    end
+end
+
+function _sl3_local_determinant_status(local_target, R)
+    try
+        return det(local_target) == one(R) ? :determinant_one : :determinant_not_one
+    catch err
+        err isa InterruptException && rethrow()
+        return :determinant_check_failed
+    end
+end
+
+function _sl3_local_shape_reason(local_target, R)
+    if local_target[1, 3] == zero(R) && local_target[2, 3] == zero(R) &&
+            local_target[3, 1] == zero(R) && local_target[3, 2] == zero(R) &&
+            local_target[3, 3] == one(R)
+        return :embedded_2x2_with_trailing_identity
+    end
+
+    return :not_embedded_2x2_with_trailing_identity
+end
+
+function _diagnose_sl3_local_obligation(A, R, indices::Vector{Int}, X, ring_profile::Symbol)
+    local_target = _principal_submatrix(A, indices)
+    determinant_status = _sl3_local_determinant_status(local_target, R)
+    local_shape_reason = _sl3_local_shape_reason(local_target, R)
+
+    if local_shape_reason != :embedded_2x2_with_trailing_identity
+        return SL3LocalReductionDiagnostic(
+            copy(indices),
+            :failure,
+            :local_shape_failure,
+            determinant_status,
+            local_shape_reason,
+            :not_attempted,
+            "local SL_3 target on block $(indices) is not an embedded 2x2 block with trailing identity",
+        )
+    end
+
+    if determinant_status != :determinant_one
+        return SL3LocalReductionDiagnostic(
+            copy(indices),
+            :failure,
+            :local_solver_failure,
+            determinant_status,
+            local_shape_reason,
+            :not_attempted,
+            "local SL_3 target on block $(indices) does not have determinant 1",
+        )
+    end
+
+    try
+        realize_sl3_local(local_target, X; check_monic = ring_profile != :laurent)
+        return SL3LocalReductionDiagnostic(
+            copy(indices),
+            :success,
+            nothing,
+            determinant_status,
+            local_shape_reason,
+            :success,
+            nothing,
+        )
+    catch err
+        err isa InterruptException && rethrow()
+        return SL3LocalReductionDiagnostic(
+            copy(indices),
+            :failure,
+            :local_solver_failure,
+            determinant_status,
+            local_shape_reason,
+            :failure,
+            sprint(showerror, err),
+        )
+    end
+end
+
+function _three_by_three_partitions(n::Int)
+    n == 6 || return Vector{Vector{Vector{Int}}}()
+
+    partitions = Vector{Vector{Vector{Int}}}()
+    indices = collect(1:n)
+    for j in 2:(n - 1)
+        for k in (j + 1):n
+            left = Int[1, j, k]
+            right = Int[index for index in indices if !(index in left)]
+            push!(partitions, [left, right])
+        end
+    end
+    return partitions
+end
+
+function _partition_search_result(searched::Bool, status::Symbol, attempted_count::Int, successful_partitions)
+    return (
+        searched = searched,
+        status = status,
+        attempted_count = attempted_count,
+        successful_partitions = successful_partitions,
+    )
+end
+
+function _diagnose_three_by_three_partition_search(original_A, normalized_A, search_partitions::Bool, primary_failed::Bool)
+    n = nrows(normalized_A)
+    primary_failed || return _partition_search_result(false, :not_applicable, 0, Vector{Vector{Vector{Int}}}())
+    search_partitions || return _partition_search_result(false, :disabled, 0, Vector{Vector{Vector{Int}}}())
+    n == 6 || return _partition_search_result(false, :not_applicable, 0, Vector{Vector{Vector{Int}}}())
+
+    successful_partitions = Vector{Vector{Vector{Int}}}()
+    partitions = _three_by_three_partitions(n)
+    for partition in partitions
+        try
+            _construct_sln_to_sl3_reduction(original_A, partition)
+            push!(successful_partitions, partition)
+        catch err
+            err isa InterruptException && rethrow()
+        end
+    end
+
+    status = isempty(successful_partitions) ? :no_success : :success_found
+    return _partition_search_result(true, status, length(partitions), successful_partitions)
+end
+
+function _diagnostic_message_for_determinant_failure(ring_profile::Symbol, determinant_status::Symbol, determinant_classification)
+    if ring_profile == :laurent && determinant_status == :determinant_requires_correction
+        return "Laurent determinant correction $(determinant_classification) cannot yet be represented by elementary reduction factors"
+    elseif determinant_status == :determinant_not_one
+        return "determinant/unit precondition failed: polynomial inputs must have determinant 1; otherwise the input is outside the staged SL_n factorization path"
+    end
+
+    return "determinant check failed for the staged SL_n to local SL_3 reduction path"
+end
+
+function _diagnostic_failure_code_for_determinant_status(determinant_status::Symbol)
+    return :determinant_failure
+end
+
+function _determinant_status_from_laurent_classification(classification::Symbol)
+    if classification == :one
+        return :determinant_one
+    elseif classification == :non_unit
+        return :determinant_not_one
+    end
+
+    return :determinant_requires_correction
+end
+
+function _diagnostic_normalize_factorization_input(A, ring_profile::Symbol)
+    if ring_profile != :laurent
+        return A, nothing, nothing, nothing
+    end
+
+    try
+        normalization = normalize_laurent_gl_matrix(A)
+        return normalization.normalized_matrix, normalization, nothing, nothing
+    catch err
+        err isa InterruptException && rethrow()
+        determinant_classification = classify_laurent_determinant(A).classification
+        return nothing, nothing, _determinant_status_from_laurent_classification(determinant_classification), sprint(showerror, err)
+    end
+end
+
+function _diagnose_sln_to_sl3_reduction(A, block_locations, search_partitions::Bool)
+    n = _validate_factorization_matrix(A)
+    R = base_ring(A)
+    ring_profile = _factorization_ring_profile(R)
+    normalized_A, normalization, normalization_failure_status, normalization_failure_message = _diagnostic_normalize_factorization_input(A, ring_profile)
+    if normalization_failure_status !== nothing
+        determinant_classification = classify_laurent_determinant(A).classification
+        return SLNToSL3ReductionDiagnostic(
+            :failure,
+            :determinant_failure,
+            ring_profile,
+            normalization_failure_status,
+            determinant_classification,
+            SL3LocalReductionDiagnostic[],
+            _partition_search_result(false, :not_applicable, 0, Vector{Vector{Vector{Int}}}()),
+            normalization_failure_message,
+        )
+    end
+
+    normalized_R = base_ring(normalized_A)
+    determinant_status, determinant_classification = _sln_determinant_status(normalized_A, ring_profile, normalization)
+
+    if determinant_status != :determinant_one
+        return SLNToSL3ReductionDiagnostic(
+            :failure,
+            _diagnostic_failure_code_for_determinant_status(determinant_status),
+            ring_profile,
+            determinant_status,
+            determinant_classification,
+            SL3LocalReductionDiagnostic[],
+            _diagnose_three_by_three_partition_search(A, normalized_A, search_partitions, false),
+            _diagnostic_message_for_determinant_failure(ring_profile, determinant_status, determinant_classification),
+        )
+    end
+
+    X = _reduction_generator(normalized_R, ring_profile)
+    locations = _normalize_reduction_block_locations(n, block_locations)
+    block_diagnostics = SL3LocalReductionDiagnostic[]
+    failure_code = nothing
+    message = nothing
+
+    for indices in locations
+        _is_identity_local_block(normalized_A, normalized_R, indices) && continue
+        diagnostic = _diagnose_sl3_local_obligation(normalized_A, normalized_R, indices, X, ring_profile)
+        push!(block_diagnostics, diagnostic)
+        if diagnostic.status == :failure
+            failure_code = diagnostic.failure_code
+            message = diagnostic.message
+            break
+        end
+    end
+
+    primary_local_failure = failure_code !== nothing
+    if !primary_local_failure
+        try
+            _construct_sln_to_sl3_reduction(A, block_locations)
+            return SLNToSL3ReductionDiagnostic(
+                :success,
+                nothing,
+                ring_profile,
+                determinant_status,
+                determinant_classification,
+                block_diagnostics,
+                _diagnose_three_by_three_partition_search(A, normalized_A, search_partitions, false),
+                nothing,
+            )
+        catch err
+            err isa InterruptException && rethrow()
+            failure_code = :reassembly_failure
+            message = sprint(showerror, err)
+        end
+    end
+
+    return SLNToSL3ReductionDiagnostic(
+        :failure,
+        failure_code,
+        ring_profile,
+        determinant_status,
+        determinant_classification,
+        block_diagnostics,
+        _diagnose_three_by_three_partition_search(A, normalized_A, search_partitions, primary_local_failure),
+        message,
+    )
 end

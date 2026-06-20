@@ -14,7 +14,10 @@ export compose_factor_sequences
 export elementary_factorization
 export SL3LocalObligation
 export SLNToSL3Reduction
+export SL3LocalReductionDiagnostic
+export SLNToSL3ReductionDiagnostic
 export reduce_sln_to_sl3
+export diagnose_sln_to_sl3_reduction
 export verify_sln_to_sl3_reduction
 export classify_laurent_determinant
 export normalize_laurent_object
