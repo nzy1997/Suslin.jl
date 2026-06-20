@@ -62,6 +62,20 @@ function _throw_staged_factorization_failure(A, ring_profile::Symbol, normalizat
     throw(ArgumentError("staged reduction to the supported univariate local SL_3 slice is not yet implemented in elementary_factorization"))
 end
 
+function _laurent_sl_fallback_factorization(A)
+    try
+        reduction = reduce_sln_to_sl3(A)
+        verify_factorization(A, reduction.factors) && return reduction.factors
+    catch err
+        err isa InterruptException && rethrow()
+        err isa ArgumentError || rethrow()
+    end
+
+    certificate = _factor_laurent_sl_column_peel(A)
+    verify_factorization(A, certificate.factors) && return certificate.factors
+    error("internal Laurent column-peel factorization failed exact verification")
+end
+
 function elementary_factorization(A)
     _validate_factorization_matrix(A)
 
@@ -87,6 +101,9 @@ function elementary_factorization(A)
 
     if (ring_profile == :polynomial && nrows(normalized_A) > 3) ||
             (ring_profile == :laurent && normalization.determinant_classification == :one)
+        if ring_profile == :laurent
+            return _laurent_sl_fallback_factorization(A)
+        end
         reduction = reduce_sln_to_sl3(A)
         verify_factorization(A, reduction.factors) && return reduction.factors
     end
