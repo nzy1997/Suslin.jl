@@ -6,6 +6,9 @@ using Oscar
     @test isdefined(Suslin, :suslin_polynomial_ring)
     @test isdefined(Suslin, :suslin_laurent_polynomial_ring)
     @test isdefined(Suslin, :elementary_matrix)
+    @test isdefined(Suslin, :elementary_preconditioning_step)
+    @test isdefined(Suslin, :replay_elementary_preconditioning)
+    @test isdefined(Suslin, :verify_elementary_preconditioning)
     @test isdefined(Suslin, :block_embedding)
     @test isdefined(Suslin, :embed_factor_sequence)
     @test isdefined(Suslin, :compose_factor_sequences)
@@ -36,6 +39,9 @@ using Oscar
     @test isdefined(Suslin, :verify_quillen_patch)
     @test Suslin.classify_laurent_determinant === classify_laurent_determinant
     @test Suslin.elementary_matrix === elementary_matrix
+    @test Suslin.elementary_preconditioning_step === elementary_preconditioning_step
+    @test Suslin.replay_elementary_preconditioning === replay_elementary_preconditioning
+    @test Suslin.verify_elementary_preconditioning === verify_elementary_preconditioning
     @test Suslin.block_embedding === block_embedding
     @test Suslin.embed_factor_sequence === embed_factor_sequence
     @test Suslin.compose_factor_sequences === compose_factor_sequences
