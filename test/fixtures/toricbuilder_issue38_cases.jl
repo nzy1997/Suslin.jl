@@ -34,9 +34,9 @@ _issue38_provenance() = (;
     reported_main_commit = "c985b1aac9fc9152d860e4e90d012964867bb27d",
 )
 
-_expected_failure_status() = (;
-    kind = :staged_sl3_local_obligation_failure,
-    message_substrings = ISSUE38_FAILURE_SUBSTRINGS,
+_supported_column_peel_status() = (;
+    kind = :supported_column_peel,
+    factorization_path = :laurent_column_peel,
 )
 
 function catalog()
@@ -48,8 +48,8 @@ function catalog()
     Dcol = diagonal_matrix(R, [inv(determinant_profile.determinant), one(R), one(R), one(R), one(R), one(R)])
     col_core = Q * Dcol
 
-    row_status = _expected_failure_status()
-    column_status = _expected_failure_status()
+    row_status = _supported_column_peel_status()
+    column_status = _supported_column_peel_status()
 
     return (;
         cases = [

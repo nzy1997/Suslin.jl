@@ -66,18 +66,11 @@ end
 
         for entry in fixture.cases
             @test assert_toricbuilder_contract_entry_valid(entry)
-            @test entry.expected_suslin_status == :unsupported_now
             @test entry.expected_output == :verified_transformation_certificate
 
-            err = try
-                elementary_factorization(entry.matrix)
-                nothing
-            catch caught
-                caught
-            end
-            @test err isa ArgumentError
-            @test occursin("staged SL_n to local SL_3 reduction failure", sprint(showerror, err))
-            @test occursin("failed to solve local SL_3 obligation", sprint(showerror, err))
+            factors = elementary_factorization(entry.matrix)
+            @test !isempty(factors)
+            @test verify_factorization(entry.matrix, factors)
         end
 
         qinv = only(filter(entry -> entry.toricbuilder_role == "Qinv", fixture.cases))

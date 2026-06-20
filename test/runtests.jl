@@ -31,6 +31,7 @@ const TEST_GROUP_FILES = Dict(
         "expert/sl3_local_extended.jl",
         "expert/sln_to_sl3_reduction.jl",
         "expert/sln_to_sl3_diagnostics.jl",
+        "expert/laurent_column_peel_issue38.jl",
         "expert/quillen_induction.jl",
         "expert/quillen_patching_exact.jl",
         "expert/unimodular_columns.jl",
