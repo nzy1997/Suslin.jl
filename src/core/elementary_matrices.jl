@@ -7,6 +7,93 @@ function elementary_matrix(n::Int, i::Int, j::Int, a, R)
     return E
 end
 
+function _require_elementary_preconditioning_side(side)
+    side isa Symbol || throw(ArgumentError("side must be :left or :right"))
+    (side == :left || side == :right) || throw(ArgumentError("side must be :left or :right"))
+    return side
+end
+
+function _require_preconditioning_index(index, limit::Int, label::AbstractString)
+    index isa Integer || throw(ArgumentError("$label must be an integer"))
+    idx = Int(index)
+    1 <= idx <= limit || throw(ArgumentError("$label must be between 1 and $limit"))
+    return idx
+end
+
+function _preconditioning_factor_size(A, side::Symbol)
+    return side == :left ? nrows(A) : ncols(A)
+end
+
+function _preconditioning_factor_indices(side::Symbol, target::Int, source::Int)
+    return side == :left ? (target, source) : (source, target)
+end
+
+function elementary_preconditioning_step(A, side, target, source, coefficient)
+    checked_side = _require_elementary_preconditioning_side(side)
+    R = base_ring(A)
+    factor_size = _preconditioning_factor_size(A, checked_side)
+    target_idx = _require_preconditioning_index(target, factor_size, "target")
+    source_idx = _require_preconditioning_index(source, factor_size, "source")
+    target_idx == source_idx && throw(ArgumentError("target and source must differ"))
+
+    coerced_coefficient = _coerce_into_ring(R, coefficient, "coefficient")
+    factor_row, factor_col = _preconditioning_factor_indices(checked_side, target_idx, source_idx)
+    factor = elementary_matrix(factor_size, factor_row, factor_col, coerced_coefficient, R)
+    transformed_matrix = checked_side == :left ? factor * A : A * factor
+
+    return (;
+        side = checked_side,
+        target = target_idx,
+        source = source_idx,
+        coefficient = coerced_coefficient,
+        factor,
+        transformed_matrix,
+    )
+end
+
+function _require_preconditioning_step_property(step, property::Symbol)
+    property in propertynames(step) || throw(ArgumentError("preconditioning step must include $(property)"))
+    return getproperty(step, property)
+end
+
+function _require_preconditioning_factor(current, side::Symbol, factor)
+    expected_size = _preconditioning_factor_size(current, side)
+    nrows(factor) == expected_size || throw(ArgumentError("preconditioning factor has wrong row count for $(side) side"))
+    ncols(factor) == expected_size || throw(ArgumentError("preconditioning factor has wrong column count for $(side) side"))
+    _same_base_ring(base_ring(factor), base_ring(current)) ||
+        throw(ArgumentError("preconditioning factor must have the same base ring as the current matrix"))
+    return factor
+end
+
+function _apply_preconditioning_factor(current, side, factor)
+    checked_side = _require_elementary_preconditioning_side(side)
+    checked_factor = _require_preconditioning_factor(current, checked_side, factor)
+    return checked_side == :left ? checked_factor * current : current * checked_factor
+end
+
+function replay_elementary_preconditioning(A, steps)
+    current = A
+    for step in steps
+        side = _require_preconditioning_step_property(step, :side)
+        factor = _require_preconditioning_step_property(step, :factor)
+        current = _apply_preconditioning_factor(current, side, factor)
+    end
+    return current
+end
+
+function verify_elementary_preconditioning(A, steps, expected)::Bool
+    try
+        replayed = replay_elementary_preconditioning(A, steps)
+        nrows(replayed) == nrows(expected) || return false
+        ncols(replayed) == ncols(expected) || return false
+        _same_base_ring(base_ring(replayed), base_ring(expected)) || return false
+        return replayed == expected
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
 function _require_square_matrix(M, label::AbstractString)
     nrows(M) == ncols(M) || throw(DimensionMismatch("$label must be square"))
     return nrows(M)
