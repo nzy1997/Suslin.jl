@@ -49,6 +49,44 @@ using Oscar
     @test !verify_elementary_preconditioning(A, swapped_steps, expected_final_matrix)
 end
 
+@testset "side-aware elementary preconditioning dimensions for nonsquare matrices" begin
+    R, (x, y) = suslin_laurent_polynomial_ring(GF(2), ["x", "y"])
+    A = matrix(R, [
+        one(R) x     y;
+        y      one(R) x
+    ])
+
+    left_step = elementary_preconditioning_step(A, :left, 2, 1, x)
+    expected_left_factor = elementary_matrix(2, 2, 1, x, R)
+    expected_left_matrix = expected_left_factor * A
+
+    @test left_step.factor == expected_left_factor
+    @test left_step.transformed_matrix == expected_left_matrix
+
+    right_step = elementary_preconditioning_step(A, :right, 3, 1, y)
+    expected_right_factor = elementary_matrix(3, 1, 3, y, R)
+    expected_right_matrix = A * expected_right_factor
+
+    @test right_step.factor == expected_right_factor
+    @test right_step.transformed_matrix == expected_right_matrix
+
+    right_and_left_steps = [
+        elementary_preconditioning_step(A, :right, 3, 2, x + one(R)),
+        elementary_preconditioning_step(A, :left, 1, 2, y + one(R)),
+    ]
+    @test replay_elementary_preconditioning(
+        A,
+        right_and_left_steps,
+    ) == (
+        right_and_left_steps[2].factor * (A * right_and_left_steps[1].factor)
+    )
+    @test verify_elementary_preconditioning(
+        A,
+        right_and_left_steps,
+        right_and_left_steps[2].factor * (A * right_and_left_steps[1].factor),
+    )
+end
+
 @testset "elementary preconditioning validation" begin
     R, (x, y) = suslin_laurent_polynomial_ring(GF(2), ["x", "y"])
     S, (u, v) = suslin_laurent_polynomial_ring(GF(2), ["u", "v"])
@@ -73,4 +111,26 @@ end
 
     @test !verify_elementary_preconditioning(A, [(; side = :left, factor = wrong_ring_factor)], A)
     @test !verify_elementary_preconditioning(A, [(; side = :right, factor = wrong_size_factor)], A)
+    @test !verify_elementary_preconditioning(A, [(; factor = identity_matrix(R, 3))], A)
+    @test !verify_elementary_preconditioning(A, [(; side = :middle, factor = identity_matrix(R, 3))], A)
+
+    @test !verify_elementary_preconditioning(A, [(; side = :left, factor = identity_matrix(R, 2))], A)
+    @test !verify_elementary_preconditioning(A, [(; side = :right, factor = elementary_matrix(3, 1, 3, one(R), R))], A)
+
+    @test !verify_elementary_preconditioning(
+        A,
+        [(; side = :left, factor = identity_matrix(R, 3))],
+        matrix(R, [
+            one(R) x zero(R)
+        ]),
+    )
+    @test !verify_elementary_preconditioning(
+        A,
+        [(; side = :left, factor = identity_matrix(R, 3))],
+        matrix(S, [
+            one(S) u zero(S) zero(S);
+            v     one(S) u      zero(S);
+            zero(S) zero(S) one(S) u
+        ]),
+    )
 end
