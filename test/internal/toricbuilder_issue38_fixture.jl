@@ -18,11 +18,6 @@ const REQUIRED_TORICBUILDER_ISSUE38_FIELDS = (
     :consumer_test_ids,
 )
 
-const TORICBUILDER_ISSUE38_FAILURE_SUBSTRINGS = (
-    "staged SL_n to local SL_3 reduction failure",
-    "failed to solve local SL_3 obligation",
-)
-
 function _issue38_fixture_matrix_size(A)
     return (nrows(A), ncols(A))
 end
@@ -32,37 +27,33 @@ function _require_field(entry, field::Symbol)
     return getproperty(entry, field)
 end
 
-function _require_status_substrings(status, label::AbstractString)
-    for field in (:message_substrings, :failure_substrings, :substrings, :messages)
-        hasproperty(status, field) || continue
-        substrings = Tuple(getproperty(status, field))
-        isempty(substrings) && throw(ArgumentError("fixture $(label) status must record failure substrings"))
-        all(substring -> substring isa AbstractString, substrings) || throw(ArgumentError("fixture $(label) status substrings must be strings"))
-        for expected in TORICBUILDER_ISSUE38_FAILURE_SUBSTRINGS
-            expected in substrings || throw(ArgumentError("fixture $(label) status missing required substring $(expected)"))
-        end
-        return substrings
-    end
-
-    throw(ArgumentError("fixture $(label) status must include failure message substrings"))
+function _assert_supported_column_peel_status(status, label::AbstractString)
+    hasproperty(status, :kind) || throw(ArgumentError("fixture $(label) status missing kind"))
+    status.kind == :supported_column_peel || throw(ArgumentError("fixture $(label) expected supported column peel status"))
+    hasproperty(status, :factorization_path) || throw(ArgumentError("fixture $(label) status missing factorization path"))
+    status.factorization_path == :laurent_column_peel || throw(ArgumentError("fixture $(label) expected Laurent column peel path"))
+    return true
 end
 
-function _assert_expected_factorization_failure(matrix, status, label::AbstractString)
-    _require_status_substrings(status, label)
+function _assert_supported_column_peel_core(matrix, status, label::AbstractString)
+    _assert_supported_column_peel_status(status, label)
+    factors = elementary_factorization(matrix)
+    isempty(factors) && throw(ArgumentError("fixture $(label) expected nonempty factors"))
+    verify_factorization(matrix, factors) || throw(ArgumentError("fixture $(label) factorization did not verify"))
+    return true
+end
 
+function _assert_original_q_remains_unsupported(entry)
     err = try
-        elementary_factorization(matrix)
+        elementary_factorization(entry.inputs.matrix)
         nothing
     catch caught
         caught
     end
 
-    err isa ArgumentError || throw(ArgumentError("fixture $(label) expected elementary_factorization to throw ArgumentError"))
-    message = sprint(showerror, err)
-    for expected in TORICBUILDER_ISSUE38_FAILURE_SUBSTRINGS
-        occursin(expected, message) || throw(ArgumentError("fixture $(label) missing required failure substring $(expected)"))
-    end
-
+    err isa ArgumentError || throw(ArgumentError("fixture $(entry.id) original Q must remain unsupported"))
+    occursin("Laurent GL_n normalization boundary", sprint(showerror, err)) ||
+        throw(ArgumentError("fixture $(entry.id) original Q unsupported boundary changed"))
     return true
 end
 
@@ -114,7 +105,7 @@ function _assert_issue38_row_normalization(entry)
     row.core == row.normalization.normalized_matrix || throw(ArgumentError("fixture $(entry.id) row core must equal normalized matrix"))
     det(row.core) == one(base_ring(row.core)) || throw(ArgumentError("fixture $(entry.id) row normalization core must have determinant one"))
     verify_laurent_gl_normalization(entry.inputs.matrix, row.normalization) || throw(ArgumentError("fixture $(entry.id) row normalization does not verify"))
-    _assert_expected_factorization_failure(row.normalization.normalized_matrix, row.expected_current_status, "$(entry.id) row")
+    _assert_supported_column_peel_core(row.normalization.normalized_matrix, row.expected_current_status, "$(entry.id) row")
     return true
 end
 
@@ -128,7 +119,7 @@ function _assert_issue38_column_normalization(entry)
     hasproperty(column, :expected_current_status) || throw(ArgumentError("fixture $(entry.id) missing column expected current status"))
     det(column.core) == one(base_ring(column.core)) || throw(ArgumentError("fixture $(entry.id) column normalization core must have determinant one"))
     entry.inputs.matrix * column.correction_factor == column.core || throw(ArgumentError("fixture $(entry.id) column normalization does not reconstruct the core"))
-    _assert_expected_factorization_failure(column.core, column.expected_current_status, "$(entry.id) column")
+    _assert_supported_column_peel_core(column.core, column.expected_current_status, "$(entry.id) column")
     return true
 end
 
@@ -136,8 +127,8 @@ function _assert_issue38_expected_current_status(entry)
     status = _require_field(entry, :expected_current_status)
     hasproperty(status, :row) || throw(ArgumentError("fixture $(entry.id) expected current status missing row metadata"))
     hasproperty(status, :column) || throw(ArgumentError("fixture $(entry.id) expected current status missing column metadata"))
-    _require_status_substrings(status.row, "$(entry.id) expected_current_status.row")
-    _require_status_substrings(status.column, "$(entry.id) expected_current_status.column")
+    _assert_supported_column_peel_status(status.row, "$(entry.id) expected_current_status.row")
+    _assert_supported_column_peel_status(status.column, "$(entry.id) expected_current_status.column")
     return true
 end
 
@@ -147,6 +138,7 @@ function validate_toricbuilder_issue38_fixture(entry)
     _assert_issue38_row_normalization(entry)
     _assert_issue38_column_normalization(entry)
     _assert_issue38_expected_current_status(entry)
+    _assert_original_q_remains_unsupported(entry)
     return true
 end
 

@@ -11,8 +11,8 @@ them as contract fixtures before expanding factorization support.
 
 | Entry | Role | Ring | Size | Determinant classification | Current Suslin status |
 | --- | --- | --- | --- | --- | --- |
-| `factor_toric_block_3_qinv` | `Qinv` | `GF(2)[x^+/-1, y^+/-1]` | `16 x 16` | `one` | staged unsupported input |
-| `factor_toric_block_3_pinv` | `Pinv` | `GF(2)[x^+/-1, y^+/-1]` | `8 x 8` | `one` | staged unsupported input |
+| `factor_toric_block_3_qinv` | `Qinv` | `GF(2)[x^+/-1, y^+/-1]` | `16 x 16` | `one` | supported by Laurent column peel |
+| `factor_toric_block_3_pinv` | `Pinv` | `GF(2)[x^+/-1, y^+/-1]` | `8 x 8` | `one` | supported by Laurent column peel |
 
 ## Provenance
 
@@ -68,6 +68,7 @@ first contract, that certificate is the exact inverse relation plus determinant
 classification. Raw elementary factors and normalized factor metadata are not
 required until later implementation issues expand Laurent support.
 
-Current Suslin behavior is deliberately unsupported for these matrices:
-`elementary_factorization` accepts only a narrow `3 x 3` univariate polynomial
-`SL_3` slice, while these fixtures are larger two-variable Laurent matrices.
+Current Suslin behavior supports these determinant-one matrices through the
+recursive Laurent column-peel path. General Laurent `GL_n` determinant
+correction remains staged separately for inputs whose determinant is a Laurent
+unit other than `1`.
