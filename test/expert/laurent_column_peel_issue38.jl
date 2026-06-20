@@ -250,6 +250,9 @@ function _issue57_assert_core(core, expected_final_block)
     @test certificate.final_block == expected_final_block
     @test length(certificate.factors) > 0
     @test verify_factorization(core, certificate.factors)
+    helper_factors = Suslin._laurent_column_peel_factors(core)
+    @test length(helper_factors) > 0
+    @test verify_factorization(core, helper_factors)
     @test verify_factorization(core, elementary_factorization(core))
     @test Suslin._verify_laurent_column_peel_replay(certificate)
     @test [step.dimension for step in certificate.peel_steps] == [6, 5, 4, 3]
