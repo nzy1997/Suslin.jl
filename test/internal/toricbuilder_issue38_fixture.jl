@@ -169,4 +169,10 @@ end
     include(TORICBUILDER_ISSUE38_FIXTURE_PATH)
     catalog = ToricBuilderIssue38Cases.catalog()
     @test validate_toricbuilder_issue38_catalog(catalog)
+
+    entry = only(catalog.cases)
+    corrupted_matrix = copy(entry.inputs.matrix)
+    corrupted_matrix[1, 1] += one(base_ring(corrupted_matrix))
+    bad_entry = merge(entry, (; inputs = merge(entry.inputs, (; matrix = corrupted_matrix))))
+    @test_throws ArgumentError validate_toricbuilder_issue38_fixture(bad_entry)
 end

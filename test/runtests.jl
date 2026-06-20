@@ -15,6 +15,7 @@ const TEST_GROUP_FILES = Dict(
         "internal/laurent_linear_solve.jl",
         "internal/gl_laurent_normalization.jl",
         "internal/toricbuilder_contract.jl",
+        "internal/toricbuilder_issue38_fixture.jl",
     ],
     "expert" => [
         "expert/elementary_matrices.jl",
