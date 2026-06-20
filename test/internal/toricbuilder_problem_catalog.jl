@@ -68,6 +68,16 @@ function validate_toricbuilder_problem_entry(entry)
     _assert_nonempty_metadata(entry.id, "problem id")
     _assert_nonempty_metadata(entry.provenance, "problem $(entry.id) provenance")
     _assert_nonempty_metadata(entry.consumers, "problem $(entry.id) consumers")
+    hasproperty(entry.consumers, :milestone) ||
+        throw(ArgumentError("problem $(entry.id) missing consumer milestone"))
+    hasproperty(entry.consumers, :issues) ||
+        throw(ArgumentError("problem $(entry.id) missing consumer issues"))
+    hasproperty(entry.consumers, :tests) ||
+        throw(ArgumentError("problem $(entry.id) missing consumer tests"))
+    isempty(entry.consumers.issues) &&
+        throw(ArgumentError("problem $(entry.id) must record at least one consumer issue"))
+    isempty(entry.consumers.tests) &&
+        throw(ArgumentError("problem $(entry.id) must record at least one consumer test"))
     entry.expected_current_status in ALLOWED_TORICBUILDER_PROBLEM_STATUSES ||
         throw(ArgumentError("problem $(entry.id) has unsupported expected status $(entry.expected_current_status)"))
 
@@ -114,4 +124,22 @@ end
     include(TORICBUILDER_PROBLEM_CATALOG_PATH)
     catalog = ToricBuilderLaurentProblemCatalog.catalog()
     @test validate_toricbuilder_problem_catalog(catalog)
+
+    by_id = Dict(entry.id => entry for entry in catalog.cases)
+    @test haskey(by_id, "toricbuilder-issue-38-q-block")
+    @test haskey(by_id, "toricbuilder-factor-toric-block-3-qinv")
+    @test haskey(by_id, "toricbuilder-factor-toric-block-3-pinv")
+    @test haskey(by_id, "laurent-block-local-40x40")
+    @test haskey(by_id, "laurent-block-local-48x48")
+    @test by_id["toricbuilder-issue-38-q-block"].expected_current_status == :unsupported_now
+    @test by_id["toricbuilder-factor-toric-block-3-qinv"].expected_current_status == :verified_contract
+    @test by_id["toricbuilder-factor-toric-block-3-pinv"].expected_current_status == :verified_contract
+    @test by_id["laurent-block-local-40x40"].expected_current_status == :supported_block_local
+    @test by_id["laurent-block-local-48x48"].expected_current_status == :target_acceptance
+
+    duplicate_cases = [catalog.cases; (merge(first(catalog.cases), (; id = catalog.cases[2].id,)))]
+    @test_throws ArgumentError validate_toricbuilder_problem_catalog((; cases = duplicate_cases))
+
+    missing_provenance = merge(first(catalog.cases), (; provenance = (;),))
+    @test_throws ArgumentError validate_toricbuilder_problem_entry(missing_provenance)
 end
