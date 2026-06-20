@@ -5,6 +5,9 @@ using Oscar
 export suslin_polynomial_ring
 export suslin_laurent_polynomial_ring
 export elementary_matrix
+export elementary_preconditioning_step
+export replay_elementary_preconditioning
+export verify_elementary_preconditioning
 export block_embedding
 export embed_factor_sequence
 export compose_factor_sequences
