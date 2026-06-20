@@ -4,6 +4,33 @@ using Oscar
 
 include("../fixtures/toricbuilder_issue38_cases.jl")
 
+struct _Issue57BadFactorSequence
+    factor
+end
+
+Base.iterate(sequence::_Issue57BadFactorSequence, state = 1) =
+    state == 1 ? (sequence.factor, 2) : nothing
+Base.length(::_Issue57BadFactorSequence) = 1
+Base.:(==)(::_Issue57BadFactorSequence, ::Vector) = true
+
+struct _Issue57FallbackProbe end
+
+struct _Issue57FallbackCertificate
+    factors
+end
+
+function Suslin.reduce_sln_to_sl3(::_Issue57FallbackProbe)
+    throw(ArgumentError("probe reduction unsupported"))
+end
+
+function Suslin._factor_laurent_sl_column_peel(::_Issue57FallbackProbe)
+    return _Issue57FallbackCertificate([])
+end
+
+function Suslin.verify_factorization(::_Issue57FallbackProbe, factors)::Bool
+    return false
+end
+
 function _issue57_product(factors, R, n::Int)
     product = identity_matrix(R, n)
     for factor in factors
@@ -147,6 +174,76 @@ function _issue57_append_cancelling_factor_pair(certificate)
     return mutated
 end
 
+function _issue57_certificate_tuple(certificate; overrides...)
+    base = (
+        original_matrix = certificate.original_matrix,
+        final_block = certificate.final_block,
+        final_local_target = certificate.final_local_target,
+        final_local_factors = certificate.final_local_factors,
+        final_factors = certificate.final_factors,
+        factors = certificate.factors,
+        product = certificate.product,
+        peel_steps = certificate.peel_steps,
+    )
+    return merge(base, (; overrides...))
+end
+
+function _issue57_assert_malformed_replay_guards(certificate)
+    first_step = first(certificate.peel_steps)
+    R = base_ring(first_step.input_matrix)
+    bad_factor = identity_matrix(R, 1)
+
+    @test !Suslin._is_valid_laurent_column_peel_step_data(
+        first_step.dimension,
+        first_step.input_matrix,
+        first_step.last_column,
+        [bad_factor],
+        first_step.after_left_matrix,
+        first_step.right_factors,
+        first_step.peeled_matrix,
+        first_step.next_block,
+    )
+
+    @test !Suslin._is_valid_laurent_column_peel_step_data(
+        first_step.dimension,
+        first_step.input_matrix,
+        first_step.last_column,
+        first_step.left_factors,
+        first_step.after_left_matrix,
+        _Issue57BadFactorSequence(bad_factor),
+        first_step.peeled_matrix,
+        first_step.next_block,
+    )
+
+    invalid_step = Suslin.LaurentColumnPeelStep(
+        first_step.dimension,
+        nothing,
+        first_step.last_column,
+        first_step.left_factors,
+        first_step.after_left_matrix,
+        first_step.right_factors,
+        first_step.peeled_matrix,
+        first_step.next_block,
+    )
+    invalid_certificate = _issue57_certificate_tuple(
+        certificate;
+        peel_steps = Suslin.LaurentColumnPeelStep[invalid_step],
+        final_block = nothing,
+        final_local_target = nothing,
+        final_factors = nothing,
+        factors = [bad_factor],
+    )
+    invalid_verification = Suslin._laurent_column_peel_verification(invalid_certificate)
+    @test !invalid_verification.overall_ok
+    @test !invalid_verification.steps_ok
+    @test !invalid_verification.final_metadata_ok
+    @test !invalid_verification.final_local_ok
+    @test !invalid_verification.final_factors_ok
+    @test !invalid_verification.factor_sequence_ok
+    @test !invalid_verification.product_ok
+    @test !invalid_verification.factors_ok
+end
+
 function _issue57_assert_core(core, expected_final_block)
     certificate = Suslin._factor_laurent_sl_column_peel(core)
 
@@ -179,6 +276,8 @@ function _issue57_assert_core(core, expected_final_block)
     appended_cancel = _issue57_append_cancelling_factor_pair(certificate)
     @test verify_factorization(core, appended_cancel.factors)
     @test !Suslin._verify_laurent_column_peel_replay(appended_cancel)
+
+    _issue57_assert_malformed_replay_guards(certificate)
 end
 
 @testset "Issue 38 Laurent column peel" begin
@@ -206,4 +305,6 @@ end
     end
     @test original_err isa ArgumentError
     @test occursin("Laurent GL_n normalization boundary", sprint(showerror, original_err))
+
+    @test_throws ErrorException Suslin._laurent_sl_fallback_factorization(_Issue57FallbackProbe())
 end
