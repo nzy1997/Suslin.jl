@@ -28,6 +28,7 @@ function assert_toricbuilder_contract_entry_valid(entry)
         :size,
         :determinant_classification,
         :expected_suslin_status,
+        :expected_suslin_path,
         :expected_output,
         :provenance,
     )
@@ -66,6 +67,8 @@ end
 
         for entry in fixture.cases
             @test assert_toricbuilder_contract_entry_valid(entry)
+            @test entry.expected_suslin_status == :supported_column_peel
+            @test entry.expected_suslin_path == :laurent_column_peel
             @test entry.expected_output == :verified_transformation_certificate
 
             factors = elementary_factorization(entry.matrix)

@@ -141,12 +141,7 @@ function _laurent_column_peel_step(current)
         throw(ArgumentError("Laurent column-peel left factors failed to send the last column to e_d"))
     after_left[:, d:d] == _column_peel_target_column(R, d) ||
         throw(ArgumentError("Laurent column-peel left product failed to normalize the last column"))
-    right_factors = typeof(identity_matrix(R, d))[]
-    for j in 1:(d - 1)
-        coeff = -after_left[d, j]
-        coeff == zero(R) && continue
-        push!(right_factors, elementary_matrix(d, d, j, coeff, R))
-    end
+    right_factors = _expected_column_peel_right_factors(after_left, d, R)
     right_product = _factor_product(right_factors, R, d)
     peeled = after_left * right_product
     next_block = matrix(R, [peeled[row, col] for row in 1:(d - 1), col in 1:(d - 1)])
@@ -167,6 +162,16 @@ function _column_peel_target_column(R, d::Int)
     return matrix(R, d, 1, [row == d ? one(R) : zero(R) for row in 1:d])
 end
 
+function _expected_column_peel_right_factors(after_left, d::Int, R)
+    right_factors = typeof(identity_matrix(R, d))[]
+    for j in 1:(d - 1)
+        coeff = -after_left[d, j]
+        coeff == zero(R) && continue
+        push!(right_factors, elementary_matrix(d, d, j, coeff, R))
+    end
+    return right_factors
+end
+
 function _is_valid_laurent_column_peel_step_data(d::Int, current, last_column, left_factors, after_left, right_factors, peeled, next_block)::Bool
     R = base_ring(current)
     actual_last_column = [current[row, d] for row in 1:d]
@@ -183,6 +188,7 @@ function _is_valid_laurent_column_peel_step_data(d::Int, current, last_column, l
     left_product * recorded_column == target_column || return false
     after_left[:, d:d] == target_column || return false
 
+    right_factors == _expected_column_peel_right_factors(after_left, d, R) || return false
     right_product = try
         _factor_product(right_factors, R, d)
     catch err
@@ -270,6 +276,11 @@ function _replay_laurent_column_peel_factors(peel_steps, final_factors, R)
     return replayed
 end
 
+function _factor_sequences_equal(left, right)::Bool
+    length(left) == length(right) || return false
+    return all(left[i] == right[i] for i in eachindex(left))
+end
+
 function _project_local_sl3_to_2x2(factors, R)
     collected = collect(factors)
     projected = typeof(matrix(R, 2, 2, [one(R), zero(R), zero(R), one(R)]))[]
@@ -331,6 +342,17 @@ function _laurent_column_peel_verification(certificate)
         err isa InterruptException && rethrow()
         false
     end
+    factor_sequence_ok = try
+        replayed_factors = _replay_laurent_column_peel_factors(
+            certificate.peel_steps,
+            certificate.final_factors,
+            R,
+        )
+        _factor_sequences_equal(certificate.factors, replayed_factors)
+    catch err
+        err isa InterruptException && rethrow()
+        false
+    end
     product_ok = try
         certificate.product == _factor_product(certificate.factors, R, nrows(certificate.original_matrix))
     catch err
@@ -344,7 +366,7 @@ function _laurent_column_peel_verification(certificate)
         false
     end
     overall_ok = size_ok && step_chain_ok && steps_ok && final_metadata_ok &&
-        final_local_ok && final_factors_ok && product_ok && factors_ok
+        final_local_ok && final_factors_ok && factor_sequence_ok && product_ok && factors_ok
     return (
         overall_ok = overall_ok,
         size_ok = size_ok,
@@ -353,6 +375,7 @@ function _laurent_column_peel_verification(certificate)
         final_metadata_ok = final_metadata_ok,
         final_local_ok = final_local_ok,
         final_factors_ok = final_factors_ok,
+        factor_sequence_ok = factor_sequence_ok,
         product_ok = product_ok,
         factors_ok = factors_ok,
     )

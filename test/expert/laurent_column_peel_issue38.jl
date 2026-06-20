@@ -88,11 +88,13 @@ function _issue57_corrupt_last_column(certificate)
     bad_column = copy(first_step.last_column)
     R = base_ring(first_step.input_matrix)
     bad_column[1] += one(R)
+    bad_left = copy(first_step.left_factors)
+    bad_left[1] = elementary_matrix(first_step.dimension, 1, 2, one(R), R) * bad_left[1]
     corrupted[1] = Suslin.LaurentColumnPeelStep(
         first_step.dimension,
         first_step.input_matrix,
         bad_column,
-        first_step.left_factors,
+        bad_left,
         first_step.after_left_matrix,
         first_step.right_factors,
         first_step.peeled_matrix,
@@ -118,12 +120,31 @@ function _issue57_corrupt_final_local_metadata(certificate)
         certificate.final_block,
         identity_matrix(R, 3),
         typeof(certificate.final_local_factors)(),
+        typeof(certificate.final_factors)(),
+        typeof(certificate.factors)(),
+        certificate.product,
+        certificate.peel_steps,
+        certificate.verification,
+    )
+end
+
+function _issue57_append_cancelling_factor_pair(certificate)
+    mutated = Suslin.LaurentColumnPeelFactorization(
+        certificate.original_matrix,
+        certificate.final_block,
+        certificate.final_local_target,
+        certificate.final_local_factors,
         certificate.final_factors,
         certificate.factors,
         certificate.product,
         certificate.peel_steps,
         certificate.verification,
     )
+    R = base_ring(mutated.original_matrix)
+    n = nrows(mutated.original_matrix)
+    push!(mutated.factors, elementary_matrix(n, 1, 2, one(R), R))
+    push!(mutated.factors, elementary_matrix(n, 1, 2, -one(R), R))
+    return mutated
 end
 
 function _issue57_assert_core(core, expected_final_block)
@@ -149,9 +170,15 @@ function _issue57_assert_core(core, expected_final_block)
 
     corrupted_column = _issue57_corrupt_last_column(certificate)
     @test !Suslin._verify_laurent_column_peel_replay(corrupted_column)
+    @test !verify_factorization(core, corrupted_column.factors)
 
     corrupted_final_local = _issue57_corrupt_final_local_metadata(certificate)
     @test !Suslin._verify_laurent_column_peel_replay(corrupted_final_local)
+    @test !verify_factorization(core, corrupted_final_local.factors)
+
+    appended_cancel = _issue57_append_cancelling_factor_pair(certificate)
+    @test verify_factorization(core, appended_cancel.factors)
+    @test !Suslin._verify_laurent_column_peel_replay(appended_cancel)
 end
 
 @testset "Issue 38 Laurent column peel" begin

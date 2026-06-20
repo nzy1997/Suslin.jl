@@ -18,11 +18,6 @@ const REQUIRED_TORICBUILDER_ISSUE38_FIELDS = (
     :consumer_test_ids,
 )
 
-const TORICBUILDER_ISSUE38_FAILURE_SUBSTRINGS = (
-    "staged SL_n to local SL_3 reduction failure",
-    "failed to solve local SL_3 obligation",
-)
-
 function _issue38_fixture_matrix_size(A)
     return (nrows(A), ncols(A))
 end
@@ -30,40 +25,6 @@ end
 function _require_field(entry, field::Symbol)
     hasproperty(entry, field) || throw(ArgumentError("fixture entry missing field $(field)"))
     return getproperty(entry, field)
-end
-
-function _require_status_substrings(status, label::AbstractString)
-    for field in (:message_substrings, :failure_substrings, :substrings, :messages)
-        hasproperty(status, field) || continue
-        substrings = Tuple(getproperty(status, field))
-        isempty(substrings) && throw(ArgumentError("fixture $(label) status must record failure substrings"))
-        all(substring -> substring isa AbstractString, substrings) || throw(ArgumentError("fixture $(label) status substrings must be strings"))
-        for expected in TORICBUILDER_ISSUE38_FAILURE_SUBSTRINGS
-            expected in substrings || throw(ArgumentError("fixture $(label) status missing required substring $(expected)"))
-        end
-        return substrings
-    end
-
-    throw(ArgumentError("fixture $(label) status must include failure message substrings"))
-end
-
-function _assert_expected_factorization_failure(matrix, status, label::AbstractString)
-    _require_status_substrings(status, label)
-
-    err = try
-        elementary_factorization(matrix)
-        nothing
-    catch caught
-        caught
-    end
-
-    err isa ArgumentError || throw(ArgumentError("fixture $(label) expected elementary_factorization to throw ArgumentError"))
-    message = sprint(showerror, err)
-    for expected in TORICBUILDER_ISSUE38_FAILURE_SUBSTRINGS
-        occursin(expected, message) || throw(ArgumentError("fixture $(label) missing required failure substring $(expected)"))
-    end
-
-    return true
 end
 
 function _assert_supported_column_peel_status(status, label::AbstractString)
