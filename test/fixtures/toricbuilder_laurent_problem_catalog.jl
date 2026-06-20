@@ -59,6 +59,7 @@ function _issue38_problem()
             monomial_coefficient = issue38.determinant_profile.monomial_coefficient,
         ),
         expected_current_status = :unsupported_now,
+        expected_suslin_path = nothing,
         verifier = _verifier("internal/toricbuilder_issue38_fixture.jl", :issue38_fixture_validator),
         provenance = merge(issue38.provenance, (;
             fixture_id = issue38.id,
@@ -87,8 +88,9 @@ function _contract_problem(entry)
             monomial_exponents = nothing,
             monomial_coefficient = nothing,
         ),
-        expected_current_status = :verified_contract,
-        verifier = _verifier("internal/toricbuilder_contract.jl", :toricbuilder_contract_validator),
+        expected_current_status = :supported_column_peel,
+        expected_suslin_path = entry.expected_suslin_path,
+        verifier = _verifier("public/toricbuilder_factor_toric_block_acceptance.jl", :toricbuilder_factor_toric_block_column_peel_acceptance),
         provenance = merge(entry.provenance, (;
             fixture_id = entry.name,
             toricbuilder_role = entry.toricbuilder_role,
@@ -96,8 +98,8 @@ function _contract_problem(entry)
         )),
         consumers = _consumers(
             milestone = 4,
-            issues = ("#19", "#40"),
-            tests = ("test/internal/toricbuilder_contract.jl", "test/internal/toricbuilder_problem_catalog.jl"),
+            issues = ("#19", "#40", "#58"),
+            tests = ("test/public/toricbuilder_factor_toric_block_acceptance.jl", "test/internal/toricbuilder_problem_catalog.jl"),
         ),
     )
 end
@@ -112,6 +114,7 @@ function _large_acceptance_problem(entry, status::Symbol)
         matrix = entry.matrix,
         determinant_profile = _determinant_profile(entry.matrix),
         expected_current_status = status,
+        expected_suslin_path = nothing,
         verifier = _verifier("public/laurent_large_acceptance.jl", :large_laurent_acceptance),
         provenance = merge(entry.provenance, (;
             fixture_id = entry.id,
