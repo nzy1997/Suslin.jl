@@ -530,8 +530,8 @@ function _diagnose_sln_to_sl3_reduction(A, block_locations, search_partitions::B
         end
     end
 
-    primary_failed = failure_code !== nothing
-    if !primary_failed
+    primary_local_failure = failure_code !== nothing
+    if !primary_local_failure
         try
             _construct_sln_to_sl3_reduction(A, block_locations)
             return SLNToSL3ReductionDiagnostic(
@@ -546,7 +546,6 @@ function _diagnose_sln_to_sl3_reduction(A, block_locations, search_partitions::B
             )
         catch err
             err isa InterruptException && rethrow()
-            primary_failed = true
             failure_code = :reassembly_failure
             message = sprint(showerror, err)
         end
@@ -559,7 +558,7 @@ function _diagnose_sln_to_sl3_reduction(A, block_locations, search_partitions::B
         determinant_status,
         determinant_classification,
         block_diagnostics,
-        _diagnose_three_by_three_partition_search(A, normalized_A, search_partitions, primary_failed),
+        _diagnose_three_by_three_partition_search(A, normalized_A, search_partitions, primary_local_failure),
         message,
     )
 end

@@ -61,6 +61,30 @@ end
     @test column_diagnostic.message !== nothing
 end
 
+@testset "Issue 38 partition search remains disabled when requested off" begin
+    entry = only(ToricBuilderIssue38Cases.catalog().cases)
+    issue38_core = entry.normalizations.row.core
+
+    diagnostic = diagnose_sln_to_sl3_reduction(issue38_core; search_partitions = false)
+    @test diagnostic.status == :failure
+    @test diagnostic.partition_search.searched == false
+    @test diagnostic.partition_search.status == :disabled
+    @test diagnostic.partition_search.attempted_count == 0
+end
+
+@testset "Reassembly failure does not trigger partition search" begin
+    R, (X,) = Oscar.polynomial_ring(QQ, ["X"])
+    A = identity_matrix(R, 6)
+    A[1, 4] = X
+
+    diagnostic = diagnose_sln_to_sl3_reduction(A)
+    @test diagnostic.status == :failure
+    @test diagnostic.failure_code == :reassembly_failure
+    @test diagnostic.partition_search.searched == false
+    @test diagnostic.partition_search.status == :not_applicable
+    @test diagnostic.partition_search.attempted_count == 0
+end
+
 @testset "Supported Laurent block-local diagnostics" begin
     catalog = LaurentLargeAcceptanceCases.acceptance_catalog()
     case = only(filter(entry -> entry.id == "laurent-block-local-40x40", catalog.cases))
