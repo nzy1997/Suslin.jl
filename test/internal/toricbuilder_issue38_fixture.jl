@@ -23,7 +23,7 @@ const TORICBUILDER_ISSUE38_FAILURE_SUBSTRINGS = (
     "failed to solve local SL_3 obligation",
 )
 
-function _fixture_matrix_size(A)
+function _issue38_fixture_matrix_size(A)
     return (nrows(A), ncols(A))
 end
 
@@ -83,7 +83,7 @@ function _assert_issue38_metadata(entry)
     hasproperty(entry.inputs, :matrix) || throw(ArgumentError("fixture $(entry.id) missing matrix input"))
     hasproperty(entry.dimensions, :matrix) || throw(ArgumentError("fixture $(entry.id) missing matrix dimensions"))
 
-    _fixture_matrix_size(entry.inputs.matrix) == (6, 6) || throw(ArgumentError("fixture $(entry.id) must be a 6x6 matrix"))
+    _issue38_fixture_matrix_size(entry.inputs.matrix) == (6, 6) || throw(ArgumentError("fixture $(entry.id) must be a 6x6 matrix"))
     entry.dimensions.matrix == (6, 6) || throw(ArgumentError("fixture $(entry.id) matrix dimensions must be 6x6"))
 
     u, v = entry.ring.generators
