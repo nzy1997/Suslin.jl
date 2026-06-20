@@ -14,7 +14,6 @@ const REQUIRED_TORICBUILDER_PROBLEM_FIELDS = (
     :matrix,
     :determinant_profile,
     :expected_current_status,
-    :expected_suslin_path,
     :verifier,
     :provenance,
     :consumers,
