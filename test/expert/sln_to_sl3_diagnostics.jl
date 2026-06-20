@@ -18,7 +18,7 @@ function _issue41_failure_diagnostics(diagnostic)
     return filter(block -> block.status == :failure, diagnostic.block_diagnostics)
 end
 
-function _issue41_assert_issue38_diagnostic(core, label::AbstractString)
+function _issue41_assert_issue38_diagnostic(core)
     diagnostic = diagnose_sln_to_sl3_reduction(core)
     @test diagnostic isa SLNToSL3ReductionDiagnostic
     @test diagnostic.status == :failure
@@ -54,8 +54,8 @@ end
     row_core = entry.normalizations.row.core
     column_core = entry.normalizations.column.core
 
-    row_diagnostic = _issue41_assert_issue38_diagnostic(row_core, "row")
-    column_diagnostic = _issue41_assert_issue38_diagnostic(column_core, "column")
+    row_diagnostic = _issue41_assert_issue38_diagnostic(row_core)
+    column_diagnostic = _issue41_assert_issue38_diagnostic(column_core)
 
     @test row_diagnostic.message !== nothing
     @test column_diagnostic.message !== nothing
@@ -83,6 +83,63 @@ end
     @test diagnostic.partition_search.searched == false
     @test diagnostic.partition_search.status == :not_applicable
     @test diagnostic.partition_search.attempted_count == 0
+end
+
+@testset "Polynomial determinant precondition failure uses stable diagnostic enums" begin
+    R, (X,) = Oscar.polynomial_ring(QQ, ["X"])
+    A = diagonal_matrix(R, [X, one(R), one(R)])
+
+    diagnostic = diagnose_sln_to_sl3_reduction(A)
+    @test diagnostic isa SLNToSL3ReductionDiagnostic
+    @test diagnostic.status == :failure
+    @test diagnostic.failure_code == :determinant_failure
+    @test diagnostic.determinant_status == :determinant_not_one
+    @test diagnostic.block_diagnostics == SL3LocalReductionDiagnostic[]
+    @test diagnostic.partition_search.status == :not_applicable
+end
+
+@testset "Laurent unsupported determinant normalization returns diagnostic instead of throwing" begin
+    L, (t,) = suslin_laurent_polynomial_ring(QQ, ["t"])
+    A = diagonal_matrix(L, [one(L) + t, one(L), one(L)])
+
+    diagnostic = diagnose_sln_to_sl3_reduction(A)
+    @test diagnostic isa SLNToSL3ReductionDiagnostic
+    @test diagnostic.status == :failure
+    @test diagnostic.failure_code == :determinant_failure
+    @test diagnostic.determinant_status == :determinant_not_one
+    @test diagnostic.determinant_classification == :non_unit
+    @test isempty(diagnostic.block_diagnostics)
+    @test diagnostic.partition_search.searched == false
+    @test diagnostic.partition_search.status == :not_applicable
+    @test diagnostic.partition_search.attempted_count == 0
+    @test diagnostic.message !== nothing
+    @test occursin("unsupported Laurent GL_n determinant", diagnostic.message)
+end
+
+@testset "Embedded unsupported local solver failure uses stable diagnostic enums" begin
+    R, (X,) = Oscar.polynomial_ring(QQ, ["X"])
+    A = identity_matrix(R, 6)
+    A[1:3, 1:3] = matrix(R, [
+        X -one(R) zero(R);
+        one(R) zero(R) zero(R);
+        zero(R) zero(R) one(R)
+    ])
+
+    diagnostic = diagnose_sln_to_sl3_reduction(A; search_partitions = false)
+    @test diagnostic isa SLNToSL3ReductionDiagnostic
+    @test diagnostic.status == :failure
+    @test diagnostic.failure_code == :local_solver_failure
+    @test diagnostic.determinant_status == :determinant_one
+    @test diagnostic.partition_search.status == :disabled
+
+    failures = _issue41_failure_diagnostics(diagnostic)
+    @test length(failures) == 1
+    failure = only(failures)
+    @test failure.failure_code == :local_solver_failure
+    @test failure.local_shape_reason == :embedded_2x2_with_trailing_identity
+    @test failure.solver_status == :failure
+    @test failure.message !== nothing
+    @test occursin("staged local SL_3 solver failure", failure.message)
 end
 
 @testset "Supported Laurent block-local diagnostics" begin

@@ -394,7 +394,7 @@ function _diagnose_sl3_local_obligation(A, R, indices::Vector{Int}, X, ring_prof
         return SL3LocalReductionDiagnostic(
             copy(indices),
             :failure,
-            :local_determinant_failure,
+            :local_solver_failure,
             determinant_status,
             local_shape_reason,
             :not_attempted,
@@ -421,7 +421,7 @@ function _diagnose_sl3_local_obligation(A, R, indices::Vector{Int}, X, ring_prof
             :local_solver_failure,
             determinant_status,
             local_shape_reason,
-            :failed,
+            :failure,
             sprint(showerror, err),
         )
     end
@@ -483,20 +483,53 @@ function _diagnostic_message_for_determinant_failure(ring_profile::Symbol, deter
 end
 
 function _diagnostic_failure_code_for_determinant_status(determinant_status::Symbol)
-    if determinant_status == :determinant_requires_correction
-        return :determinant_requires_correction
-    elseif determinant_status == :determinant_not_one
+    return :determinant_failure
+end
+
+function _determinant_status_from_laurent_classification(classification::Symbol)
+    if classification == :one
+        return :determinant_one
+    elseif classification == :non_unit
         return :determinant_not_one
     end
 
-    return :determinant_check_failed
+    return :determinant_requires_correction
+end
+
+function _diagnostic_normalize_factorization_input(A, ring_profile::Symbol)
+    if ring_profile != :laurent
+        return A, nothing, nothing, nothing
+    end
+
+    try
+        normalization = normalize_laurent_gl_matrix(A)
+        return normalization.normalized_matrix, normalization, nothing, nothing
+    catch err
+        err isa InterruptException && rethrow()
+        determinant_classification = classify_laurent_determinant(A).classification
+        return nothing, nothing, _determinant_status_from_laurent_classification(determinant_classification), sprint(showerror, err)
+    end
 end
 
 function _diagnose_sln_to_sl3_reduction(A, block_locations, search_partitions::Bool)
     n = _validate_factorization_matrix(A)
     R = base_ring(A)
     ring_profile = _factorization_ring_profile(R)
-    normalized_A, normalization = _normalize_factorization_input(A, ring_profile)
+    normalized_A, normalization, normalization_failure_status, normalization_failure_message = _diagnostic_normalize_factorization_input(A, ring_profile)
+    if normalization_failure_status !== nothing
+        determinant_classification = classify_laurent_determinant(A).classification
+        return SLNToSL3ReductionDiagnostic(
+            :failure,
+            :determinant_failure,
+            ring_profile,
+            normalization_failure_status,
+            determinant_classification,
+            SL3LocalReductionDiagnostic[],
+            _partition_search_result(false, :not_applicable, 0, Vector{Vector{Vector{Int}}}()),
+            normalization_failure_message,
+        )
+    end
+
     normalized_R = base_ring(normalized_A)
     determinant_status, determinant_classification = _sln_determinant_status(normalized_A, ring_profile, normalization)
 
