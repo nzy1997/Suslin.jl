@@ -93,8 +93,14 @@ function validate_toricbuilder_problem_entry(entry)
 
     hasproperty(entry.determinant_profile, :expected_class) ||
         throw(ArgumentError("problem $(entry.id) missing determinant class"))
+    hasproperty(entry.determinant_profile, :expected_determinant) ||
+        throw(ArgumentError("problem $(entry.id) missing expected determinant"))
+    entry.determinant_profile.expected_determinant === nothing &&
+        throw(ArgumentError("problem $(entry.id) expected determinant must not be nothing"))
     _problem_determinant_classification(entry.matrix) == entry.determinant_profile.expected_class ||
         throw(ArgumentError("problem $(entry.id) determinant class does not match metadata"))
+    det(entry.matrix) == entry.determinant_profile.expected_determinant ||
+        throw(ArgumentError("problem $(entry.id) determinant does not match metadata"))
 
     return true
 end
@@ -142,4 +148,15 @@ end
 
     missing_provenance = merge(first(catalog.cases), (; provenance = (;),))
     @test_throws ArgumentError validate_toricbuilder_problem_entry(missing_provenance)
+
+    bad_determinant = merge(
+        first(catalog.cases),
+        (;
+            determinant_profile = merge(
+                first(catalog.cases).determinant_profile,
+                (; expected_determinant = one(base_ring(first(catalog.cases).matrix))),
+            ),
+        ),
+    )
+    @test_throws ArgumentError validate_toricbuilder_problem_entry(bad_determinant)
 end
