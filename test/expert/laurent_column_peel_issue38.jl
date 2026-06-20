@@ -82,6 +82,35 @@ function _issue57_delete_clearing_factor(certificate)
     )
 end
 
+function _issue57_corrupt_last_column(certificate)
+    corrupted = collect(certificate.peel_steps)
+    first_step = first(corrupted)
+    bad_column = copy(first_step.last_column)
+    R = base_ring(first_step.input_matrix)
+    bad_column[1] += one(R)
+    corrupted[1] = Suslin.LaurentColumnPeelStep(
+        first_step.dimension,
+        first_step.input_matrix,
+        bad_column,
+        first_step.left_factors,
+        first_step.after_left_matrix,
+        first_step.right_factors,
+        first_step.peeled_matrix,
+        first_step.next_block,
+    )
+    return Suslin.LaurentColumnPeelFactorization(
+        certificate.original_matrix,
+        certificate.final_block,
+        certificate.final_local_target,
+        certificate.final_local_factors,
+        certificate.final_factors,
+        certificate.factors,
+        certificate.product,
+        corrupted,
+        certificate.verification,
+    )
+end
+
 function _issue57_assert_core(core, expected_final_block)
     certificate = Suslin._factor_laurent_sl_column_peel(core)
 
@@ -102,6 +131,9 @@ function _issue57_assert_core(core, expected_final_block)
     deleted_clear = _issue57_delete_clearing_factor(certificate)
     @test !Suslin._verify_laurent_column_peel_replay(deleted_clear)
     @test !verify_factorization(core, deleted_clear.factors)
+
+    corrupted_column = _issue57_corrupt_last_column(certificate)
+    @test !Suslin._verify_laurent_column_peel_replay(corrupted_column)
 end
 
 @testset "Issue 38 Laurent column peel" begin

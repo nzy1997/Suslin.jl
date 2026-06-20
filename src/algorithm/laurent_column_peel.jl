@@ -136,7 +136,11 @@ function _laurent_column_peel_step(current)
     left_factors = reduce_unimodular_column(last_column, R)
     left_product = _factor_product(left_factors, R, d)
     after_left = left_product * current
-    after_left * matrix(R, d, 1, last_column) == after_left[:, d:d]
+    recorded_column = matrix(R, d, 1, last_column)
+    left_product * recorded_column == _column_peel_target_column(R, d) ||
+        throw(ArgumentError("Laurent column-peel left factors failed to send the last column to e_d"))
+    after_left[:, d:d] == _column_peel_target_column(R, d) ||
+        throw(ArgumentError("Laurent column-peel left product failed to normalize the last column"))
     right_factors = typeof(identity_matrix(R, d))[]
     for j in 1:(d - 1)
         coeff = -after_left[d, j]
@@ -149,6 +153,7 @@ function _laurent_column_peel_step(current)
     _is_valid_laurent_column_peel_step_data(
         d,
         current,
+        last_column,
         left_factors,
         after_left,
         right_factors,
@@ -158,8 +163,16 @@ function _laurent_column_peel_step(current)
     return LaurentColumnPeelStep(d, current, last_column, left_factors, after_left, right_factors, peeled, next_block)
 end
 
-function _is_valid_laurent_column_peel_step_data(d::Int, current, left_factors, after_left, right_factors, peeled, next_block)::Bool
+function _column_peel_target_column(R, d::Int)
+    return matrix(R, d, 1, [row == d ? one(R) : zero(R) for row in 1:d])
+end
+
+function _is_valid_laurent_column_peel_step_data(d::Int, current, last_column, left_factors, after_left, right_factors, peeled, next_block)::Bool
     R = base_ring(current)
+    actual_last_column = [current[row, d] for row in 1:d]
+    last_column == actual_last_column || return false
+    recorded_column = matrix(R, d, 1, last_column)
+    target_column = _column_peel_target_column(R, d)
     left_product = try
         _factor_product(left_factors, R, d)
     catch err
@@ -167,6 +180,8 @@ function _is_valid_laurent_column_peel_step_data(d::Int, current, left_factors, 
         return false
     end
     left_product * current == after_left || return false
+    left_product * recorded_column == target_column || return false
+    after_left[:, d:d] == target_column || return false
 
     right_product = try
         _factor_product(right_factors, R, d)
@@ -284,6 +299,7 @@ function _laurent_column_peel_verification(certificate)
         all(step -> _is_valid_laurent_column_peel_step_data(
                 step.dimension,
                 step.input_matrix,
+                step.last_column,
                 step.left_factors,
                 step.after_left_matrix,
                 step.right_factors,
