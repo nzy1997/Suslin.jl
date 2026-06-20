@@ -111,6 +111,21 @@ function _issue57_corrupt_last_column(certificate)
     )
 end
 
+function _issue57_corrupt_final_local_metadata(certificate)
+    R = base_ring(certificate.original_matrix)
+    return Suslin.LaurentColumnPeelFactorization(
+        certificate.original_matrix,
+        certificate.final_block,
+        identity_matrix(R, 3),
+        typeof(certificate.final_local_factors)(),
+        certificate.final_factors,
+        certificate.factors,
+        certificate.product,
+        certificate.peel_steps,
+        certificate.verification,
+    )
+end
+
 function _issue57_assert_core(core, expected_final_block)
     certificate = Suslin._factor_laurent_sl_column_peel(core)
 
@@ -134,6 +149,9 @@ function _issue57_assert_core(core, expected_final_block)
 
     corrupted_column = _issue57_corrupt_last_column(certificate)
     @test !Suslin._verify_laurent_column_peel_replay(corrupted_column)
+
+    corrupted_final_local = _issue57_corrupt_final_local_metadata(certificate)
+    @test !Suslin._verify_laurent_column_peel_replay(corrupted_final_local)
 end
 
 @testset "Issue 38 Laurent column peel" begin

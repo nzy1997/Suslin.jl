@@ -312,6 +312,13 @@ function _laurent_column_peel_verification(certificate)
         err isa InterruptException && rethrow()
         false
     end
+    final_metadata_ok = try
+        certificate.final_local_target == block_embedding(certificate.final_block, 3, [1, 2]) &&
+            certificate.final_factors == _project_local_sl3_to_2x2(certificate.final_local_factors, R)
+    catch err
+        err isa InterruptException && rethrow()
+        false
+    end
     final_local_ok = try
         verify_factorization(certificate.final_local_target, certificate.final_local_factors)
     catch err
@@ -336,12 +343,14 @@ function _laurent_column_peel_verification(certificate)
         err isa InterruptException && rethrow()
         false
     end
-    overall_ok = size_ok && step_chain_ok && steps_ok && final_local_ok && final_factors_ok && product_ok && factors_ok
+    overall_ok = size_ok && step_chain_ok && steps_ok && final_metadata_ok &&
+        final_local_ok && final_factors_ok && product_ok && factors_ok
     return (
         overall_ok = overall_ok,
         size_ok = size_ok,
         step_chain_ok = step_chain_ok,
         steps_ok = steps_ok,
+        final_metadata_ok = final_metadata_ok,
         final_local_ok = final_local_ok,
         final_factors_ok = final_factors_ok,
         product_ok = product_ok,
