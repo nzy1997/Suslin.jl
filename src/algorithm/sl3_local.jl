@@ -378,7 +378,7 @@ function _recognize_sl3_local_parameters(
         return (; family = :q_unit, R, p, q, r, s, X, target, pivot_inverse = q_inverse)
     end
 
-    _throw_staged_sl3_local_failure("supported families require one open unipotent slice, a unit pivot p/s/q, or ordinary univariate monic p with q(0) a unit")
+    _throw_staged_sl3_local_failure("supported families require one open unipotent slice, a unit pivot p/s/q, or ordinary univariate monic p in the Murthy q(0)-unit or Bezout/resultant branches")
 end
 
 function _recognize_sl3_local_q_degree_normalization_parameters(p, q, r, s, X; check_monic::Bool=true)
