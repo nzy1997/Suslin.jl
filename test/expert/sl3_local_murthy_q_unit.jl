@@ -126,6 +126,7 @@ end
         fixture_reduction.locality_witness,
     )
     @test !Suslin.verify_sl3_local_murthy_q_unit_reduction(tampered_reduction)
+    @test !Suslin.verify_sl3_local_murthy_q_unit_reduction((; target = nothing))
 
     R, (X,) = Oscar.polynomial_ring(QQ, ["X"])
 

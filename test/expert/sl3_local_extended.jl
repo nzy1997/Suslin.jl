@@ -103,4 +103,19 @@ end
     @test q_unit_cert.factors == q_unit_factors
     @test length(q_unit_factors) == 3
     _test_exact_sl3_factorization(q_unit_target, q_unit_factors)
+
+    S, (U, V) = Oscar.polynomial_ring(QQ, ["U", "V"])
+    multivariate_q_unit_target = _sl3_extended_target(U, one(S), U * V - one(S), V, S)
+    multivariate_q_unit_factors = Suslin.realize_sl3_local(multivariate_q_unit_target, U)
+    multivariate_q_unit_cert = Suslin.realize_sl3_local_certificate(multivariate_q_unit_target, U)
+    @test multivariate_q_unit_cert.branch == :q_unit
+    @test multivariate_q_unit_cert.factors == multivariate_q_unit_factors
+    _test_exact_sl3_factorization(multivariate_q_unit_target, multivariate_q_unit_factors)
+
+    multivariate_unsupported_target = _sl3_extended_target(U, U * V - one(S), one(S), V, S)
+    multivariate_unsupported_err = _sl3_extended_captured_error(
+        () -> Suslin.realize_sl3_local_certificate(multivariate_unsupported_target, U),
+    )
+    @test multivariate_unsupported_err isa ArgumentError
+    @test occursin("supported families require", sprint(showerror, multivariate_unsupported_err))
 end
