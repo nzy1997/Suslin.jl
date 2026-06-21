@@ -6,6 +6,7 @@ const TEST_GROUP_FILES = Dict(
         "public/api_surface.jl",
         "public/factorization_driver_shell.jl",
         "public/laurent_large_acceptance.jl",
+        "public/toricbuilder_factor_toric_block_acceptance.jl",
     ],
     "internal" => [
         "internal/rings.jl",
