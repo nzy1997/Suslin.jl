@@ -211,6 +211,32 @@ end
     @test success.message === nothing
 end
 
+@testset "Embedded q0-nonunit local solver failure uses stable diagnostic enums" begin
+    R, (X,) = Oscar.polynomial_ring(QQ, ["X"])
+    A = identity_matrix(R, 6)
+    A[1:3, 1:3] = matrix(R, [
+        X^2 + one(R) X zero(R);
+        X^2 + X + one(R) X + one(R) zero(R);
+        zero(R) zero(R) one(R)
+    ])
+
+    diagnostic = diagnose_sln_to_sl3_reduction(A; search_partitions = false)
+    @test diagnostic isa SLNToSL3ReductionDiagnostic
+    @test diagnostic.status == :failure
+    @test diagnostic.failure_code == :local_solver_failure
+    @test diagnostic.determinant_status == :determinant_one
+    @test diagnostic.partition_search.status == :disabled
+
+    failures = _issue41_failure_diagnostics(diagnostic)
+    @test length(failures) == 1
+    failure = only(failures)
+    @test failure.failure_code == :local_solver_failure
+    @test failure.local_shape_reason == :embedded_2x2_with_trailing_identity
+    @test failure.solver_status == :failure
+    @test failure.message !== nothing
+    @test occursin("Murthy q(0)-nonunit", failure.message)
+end
+
 @testset "Supported Laurent block-local diagnostics" begin
     catalog = LaurentLargeAcceptanceCases.acceptance_catalog()
     case = only(filter(entry -> entry.id == "laurent-block-local-40x40", catalog.cases))
