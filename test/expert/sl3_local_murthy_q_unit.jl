@@ -160,5 +160,8 @@ end
     nonunit_target = _q0_target(R, nonunit_q0_p, nonunit_q0_q, nonunit_q0_r, nonunit_q0_s)
     @test det(nonunit_target) == one(R)
     @test _q0_degree(nonunit_q0_q, X) < _q0_degree(nonunit_q0_p, X)
-    @test_throws ArgumentError Suslin.realize_sl3_local_certificate(nonunit_target, X)
+    nonunit_cert = Suslin.realize_sl3_local_certificate(nonunit_target, X)
+    @test nonunit_cert.branch == :murthy_q0_nonunit_bezout_resultant
+    @test Suslin.verify_sl3_local_realization(nonunit_cert)
+    @test Suslin.verify_factorization(nonunit_target, nonunit_cert.factors)
 end

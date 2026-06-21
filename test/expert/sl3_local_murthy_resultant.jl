@@ -91,6 +91,35 @@ end
     )
     @test !Suslin.verify_sl3_local_murthy_q0_nonunit_reduction(corrupt_supplied_reduction)
 
+    shifted_supplied_witness = merge(
+        first(supplied_fixture.witnesses),
+        (;
+            p_prime = first(supplied_fixture.witnesses).p_prime + supplied_fixture.entries.q,
+            q_prime = first(supplied_fixture.witnesses).q_prime + supplied_fixture.entries.p,
+        ),
+    )
+    @test shifted_supplied_witness.p_prime * supplied_fixture.entries.p -
+        shifted_supplied_witness.q_prime * supplied_fixture.entries.q == one(supplied_fixture.ring.object)
+    @test _degree_in_variable(shifted_supplied_witness.p_prime, supplied_fixture.variable) >=
+        _degree_in_variable(supplied_fixture.entries.q, supplied_fixture.variable)
+    @test _degree_in_variable(shifted_supplied_witness.q_prime, supplied_fixture.variable) >=
+        _degree_in_variable(supplied_fixture.entries.p, supplied_fixture.variable)
+    degree_bound_err = try
+        Suslin.realize_sl3_local_certificate(
+            supplied_fixture.entries.p,
+            supplied_fixture.entries.q,
+            supplied_fixture.entries.r,
+            supplied_fixture.entries.s,
+            supplied_fixture.variable;
+            murthy_q0_nonunit_witness = shifted_supplied_witness,
+        )
+        nothing
+    catch err
+        err
+    end
+    @test degree_bound_err isa ArgumentError
+    @test occursin("degree guard", sprint(showerror, degree_bound_err))
+
     extracted_reduction = _as_namedtuple(extracted_cert.witness.reduction)
     tampered_bezout_reduction = merge(
         extracted_reduction,

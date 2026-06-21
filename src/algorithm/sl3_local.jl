@@ -616,6 +616,15 @@ function _sl3_local_murthy_q0_nonunit_reduction(form)
     resultant == one(form.R) ||
         throw(ArgumentError("Murthy q(0)-nonunit Bezout equality p_prime*p - q_prime*q must equal 1"))
 
+    degree_p = degree(form.p, form.var_idx)
+    degree_q = degree(form.q, form.var_idx)
+    degree_p_prime = degree(p_prime, form.var_idx)
+    degree_q_prime = degree(q_prime, form.var_idx)
+    degree_p_prime < degree_q ||
+        throw(ArgumentError("Murthy q(0)-nonunit p_prime degree guard failed"))
+    degree_q_prime < degree_p ||
+        throw(ArgumentError("Murthy q(0)-nonunit q_prime degree guard failed"))
+
     branch_unit = _sl3_local_constant_coefficient(form.q + p_prime, form.var_idx, form.R)
     branch_unit_inverse = _unit_inverse_or_nothing(branch_unit)
     branch_unit_inverse === nothing &&
@@ -654,15 +663,6 @@ function _sl3_local_murthy_q0_nonunit_reduction(form)
         error("internal Murthy q(0)-nonunit Bezout reduction q0-unit equality failed")
     verify_sl3_local_realization(child_certificate) ||
         error("internal Murthy q(0)-nonunit child certificate verification failed")
-
-    degree_p = degree(form.p, form.var_idx)
-    degree_q = degree(form.q, form.var_idx)
-    degree_p_prime = degree(p_prime, form.var_idx)
-    degree_q_prime = degree(q_prime, form.var_idx)
-    degree_p_prime < degree_q ||
-        error("internal Murthy q(0)-nonunit p_prime degree guard failed")
-    degree_q_prime < degree_p ||
-        error("internal Murthy q(0)-nonunit q_prime degree guard failed")
 
     reduction = SL3LocalMurthyQ0NonunitReduction(
         form.target,
