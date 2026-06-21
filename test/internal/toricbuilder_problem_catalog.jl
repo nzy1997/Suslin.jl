@@ -29,6 +29,7 @@ const REQUIRED_TORICBUILDER_PROBLEM_IDS = Set([
 
 const ALLOWED_TORICBUILDER_PROBLEM_STATUSES = Set([
     :unsupported_now,
+    :supported_column_peel,
     :verified_contract,
     :supported_block_local,
     :target_acceptance,
@@ -80,6 +81,12 @@ function validate_toricbuilder_problem_entry(entry)
         throw(ArgumentError("problem $(entry.id) must record at least one consumer test"))
     entry.expected_current_status in ALLOWED_TORICBUILDER_PROBLEM_STATUSES ||
         throw(ArgumentError("problem $(entry.id) has unsupported expected status $(entry.expected_current_status)"))
+    if entry.expected_current_status == :supported_column_peel
+        hasproperty(entry, :expected_suslin_path) ||
+            throw(ArgumentError("problem $(entry.id) missing expected Suslin path"))
+        entry.expected_suslin_path == :laurent_column_peel ||
+            throw(ArgumentError("problem $(entry.id) expected Laurent column-peel path"))
+    end
 
     hasproperty(entry.verifier, :path) ||
         throw(ArgumentError("problem $(entry.id) missing verifier path"))
@@ -138,8 +145,10 @@ end
     @test haskey(by_id, "laurent-block-local-40x40")
     @test haskey(by_id, "laurent-block-local-48x48")
     @test by_id["toricbuilder-issue-38-q-block"].expected_current_status == :unsupported_now
-    @test by_id["toricbuilder-factor-toric-block-3-qinv"].expected_current_status == :verified_contract
-    @test by_id["toricbuilder-factor-toric-block-3-pinv"].expected_current_status == :verified_contract
+    @test by_id["toricbuilder-factor-toric-block-3-qinv"].expected_current_status == :supported_column_peel
+    @test by_id["toricbuilder-factor-toric-block-3-qinv"].expected_suslin_path == :laurent_column_peel
+    @test by_id["toricbuilder-factor-toric-block-3-pinv"].expected_current_status == :supported_column_peel
+    @test by_id["toricbuilder-factor-toric-block-3-pinv"].expected_suslin_path == :laurent_column_peel
     @test by_id["laurent-block-local-40x40"].expected_current_status == :supported_block_local
     @test by_id["laurent-block-local-48x48"].expected_current_status == :target_acceptance
 
