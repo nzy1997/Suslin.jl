@@ -191,6 +191,8 @@ function _sl3_local_realization_verification(certificate)
     target = certificate.target
     size_ok = nrows(target) == 3 && ncols(target) == 3
     R = size_ok ? base_ring(target) : nothing
+    # Replay checks selected_variable is a legal target-ring generator; branch
+    # witness equations and exact factors carry the algebraic replay.
     variable_ok =
         size_ok &&
         parent(certificate.selected_variable) === R &&
@@ -285,6 +287,7 @@ function _sl3_local_branch_witness_ok(certificate)
     r = entries.r
     s = entries.s
     witness = certificate.witness
+    _sl3_local_witness_keys_ok(certificate.branch, witness) || return false
 
     if certificate.branch == :open_s_one
         return witness.q == q && witness.r == r && s == one(R) && p == one(R) + q * r
@@ -294,6 +297,17 @@ function _sl3_local_branch_witness_ok(certificate)
         return witness.pivot == s && witness.pivot * witness.pivot_inverse == one(R)
     elseif certificate.branch == :p_unit
         return witness.pivot == p && witness.pivot * witness.pivot_inverse == one(R)
+    end
+
+    return false
+end
+
+function _sl3_local_witness_keys_ok(branch, witness)
+    witness isa NamedTuple || return false
+    if branch in (:open_s_one, :open_p_one)
+        return keys(witness) == (:q, :r)
+    elseif branch in (:s_unit, :p_unit)
+        return keys(witness) == (:pivot, :pivot_inverse)
     end
 
     return false

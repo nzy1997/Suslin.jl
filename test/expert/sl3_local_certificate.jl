@@ -49,6 +49,17 @@ function _tamper_witness_q(cert)
     )
 end
 
+function _tamper_extra_witness_field(cert)
+    R = base_ring(cert.target)
+    return Suslin.SL3LocalRealizationCertificate(
+        cert.target,
+        cert.branch,
+        cert.factors,
+        cert.selected_variable,
+        merge(cert.witness, (; extra = one(R))),
+    )
+end
+
 @testset "local SL3 realization certificates" begin
     R, (X,) = Oscar.polynomial_ring(QQ, ["X"])
 
@@ -110,4 +121,17 @@ end
 
     @test !Suslin.verify_sl3_local_realization(_tamper_first_factor(open_cert))
     @test !Suslin.verify_sl3_local_realization(_tamper_witness_q(open_cert))
+    @test !Suslin.verify_sl3_local_realization(_tamper_extra_witness_field(open_cert))
+
+    S, (Y,) = Oscar.polynomial_ring(QQ, ["Y"])
+    foreign_variable_cert = Suslin.SL3LocalRealizationCertificate(
+        open_cert.target,
+        open_cert.branch,
+        open_cert.factors,
+        Y,
+        open_cert.witness,
+    )
+    @test parent(Y) === S
+    @test base_ring(foreign_variable_cert.target) === R
+    @test !Suslin.verify_sl3_local_realization(foreign_variable_cert)
 end
