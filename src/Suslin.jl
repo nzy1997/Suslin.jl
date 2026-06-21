@@ -20,12 +20,15 @@ export reduce_sln_to_sl3
 export diagnose_sln_to_sl3_reduction
 export verify_sln_to_sl3_reduction
 export classify_laurent_determinant
+export LaurentGLFactorizationCertificate
+export laurent_gl_factorization_certificate
 export normalize_laurent_object
 export normalize_laurent_gl_matrix
 export solve_laurent_linear
 export realize_cohn_type
 export realize_conjugate_elementary
 export lift_laurent_normalization
+export verify_laurent_gl_factorization_certificate
 export verify_laurent_gl_normalization
 export verify_laurent_normalization
 export verify_factorization
@@ -52,6 +55,7 @@ include("algorithm/column_reduction.jl")
 include("algorithm/normality.jl")
 include("algorithm/sl3_local.jl")
 include("algorithm/laurent_column_peel.jl")
+include("algorithm/laurent_gl_certificate.jl")
 include("algorithm/factorization.jl")
 include("algorithm/sln_to_sl3_reduction.jl")
 include("algorithm/quillen_induction.jl")

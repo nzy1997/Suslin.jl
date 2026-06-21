@@ -14,12 +14,15 @@ using Oscar
     @test isdefined(Suslin, :compose_factor_sequences)
     @test isdefined(Suslin, :elementary_factorization)
     @test isdefined(Suslin, :classify_laurent_determinant)
+    @test isdefined(Suslin, :LaurentGLFactorizationCertificate)
+    @test isdefined(Suslin, :laurent_gl_factorization_certificate)
     @test isdefined(Suslin, :normalize_laurent_gl_matrix)
     @test isdefined(Suslin, :normalize_laurent_object)
     @test isdefined(Suslin, :solve_laurent_linear)
     @test isdefined(Suslin, :realize_cohn_type)
     @test isdefined(Suslin, :realize_conjugate_elementary)
     @test isdefined(Suslin, :lift_laurent_normalization)
+    @test isdefined(Suslin, :verify_laurent_gl_factorization_certificate)
     @test isdefined(Suslin, :verify_laurent_gl_normalization)
     @test isdefined(Suslin, :verify_laurent_normalization)
     @test isdefined(Suslin, :verify_factorization)
@@ -41,6 +44,8 @@ using Oscar
     @test isdefined(Suslin, :construct_quillen_patch)
     @test isdefined(Suslin, :verify_quillen_patch)
     @test Suslin.classify_laurent_determinant === classify_laurent_determinant
+    @test Suslin.LaurentGLFactorizationCertificate === LaurentGLFactorizationCertificate
+    @test Suslin.laurent_gl_factorization_certificate === laurent_gl_factorization_certificate
     @test Suslin.elementary_matrix === elementary_matrix
     @test Suslin.elementary_preconditioning_step === elementary_preconditioning_step
     @test Suslin.replay_elementary_preconditioning === replay_elementary_preconditioning
@@ -56,6 +61,7 @@ using Oscar
     @test Suslin.elementary_factorization === elementary_factorization
     @test Suslin.realize_cohn_type === realize_cohn_type
     @test Suslin.realize_conjugate_elementary === realize_conjugate_elementary
+    @test Suslin.verify_laurent_gl_factorization_certificate === verify_laurent_gl_factorization_certificate
     @test Suslin.verify_laurent_gl_normalization === verify_laurent_gl_normalization
     @test Suslin.verify_laurent_normalization === verify_laurent_normalization
     @test Suslin.verify_factorization === verify_factorization
