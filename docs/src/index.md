@@ -26,6 +26,9 @@ verify_factorization(A, factors)
 
 - `elementary_factorization(A)` currently supports only a narrow 3x3 univariate `SL_3` slice.
 - `verify_factorization(A, factors)` checks exact multiplication against `A`.
+- `laurent_gl_factorization_certificate(A)` records a Laurent determinant correction
+  plus elementary factors for a determinant-one core; the core factors are not a
+  pure elementary factorization of the original `GL_n` input.
 - The implementation is staged and does not yet cover the full theorem.
 
 See [ToricBuilder Integration Contract](@ref) for the first recorded

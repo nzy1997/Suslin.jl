@@ -50,6 +50,24 @@ function _issue59_tamper_core_factor(certificate)
     )
 end
 
+function _issue59_tamper_reconstructed_product(certificate)
+    R = base_ring(certificate.original_matrix)
+    bad_product = copy(certificate.reconstructed_product)
+    bad_product[1, 1] += one(R)
+    return Suslin.LaurentGLFactorizationCertificate(
+        certificate.original_matrix,
+        certificate.determinant_profile,
+        certificate.normalization,
+        certificate.correction,
+        certificate.inverse_correction,
+        certificate.normalized_core,
+        certificate.core_factorization,
+        certificate.core_factors,
+        bad_product,
+        certificate.verification,
+    )
+end
+
 @testset "Issue 38 Laurent GL certificate" begin
     entry = only(ToricBuilderIssue38Cases.catalog().cases)
     Q = entry.inputs.matrix
@@ -83,6 +101,9 @@ end
 
     tampered_factor = _issue59_tamper_core_factor(certificate)
     @test !verify_laurent_gl_factorization_certificate(tampered_factor)
+
+    tampered_product = _issue59_tamper_reconstructed_product(certificate)
+    @test !verify_laurent_gl_factorization_certificate(tampered_product)
 
     original_err = try
         elementary_factorization(Q)

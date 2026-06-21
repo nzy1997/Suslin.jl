@@ -22,8 +22,6 @@ struct LaurentGLFactorizationCertificate
         reconstructed_product,
         verification,
     )
-        R = base_ring(original_matrix)
-        product = correction.factor * _factor_product(core_factors, R, nrows(original_matrix))
         return new(
             original_matrix,
             determinant_profile,
@@ -33,7 +31,7 @@ struct LaurentGLFactorizationCertificate
             normalized_core,
             core_factorization,
             core_factors,
-            product,
+            reconstructed_product,
             verification,
         )
     end
