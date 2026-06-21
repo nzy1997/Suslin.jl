@@ -4,5 +4,8 @@
 /Manifest*.toml
 /docs/Manifest*.toml
 /docs/build/
-refs/
+/refs/*
+!/refs/README.md
+!/refs/*.pdf
+!/refs/arXiv-*
 .DS_Store
