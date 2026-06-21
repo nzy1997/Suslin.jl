@@ -1,11 +1,27 @@
+struct SL3LocalRealizationCertificate
+    target
+    branch::Symbol
+    factors::Vector
+    selected_variable
+    witness
+end
+
 function realize_sl3_local(A, X; check_monic::Bool=true)
-    form = _recognize_sl3_local_matrix(A, X; check_monic)
-    return _realize_sl3_local_form(form)
+    return realize_sl3_local_certificate(A, X; check_monic).factors
 end
 
 function realize_sl3_local(p, q, r, s, X; check_monic::Bool=true)
+    return realize_sl3_local_certificate(p, q, r, s, X; check_monic).factors
+end
+
+function realize_sl3_local_certificate(A, X; check_monic::Bool=true)
+    form = _recognize_sl3_local_matrix(A, X; check_monic)
+    return _realize_sl3_local_certificate_form(form)
+end
+
+function realize_sl3_local_certificate(p, q, r, s, X; check_monic::Bool=true)
     form = _recognize_sl3_local_parameters(p, q, r, s, X; check_monic)
-    return _realize_sl3_local_form(form)
+    return _realize_sl3_local_certificate_form(form)
 end
 
 function _recognize_sl3_local_matrix(A, X; check_monic::Bool=true)
@@ -49,59 +65,86 @@ function _recognize_sl3_local_parameters(p, q, r, s, X; check_monic::Bool=true)
     det(target) == one(R) || throw(ArgumentError("constructed matrix must have determinant 1"))
 
     if s == one(R) && p == one(R) + q * r
-        return (; family = :open_s_one, R, p, q, r, s, target)
+        return (; family = :open_s_one, R, p, q, r, s, X, target)
     end
 
     if p == one(R) && s == one(R) + q * r
-        return (; family = :open_p_one, R, p, q, r, s, target)
+        return (; family = :open_p_one, R, p, q, r, s, X, target)
     end
 
     s_inverse = _unit_inverse_or_nothing(s)
     if s_inverse !== nothing
-        return (; family = :s_unit, R, p, q, r, s, target, pivot_inverse = s_inverse)
+        return (; family = :s_unit, R, p, q, r, s, X, target, pivot_inverse = s_inverse)
     end
 
     p_inverse = _unit_inverse_or_nothing(p)
     if p_inverse !== nothing
-        return (; family = :p_unit, R, p, q, r, s, target, pivot_inverse = p_inverse)
+        return (; family = :p_unit, R, p, q, r, s, X, target, pivot_inverse = p_inverse)
     end
 
     _throw_staged_sl3_local_failure("supported families require one open unipotent slice or a unit diagonal pivot p or s")
 end
 
-function _realize_sl3_local_form(form)
+function _sl3_local_form_factors(form)
     R = form.R
-
-    factors = if form.family == :open_s_one
-        [
+    if form.family == :open_s_one
+        return [
             elementary_matrix(3, 1, 2, form.q, R),
             elementary_matrix(3, 2, 1, form.r, R),
         ]
     elseif form.family == :open_p_one
-        [
+        return [
             elementary_matrix(3, 2, 1, form.r, R),
             elementary_matrix(3, 1, 2, form.q, R),
         ]
     elseif form.family == :s_unit
         s_inverse = form.pivot_inverse
-        vcat(
+        return vcat(
             [elementary_matrix(3, 1, 2, form.q * s_inverse, R)],
             _sl3_diagonal_unit_factors(s_inverse, R),
             [elementary_matrix(3, 2, 1, form.r * s_inverse, R)],
         )
     elseif form.family == :p_unit
         p_inverse = form.pivot_inverse
-        vcat(
+        return vcat(
             [elementary_matrix(3, 2, 1, form.r * p_inverse, R)],
             _sl3_diagonal_unit_factors(form.p, R),
             [elementary_matrix(3, 1, 2, form.q * p_inverse, R)],
         )
-    else
-        _throw_staged_sl3_local_failure("unrecognized local solver family $(form.family)")
     end
 
+    _throw_staged_sl3_local_failure("unrecognized local solver family $(form.family)")
+end
+
+function _sl3_local_form_witness(form)
+    if form.family in (:open_s_one, :open_p_one)
+        return (; q = form.q, r = form.r)
+    elseif form.family == :s_unit
+        return (; pivot = form.s, pivot_inverse = form.pivot_inverse)
+    elseif form.family == :p_unit
+        return (; pivot = form.p, pivot_inverse = form.pivot_inverse)
+    end
+
+    _throw_staged_sl3_local_failure("unrecognized local solver family $(form.family)")
+end
+
+function _realize_sl3_local_certificate_form(form)
+    factors = _sl3_local_form_factors(form)
     _verify_sl3_local_factorization(form.target, factors)
-    return factors
+    certificate = SL3LocalRealizationCertificate(
+        form.target,
+        form.family,
+        factors,
+        form.X,
+        _sl3_local_form_witness(form),
+    )
+    verify_sl3_local_realization(certificate) ||
+        error("internal local SL_3 realization certificate verification failed")
+    return certificate
+end
+
+function _realize_sl3_local_form(form)
+    return _realize_sl3_local_certificate_form(form).factors
 end
 
 function _sl3_diagonal_unit_factors(u, R)
@@ -133,6 +176,137 @@ function _verify_sl3_local_factorization(target, factors)
 
     product == target || error("local SL_3 exact verification failed: factor product does not equal target")
     return nothing
+end
+
+function verify_sl3_local_realization(certificate)::Bool
+    try
+        return _sl3_local_realization_verification(certificate).overall_ok
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function _sl3_local_realization_verification(certificate)
+    target = certificate.target
+    size_ok = nrows(target) == 3 && ncols(target) == 3
+    R = size_ok ? base_ring(target) : nothing
+    # Replay checks selected_variable is a legal target-ring generator; branch
+    # witness equations and exact factors carry the algebraic replay.
+    variable_ok =
+        size_ok &&
+        parent(certificate.selected_variable) === R &&
+        certificate.selected_variable in collect(gens(R))
+    shape_ok = size_ok && _sl3_local_target_entries(target) !== nothing
+    determinant_ok = size_ok && det(target) == one(R)
+    expected_factors =
+        size_ok && variable_ok && shape_ok && determinant_ok ?
+        _sl3_local_certificate_expected_factors(certificate) :
+        nothing
+    witness_ok = expected_factors !== nothing
+    factors_match_ok = witness_ok && _sl3_local_factor_sequences_equal(certificate.factors, expected_factors)
+    factors_ok = size_ok && verify_factorization(target, certificate.factors)
+    overall_ok = size_ok && variable_ok && shape_ok && determinant_ok &&
+        witness_ok && factors_match_ok && factors_ok
+    return (;
+        overall_ok,
+        size_ok,
+        variable_ok,
+        shape_ok,
+        determinant_ok,
+        witness_ok,
+        factors_match_ok,
+        factors_ok,
+    )
+end
+
+function _sl3_local_target_entries(target)
+    R = base_ring(target)
+    if target[1, 3] != zero(R) || target[2, 3] != zero(R) ||
+            target[3, 1] != zero(R) || target[3, 2] != zero(R) ||
+            target[3, 3] != one(R)
+        return nothing
+    end
+
+    return (; p = target[1, 1], q = target[1, 2], r = target[2, 1], s = target[2, 2])
+end
+
+function _sl3_local_factor_sequences_equal(left, right)
+    length(left) == length(right) || return false
+    for idx in eachindex(left, right)
+        left[idx] == right[idx] || return false
+    end
+    return true
+end
+
+function _sl3_local_certificate_expected_factors(certificate)
+    _sl3_local_branch_witness_ok(certificate) || return nothing
+
+    entries = _sl3_local_target_entries(certificate.target)
+    R = base_ring(certificate.target)
+    p = entries.p
+    q = entries.q
+    r = entries.r
+    s = entries.s
+    witness = certificate.witness
+
+    if certificate.branch == :open_s_one
+        return [
+            elementary_matrix(3, 1, 2, witness.q, R),
+            elementary_matrix(3, 2, 1, witness.r, R),
+        ]
+    elseif certificate.branch == :open_p_one
+        return [
+            elementary_matrix(3, 2, 1, witness.r, R),
+            elementary_matrix(3, 1, 2, witness.q, R),
+        ]
+    elseif certificate.branch == :s_unit
+        return vcat(
+            [elementary_matrix(3, 1, 2, q * witness.pivot_inverse, R)],
+            _sl3_diagonal_unit_factors(witness.pivot_inverse, R),
+            [elementary_matrix(3, 2, 1, r * witness.pivot_inverse, R)],
+        )
+    elseif certificate.branch == :p_unit
+        return vcat(
+            [elementary_matrix(3, 2, 1, r * witness.pivot_inverse, R)],
+            _sl3_diagonal_unit_factors(witness.pivot, R),
+            [elementary_matrix(3, 1, 2, q * witness.pivot_inverse, R)],
+        )
+    end
+end
+
+function _sl3_local_branch_witness_ok(certificate)
+    entries = _sl3_local_target_entries(certificate.target)
+    entries === nothing && return false
+
+    R = base_ring(certificate.target)
+    p = entries.p
+    q = entries.q
+    r = entries.r
+    s = entries.s
+    witness = certificate.witness
+    _sl3_local_witness_keys_ok(certificate.branch, witness) || return false
+
+    if certificate.branch == :open_s_one
+        return witness.q == q && witness.r == r && s == one(R) && p == one(R) + q * r
+    elseif certificate.branch == :open_p_one
+        return witness.q == q && witness.r == r && p == one(R) && s == one(R) + q * r
+    elseif certificate.branch == :s_unit
+        return witness.pivot == s && witness.pivot * witness.pivot_inverse == one(R)
+    elseif certificate.branch == :p_unit
+        return witness.pivot == p && witness.pivot * witness.pivot_inverse == one(R)
+    end
+end
+
+function _sl3_local_witness_keys_ok(branch, witness)
+    witness isa NamedTuple || return false
+    if branch in (:open_s_one, :open_p_one)
+        return keys(witness) == (:q, :r)
+    elseif branch in (:s_unit, :p_unit)
+        return keys(witness) == (:pivot, :pivot_inverse)
+    end
+
+    return false
 end
 
 function _throw_staged_sl3_local_failure(reason::AbstractString)
