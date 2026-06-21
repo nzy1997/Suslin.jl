@@ -42,6 +42,35 @@ function _issue58_replace_first_factor_with_identity(factors, R, n::Int)
     return corrupted
 end
 
+function _issue58_corrupt_recorded_last_column(certificate)
+    corrupted_steps = collect(certificate.peel_steps)
+    first_step = first(corrupted_steps)
+    R = base_ring(first_step.input_matrix)
+    bad_column = copy(first_step.last_column)
+    bad_column[1] += one(R)
+    corrupted_steps[1] = Suslin.LaurentColumnPeelStep(
+        first_step.dimension,
+        first_step.input_matrix,
+        bad_column,
+        first_step.left_factors,
+        first_step.after_left_matrix,
+        first_step.right_factors,
+        first_step.peeled_matrix,
+        first_step.next_block,
+    )
+    return Suslin.LaurentColumnPeelFactorization(
+        certificate.original_matrix,
+        certificate.final_block,
+        certificate.final_local_target,
+        certificate.final_local_factors,
+        certificate.final_factors,
+        certificate.factors,
+        certificate.product,
+        corrupted_steps,
+        certificate.verification,
+    )
+end
+
 function _issue58_assert_column_peel_entry(entry, expected_dimensions, expected_final_block)
     R = base_ring(entry.matrix)
     n = entry.size[1]
@@ -64,6 +93,10 @@ function _issue58_assert_column_peel_entry(entry, expected_dimensions, expected_
 
     corrupted_factors = _issue58_replace_first_factor_with_identity(factors, R, n)
     @test !verify_factorization(entry.matrix, corrupted_factors)
+
+    corrupted_replay = _issue58_corrupt_recorded_last_column(certificate)
+    @test verify_factorization(entry.matrix, corrupted_replay.factors)
+    @test !Suslin._verify_laurent_column_peel_replay(corrupted_replay)
 
     corrupted_source = _issue58_corrupt_source_relation(entry)
     @test corrupted_source * entry.matrix != identity_matrix(R, n)
