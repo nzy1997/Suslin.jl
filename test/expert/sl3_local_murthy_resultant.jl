@@ -56,6 +56,14 @@ end
         murthy_q0_nonunit_witness = first(supplied_fixture.witnesses),
     )
     _assert_resultant_certificate(supplied_cert; expected_source = :supplied_bezout_witness)
+    @test Suslin.realize_sl3_local(
+        supplied_fixture.entries.p,
+        supplied_fixture.entries.q,
+        supplied_fixture.entries.r,
+        supplied_fixture.entries.s,
+        supplied_fixture.variable;
+        murthy_q0_nonunit_witness = first(supplied_fixture.witnesses),
+    ) == supplied_cert.factors
 
     extracted_fixture = by_id["mg-q0-nonunit-extracted-bezout-resultant"]
     extracted_cert = Suslin.realize_sl3_local_certificate(
@@ -66,6 +74,13 @@ end
         extracted_fixture.variable,
     )
     _assert_resultant_certificate(extracted_cert; expected_source = :extracted_bezout_witness)
+    @test Suslin.realize_sl3_local(
+        extracted_fixture.entries.p,
+        extracted_fixture.entries.q,
+        extracted_fixture.entries.r,
+        extracted_fixture.entries.s,
+        extracted_fixture.variable,
+    ) == extracted_cert.factors
 
     supplied_reduction = _as_namedtuple(supplied_cert.witness.reduction)
     corrupt_supplied_reduction = merge(
