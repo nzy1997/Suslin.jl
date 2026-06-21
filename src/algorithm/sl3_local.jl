@@ -320,7 +320,7 @@ function _recognize_sl3_local_parameters(
         if _is_laurent_polynomial_ring(R)
             throw(ArgumentError("p monicity check is only supported for ordinary polynomial local SL_3 inputs; pass check_monic=false only when the caller has discharged the local monicity assumption"))
         end
-        _is_monic_in_variable(p, var_idx, R) || throw(ArgumentError("p must be monic in X"))
+        _is_monic_in_variable(p, var_idx, R) || _throw_staged_sl3_local_failure("p must be monic in X")
     end
 
     target = matrix(R, [
