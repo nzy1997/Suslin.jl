@@ -96,8 +96,8 @@ end
     @test malformed_err isa ArgumentError
     @test occursin("embedded 2x2 block with trailing identity", sprint(showerror, malformed_err))
 
-    unsupported = _sl3_extended_target(X, -one(R), one(R), zero(R), R)
-    unsupported_err = _sl3_extended_captured_error(() -> Suslin.realize_sl3_local(unsupported, X))
-    @test unsupported_err isa ArgumentError
-    @test occursin("staged local SL_3 solver failure", sprint(showerror, unsupported_err))
+    q_unit_target = _sl3_extended_target(X, -one(R), one(R), zero(R), R)
+    q_unit_factors = Suslin.realize_sl3_local(q_unit_target, X)
+    @test length(q_unit_factors) == 3
+    _test_exact_sl3_factorization(q_unit_target, q_unit_factors)
 end
