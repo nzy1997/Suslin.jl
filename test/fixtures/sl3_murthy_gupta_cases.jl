@@ -177,7 +177,38 @@ function catalog()
                 s = one(R),
             ),
         ),),
-        common_failure,
+        now_supported,
+        ("#74",),
+    )
+
+    q0_nonunit_extracted_bezout_case = _case(
+        "mg-q0-nonunit-extracted-bezout-resultant",
+        :q0_nonunit_bezout_resultant,
+        X,
+        (;
+            p = X^3 + X + 1,
+            q = X^2,
+            r = X^3 - X^2 + 2 * X,
+            s = X^2 - X + 1,
+        ),
+        _target(R, X^3 + X + 1, X^2, X^3 - X^2 + 2 * X, X^2 - X + 1),
+        ((
+            p0 = one(R),
+            q0 = zero(R),
+            p_prime = one(R) - X,
+            q_prime = -X^2 + X - 1,
+            resultant = one(R),
+            p_prime_degree = 1,
+            q_prime_degree = 2,
+            branch_unit = one(R),
+            case1_entries = (;
+                p = X^3 - X^2 + 2 * X,
+                q = X^2 - X + 1,
+                r = -X^2 + X - 1,
+                s = one(R) - X,
+            ),
+        ),),
+        now_supported,
         ("#74",),
     )
 
@@ -205,6 +236,7 @@ function catalog()
             q0_unit_case,
             q0_nonunit_normalizes_case,
             q0_nonunit_normalized_bezout_case,
+            q0_nonunit_extracted_bezout_case,
             open_slice_case,
         ],
     )
