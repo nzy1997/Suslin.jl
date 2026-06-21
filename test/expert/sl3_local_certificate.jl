@@ -93,6 +93,8 @@ end
     @test legacy_factors isa Vector
     @test _sl3_certificate_product(legacy_factors, R) == open_target
     @test Suslin.verify_factorization(open_target, legacy_factors)
+    legacy_form = Suslin._recognize_sl3_local_parameters(p_open, q_open, r_open, s_open, X)
+    @test Suslin._realize_sl3_local_form(legacy_form) == legacy_factors
 
     q_dual = X + one(R)
     r_dual = X
