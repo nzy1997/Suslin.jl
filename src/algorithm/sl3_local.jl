@@ -273,8 +273,6 @@ function _sl3_local_certificate_expected_factors(certificate)
             [elementary_matrix(3, 1, 2, q * witness.pivot_inverse, R)],
         )
     end
-
-    return nothing
 end
 
 function _sl3_local_branch_witness_ok(certificate)
@@ -298,8 +296,6 @@ function _sl3_local_branch_witness_ok(certificate)
     elseif certificate.branch == :p_unit
         return witness.pivot == p && witness.pivot * witness.pivot_inverse == one(R)
     end
-
-    return false
 end
 
 function _sl3_local_witness_keys_ok(branch, witness)
