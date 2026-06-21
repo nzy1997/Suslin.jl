@@ -60,13 +60,19 @@ end
 
     @test nonmonic_target == product_of_factors(nonmonic_factors, R, 3)
 
-    @test_throws ArgumentError Suslin.realize_sl3_local(
+    normalized_target = matrix(R, [
+        one(R) + X X          0;
+        -X         one(R) - X 0;
+        0          0          1
+    ])
+    normalized_factors = Suslin.realize_sl3_local(
         one(R) + X,
         X,
         -X,
         one(R) - X,
         X,
     )
+    @test normalized_target == product_of_factors(normalized_factors, R, 3)
 
     monic_err = try
         Suslin.realize_sl3_local(

@@ -421,14 +421,16 @@ end
     @test haskey(by_id, "mg-q-degree-normalization")
     @test haskey(by_id, "mg-split-lemma-x-square")
     @test haskey(by_id, "mg-q0-unit-recursion")
-    @test haskey(by_id, "mg-q0-nonunit-bezout-resultant")
+    @test haskey(by_id, "mg-q0-nonunit-normalizes-to-q0-unit")
+    @test haskey(by_id, "mg-q0-nonunit-normalized-bezout-resultant")
     @test haskey(by_id, "mg-open-slice-control")
 
     @test haskey(by_id, "mg-q-degree-normalization")
     @test by_id["mg-q-degree-normalization"].branch == :q_degree_normalization
     @test by_id["mg-split-lemma-x-square"].branch == :split_lemma
     @test by_id["mg-q0-unit-recursion"].branch == :q0_unit_recursion
-    @test by_id["mg-q0-nonunit-bezout-resultant"].branch == :q0_nonunit_bezout_resultant
+    @test by_id["mg-q0-nonunit-normalizes-to-q0-unit"].branch == :q_degree_normalization
+    @test by_id["mg-q0-nonunit-normalized-bezout-resultant"].branch == :q0_nonunit_bezout_resultant
     @test by_id["mg-open-slice-control"].branch == :open_slice_control
 
     staged_fail_nonunit_diagonal = [
@@ -436,7 +438,8 @@ end
         if entry.expected_current_solver.status == :staged_fail && !is_unit(entry.target[1, 1]) &&
            !is_unit(entry.target[2, 2])
     ]
-    @test length(staged_fail_nonunit_diagonal) >= 2
+    @test "mg-q0-nonunit-normalized-bezout-resultant" in staged_fail_nonunit_diagonal
+    @test length(staged_fail_nonunit_diagonal) >= 1
 
     split_entry = by_id["mg-split-lemma-x-square"]
     split_witness = first(split_entry.witnesses)
@@ -458,7 +461,7 @@ end
     )
     @test_throws ArgumentError validate_sl3_murthy_gupta_fixture(q0_unit_bad)
 
-    bezout_entry = by_id["mg-q0-nonunit-bezout-resultant"]
+    bezout_entry = by_id["mg-q0-nonunit-normalized-bezout-resultant"]
     bezout_witness = first(bezout_entry.witnesses)
     bezout_bad = merge(
         bezout_entry,

@@ -96,8 +96,26 @@ end
     @test malformed_err isa ArgumentError
     @test occursin("embedded 2x2 block with trailing identity", sprint(showerror, malformed_err))
 
-    unsupported = _sl3_extended_target(X, -one(R), one(R), zero(R), R)
-    unsupported_err = _sl3_extended_captured_error(() -> Suslin.realize_sl3_local(unsupported, X))
-    @test unsupported_err isa ArgumentError
-    @test occursin("staged local SL_3 solver failure", sprint(showerror, unsupported_err))
+    q_unit_target = _sl3_extended_target(X, -one(R), one(R), zero(R), R)
+    q_unit_factors = Suslin.realize_sl3_local(q_unit_target, X)
+    q_unit_cert = Suslin.realize_sl3_local_certificate(q_unit_target, X)
+    @test q_unit_cert.branch == :q_unit
+    @test q_unit_cert.factors == q_unit_factors
+    @test length(q_unit_factors) == 3
+    _test_exact_sl3_factorization(q_unit_target, q_unit_factors)
+
+    S, (U, V) = Oscar.polynomial_ring(QQ, ["U", "V"])
+    multivariate_q_unit_target = _sl3_extended_target(U, one(S), U * V - one(S), V, S)
+    multivariate_q_unit_factors = Suslin.realize_sl3_local(multivariate_q_unit_target, U)
+    multivariate_q_unit_cert = Suslin.realize_sl3_local_certificate(multivariate_q_unit_target, U)
+    @test multivariate_q_unit_cert.branch == :q_unit
+    @test multivariate_q_unit_cert.factors == multivariate_q_unit_factors
+    _test_exact_sl3_factorization(multivariate_q_unit_target, multivariate_q_unit_factors)
+
+    multivariate_unsupported_target = _sl3_extended_target(U, U * V - one(S), one(S), V, S)
+    multivariate_unsupported_err = _sl3_extended_captured_error(
+        () -> Suslin.realize_sl3_local_certificate(multivariate_unsupported_target, U),
+    )
+    @test multivariate_unsupported_err isa ArgumentError
+    @test occursin("supported families require", sprint(showerror, multivariate_unsupported_err))
 end

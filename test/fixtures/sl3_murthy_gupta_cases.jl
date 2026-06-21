@@ -47,6 +47,7 @@ end
 function catalog()
     R, (X,) = Oscar.polynomial_ring(QQ, ["X"])
     common_failure = (; status = :staged_fail, message_substring = "staged local SL_3 solver failure")
+    now_supported = (; status = :passes)
 
     q_degree_normalization_case = _case(
         "mg-q-degree-normalization",
@@ -64,7 +65,7 @@ function catalog()
             remainder = one(R),
             normalized_s = zero(R),
         ),),
-        common_failure,
+        now_supported,
         ("#71",),
     )
 
@@ -90,7 +91,7 @@ function catalog()
             d2 = X^2 + X,
             d = X + 1,
         ),),
-        common_failure,
+        now_supported,
         ("#72",),
     )
 
@@ -125,13 +126,13 @@ function catalog()
                 d = X + 1,
             ),
         ),),
-        common_failure,
+        now_supported,
         ("#73",),
     )
 
-    q0_nonunit_bezout_case = _case(
-        "mg-q0-nonunit-bezout-resultant",
-        :q0_nonunit_bezout_resultant,
+    q0_nonunit_normalizes_case = _case(
+        "mg-q0-nonunit-normalizes-to-q0-unit",
+        :q_degree_normalization,
         X,
         (;
             p = X + 1,
@@ -141,18 +142,38 @@ function catalog()
         ),
         _target(R, X + 1, X, X + 2, X + 1),
         ((
+            quotient = one(R),
+            remainder = -one(R),
+            normalized_s = -one(R),
+        ),),
+        now_supported,
+        ("#71", "#73"),
+    )
+
+    q0_nonunit_normalized_bezout_case = _case(
+        "mg-q0-nonunit-normalized-bezout-resultant",
+        :q0_nonunit_bezout_resultant,
+        X,
+        (;
+            p = X^2 + 1,
+            q = X,
+            r = X^2 + X + 1,
+            s = X + 1,
+        ),
+        _target(R, X^2 + 1, X, X^2 + X + 1, X + 1),
+        ((
             p0 = one(R),
             q0 = zero(R),
             p_prime = one(R),
-            q_prime = one(R),
+            q_prime = X,
             resultant = one(R),
             p_prime_degree = 0,
-            q_prime_degree = 0,
+            q_prime_degree = 1,
             branch_unit = one(R),
             case1_entries = (;
-                p = X + 2,
+                p = X^2 + X + 1,
                 q = X + 1,
-                r = one(R),
+                r = X,
                 s = one(R),
             ),
         ),),
@@ -182,7 +203,8 @@ function catalog()
             q_degree_normalization_case,
             split_lemma_case,
             q0_unit_case,
-            q0_nonunit_bezout_case,
+            q0_nonunit_normalizes_case,
+            q0_nonunit_normalized_bezout_case,
             open_slice_case,
         ],
     )
