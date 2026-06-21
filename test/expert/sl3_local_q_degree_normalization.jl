@@ -130,7 +130,14 @@ end
         check_monic = true,
     )
 
-    cert = Suslin.normalize_sl3_local_q_degree(case.p, case.q, case.r, case.s, case.X)
+    cert = Suslin.normalize_sl3_local_q_degree(
+        case.p,
+        case.q,
+        case.r,
+        case.s,
+        case.X;
+        check_monic = true,
+    )
     corrupted = Suslin.SL3LocalRealizationCertificate(
         cert.target,
         cert.branch,
