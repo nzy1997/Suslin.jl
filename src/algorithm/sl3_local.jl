@@ -291,6 +291,9 @@ function _recognize_sl3_local_parameters(p, q, r, s, X; check_monic::Bool=true)
 
         q_inverse = _unit_inverse_or_nothing(q)
         p0 = _sl3_local_constant_coefficient(p, var_idx, R)
+        # This is the terminal q-unit child after q(0)-unit elimination has
+        # made the first entry divisible by X. Inputs with nonzero p(0) stay
+        # on the recursive Murthy branch so the q(0)-unit step is replayed.
         if q_inverse !== nothing && p0 == zero(R)
             return (; family = :q_unit, R, p, q, r, s, X, target, pivot_inverse = q_inverse)
         end
@@ -803,7 +806,13 @@ function _sl3_local_murthy_q0_unit_reduction_verification(reduction)
         split_certificate_ok =
             verify_sl3_local_realization(split_certificate) &&
             split_certificate.target == eliminated_target &&
-            split_certificate.selected_variable == reduction.selected_variable
+            split_certificate.selected_variable == reduction.selected_variable &&
+            split_certificate.branch == :murthy_split_lemma &&
+            split_certificate.witness.split.witness.a == reduction.selected_variable &&
+            split_certificate.witness.split.witness.a_prime == reduction.p_prime &&
+            split_certificate.witness.split.witness.b == eliminated_entries.q &&
+            split_certificate.witness.split.first_child_target[1, 1] == reduction.selected_variable &&
+            split_certificate.witness.split.second_child_target[1, 1] == reduction.p_prime
         final_factors_ok =
             split_certificate_ok &&
             _sl3_local_factor_product(

@@ -103,6 +103,29 @@ end
         fixture.entries.s,
         fixture.variable,
     ) == fixture_cert.factors
+    fixture_reduction = fixture_cert.witness.reduction
+    replacement_split_certificate = Suslin.realize_sl3_local_certificate(
+        fixture_reduction.eliminated_target,
+        fixture.variable,
+    )
+    @test replacement_split_certificate.branch == :q_unit
+    tampered_reduction = Suslin.SL3LocalMurthyQUnitReduction(
+        fixture_reduction.target,
+        fixture_reduction.q0,
+        fixture_reduction.q0_inverse,
+        fixture_reduction.p0,
+        fixture_reduction.right_e21_coefficient,
+        fixture_reduction.eliminated_target,
+        fixture_reduction.elimination_factor,
+        fixture_reduction.inverse_elimination_factor,
+        fixture_reduction.p_prime,
+        replacement_split_certificate,
+        fixture_reduction.selected_variable,
+        fixture_reduction.degree_p,
+        fixture_reduction.degree_p_prime,
+        fixture_reduction.locality_witness,
+    )
+    @test !Suslin.verify_sl3_local_murthy_q_unit_reduction(tampered_reduction)
 
     R, (X,) = Oscar.polynomial_ring(QQ, ["X"])
 

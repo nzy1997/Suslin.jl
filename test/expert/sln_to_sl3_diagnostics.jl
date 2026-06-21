@@ -185,7 +185,7 @@ end
     @test diagnostic.solver_status == :not_attempted
 end
 
-@testset "Embedded unsupported local solver failure uses stable diagnostic enums" begin
+@testset "Embedded q-unit local solver success uses stable diagnostic enums" begin
     R, (X,) = Oscar.polynomial_ring(QQ, ["X"])
     A = identity_matrix(R, 6)
     A[1:3, 1:3] = matrix(R, [
@@ -196,19 +196,19 @@ end
 
     diagnostic = diagnose_sln_to_sl3_reduction(A; search_partitions = false)
     @test diagnostic isa SLNToSL3ReductionDiagnostic
-    @test diagnostic.status == :failure
-    @test diagnostic.failure_code == :local_solver_failure
+    @test diagnostic.status == :success
+    @test diagnostic.failure_code === nothing
     @test diagnostic.determinant_status == :determinant_one
-    @test diagnostic.partition_search.status == :disabled
+    @test diagnostic.partition_search.status == :not_applicable
 
     failures = _issue41_failure_diagnostics(diagnostic)
-    @test length(failures) == 1
-    failure = only(failures)
-    @test failure.failure_code == :local_solver_failure
-    @test failure.local_shape_reason == :embedded_2x2_with_trailing_identity
-    @test failure.solver_status == :failure
-    @test failure.message !== nothing
-    @test occursin("staged local SL_3 solver failure", failure.message)
+    @test isempty(failures)
+    @test length(diagnostic.block_diagnostics) == 1
+    success = only(diagnostic.block_diagnostics)
+    @test success.failure_code === nothing
+    @test success.local_shape_reason == :embedded_2x2_with_trailing_identity
+    @test success.solver_status == :success
+    @test success.message === nothing
 end
 
 @testset "Supported Laurent block-local diagnostics" begin

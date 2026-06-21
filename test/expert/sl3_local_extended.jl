@@ -98,6 +98,9 @@ end
 
     q_unit_target = _sl3_extended_target(X, -one(R), one(R), zero(R), R)
     q_unit_factors = Suslin.realize_sl3_local(q_unit_target, X)
+    q_unit_cert = Suslin.realize_sl3_local_certificate(q_unit_target, X)
+    @test q_unit_cert.branch == :q_unit
+    @test q_unit_cert.factors == q_unit_factors
     @test length(q_unit_factors) == 3
     _test_exact_sl3_factorization(q_unit_target, q_unit_factors)
 end

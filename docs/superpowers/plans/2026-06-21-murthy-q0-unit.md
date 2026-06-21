@@ -233,18 +233,20 @@ end
 
 Add `verify_sl3_local_murthy_q_unit_reduction(reduction)::Bool` beside the existing q-degree and split replay verifiers.
 
-- [ ] **Step 2: Add q-unit fast path**
+- [ ] **Step 2: Add q-unit base case**
 
-In `_recognize_sl3_local_parameters`, after the existing `p_unit` check, recognize unit top-right entries:
+In `_recognize_sl3_local_parameters`, recognize unit top-right entries as the terminal base case for recursive children whose first entry has zero constant term:
 
 ```julia
 q_inverse = _unit_inverse_or_nothing(q)
-if q_inverse !== nothing
+if q_inverse !== nothing && p0 == zero(R)
     return (; family = :q_unit, R, p, q, r, s, X, target, pivot_inverse = q_inverse)
 end
 ```
 
 Add `:q_unit` handling in `_sl3_local_form_factors`, `_sl3_local_form_witness`, `_sl3_local_certificate_expected_factors`, `_sl3_local_branch_witness_ok`, and `_sl3_local_witness_keys_ok`.
+
+Do not let this base case preempt a q(0)-unit target with nonzero `p(0)`: those inputs must enter the Murthy q(0)-unit branch so constant-term elimination, split replay, and recursive child certificates are recorded.
 
 - [ ] **Step 3: Add Murthy candidate recognition**
 
