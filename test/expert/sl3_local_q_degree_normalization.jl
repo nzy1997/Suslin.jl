@@ -188,4 +188,5 @@ end
         second.elementary_correction,
         Y,
     ))
+    @test !Suslin.verify_sl3_local_q_degree_normalization((; target = second.target))
 end
