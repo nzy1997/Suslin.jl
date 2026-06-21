@@ -139,4 +139,5 @@ end
         ),
     )
     @test !Suslin.verify_sl3_local_murthy_q0_nonunit_reduction(tampered_child_reduction)
+    @test !Suslin.verify_sl3_local_murthy_q0_nonunit_reduction((;))
 end
