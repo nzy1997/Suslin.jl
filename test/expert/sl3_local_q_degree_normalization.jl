@@ -63,7 +63,14 @@ function _q_degree_hand_checked_case()
 end
 
 function _assert_q_degree_certificate(case)
-    cert = Suslin.normalize_sl3_local_q_degree(case.p, case.q, case.r, case.s, case.X)
+    cert = Suslin.normalize_sl3_local_q_degree(
+        case.p,
+        case.q,
+        case.r,
+        case.s,
+        case.X,
+        check_monic = true,
+    )
     correction = Suslin.elementary_matrix(3, 1, 2, case.quotient, case.R)
     normalized_target = _q_degree_target(
         case.R,
@@ -93,7 +100,7 @@ function _assert_q_degree_certificate(case)
     @test normalized_target * correction == case.target
     @test Suslin.verify_sl3_local_realization(cert)
 
-    matrix_cert = Suslin.normalize_sl3_local_q_degree(case.target, case.X)
+    matrix_cert = Suslin.normalize_sl3_local_q_degree(case.target, case.X; check_monic = true)
     @test matrix_cert.target == cert.target
     @test matrix_cert.witness == cert.witness
     @test Suslin.verify_sl3_local_realization(matrix_cert)
@@ -120,6 +127,7 @@ end
         non_monic_r,
         non_monic_s,
         case.X,
+        check_monic = true,
     )
 
     cert = Suslin.normalize_sl3_local_q_degree(case.p, case.q, case.r, case.s, case.X)

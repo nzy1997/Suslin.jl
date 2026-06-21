@@ -28,3 +28,13 @@
 - Public-driver isolation:
   - No runner registration, no public test suite wiring changes, and no implementation files changed.
   - Only this expert test file and report were added.
+
+## Review-Finding Fix (Task 1 follow-up)
+- Updated `test/expert/sl3_local_q_degree_normalization.jl` to explicitly pass `check_monic = true` in:
+  - scalar `normalize_sl3_local_q_degree(case.p, case.q, case.r, case.s, case.X)` call
+  - matrix `normalize_sl3_local_q_degree(case.target, case.X)` call
+  - non-monic negative-control call under `@test_throws`
+- Re-ran:
+  - `julia --project=. -e 'include("test/expert/sl3_local_q_degree_normalization.jl")'`
+- Result remains RED as expected (implementation is still incomplete):
+  - `UndefVarError: normalize_sl3_local_q_degree not defined in Suslin`
