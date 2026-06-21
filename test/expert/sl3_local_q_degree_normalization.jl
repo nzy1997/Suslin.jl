@@ -86,6 +86,20 @@ end
     second_cert = Suslin.sl3_local_q_degree_normalization_certificate(p, q, r, s, X)
     @test Suslin.verify_sl3_local_realization(second_cert)
 
+    L, (T,) = Oscar.laurent_polynomial_ring(QQ, ["T"])
+    laurent_p = T
+    laurent_q = one(L)
+    laurent_r = zero(L)
+    laurent_s = inv(T)
+    @test det(_qdegree_target(L, laurent_p, laurent_q, laurent_r, laurent_s)) == one(L)
+    @test_throws ArgumentError Suslin.sl3_local_q_degree_normalization(
+        laurent_p,
+        laurent_q,
+        laurent_r,
+        laurent_s,
+        T,
+    )
+
     nonmonic_p = 2 * X + one(R)
     nonmonic_q = 2 * X
     @test det(_qdegree_target(R, nonmonic_p, nonmonic_q, one(R), one(R))) == one(R)
@@ -115,4 +129,63 @@ end
         (; normalization = bad_record),
     )
     @test !Suslin.verify_sl3_local_realization(bad_cert)
+
+    bad_remainder = Suslin.SL3LocalQDegreeNormalization(
+        second.target,
+        second.quotient,
+        second.remainder + one(R),
+        second.normalized_target,
+        second.elementary_correction,
+        second.selected_variable,
+    )
+    @test !Suslin.verify_sl3_local_q_degree_normalization(bad_remainder)
+
+    bad_normalized_target = copy(second.normalized_target)
+    bad_normalized_target[1, 2] += one(R)
+    bad_normalized_record = Suslin.SL3LocalQDegreeNormalization(
+        second.target,
+        second.quotient,
+        second.remainder,
+        bad_normalized_target,
+        second.elementary_correction,
+        second.selected_variable,
+    )
+    @test !Suslin.verify_sl3_local_q_degree_normalization(bad_normalized_record)
+    bad_normalized_cert = Suslin.SL3LocalRealizationCertificate(
+        bad_normalized_record.target,
+        :murthy_q_degree_normalization,
+        [bad_normalized_record.normalized_target, bad_normalized_record.elementary_correction],
+        bad_normalized_record.selected_variable,
+        (; normalization = bad_normalized_record),
+    )
+    @test !Suslin.verify_sl3_local_realization(bad_normalized_cert)
+
+    bad_correction = Suslin.SL3LocalQDegreeNormalization(
+        second.target,
+        second.quotient,
+        second.remainder,
+        second.normalized_target,
+        identity_matrix(R, 3),
+        second.selected_variable,
+    )
+    @test !Suslin.verify_sl3_local_q_degree_normalization(bad_correction)
+
+    @test !Suslin.verify_sl3_local_q_degree_normalization(Suslin.SL3LocalQDegreeNormalization(
+        second.target,
+        second.quotient,
+        second.remainder,
+        second.normalized_target,
+        second.elementary_correction,
+        X + one(R),
+    ))
+
+    S, (Y,) = Oscar.polynomial_ring(QQ, ["Y"])
+    @test !Suslin.verify_sl3_local_q_degree_normalization(Suslin.SL3LocalQDegreeNormalization(
+        second.target,
+        second.quotient,
+        second.remainder,
+        second.normalized_target,
+        second.elementary_correction,
+        Y,
+    ))
 end
