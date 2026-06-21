@@ -423,6 +423,7 @@ end
     @test haskey(by_id, "mg-q0-unit-recursion")
     @test haskey(by_id, "mg-q0-nonunit-normalizes-to-q0-unit")
     @test haskey(by_id, "mg-q0-nonunit-normalized-bezout-resultant")
+    @test haskey(by_id, "mg-q0-nonunit-extracted-bezout-resultant")
     @test haskey(by_id, "mg-open-slice-control")
 
     @test haskey(by_id, "mg-q-degree-normalization")
@@ -431,15 +432,17 @@ end
     @test by_id["mg-q0-unit-recursion"].branch == :q0_unit_recursion
     @test by_id["mg-q0-nonunit-normalizes-to-q0-unit"].branch == :q_degree_normalization
     @test by_id["mg-q0-nonunit-normalized-bezout-resultant"].branch == :q0_nonunit_bezout_resultant
+    @test by_id["mg-q0-nonunit-extracted-bezout-resultant"].branch == :q0_nonunit_bezout_resultant
     @test by_id["mg-open-slice-control"].branch == :open_slice_control
 
-    staged_fail_nonunit_diagonal = [
+    supported_nonunit_diagonal = [
         entry.id for entry in catalog.cases
-        if entry.expected_current_solver.status == :staged_fail && !is_unit(entry.target[1, 1]) &&
+        if entry.expected_current_solver.status == :passes && !is_unit(entry.target[1, 1]) &&
            !is_unit(entry.target[2, 2])
     ]
-    @test "mg-q0-nonunit-normalized-bezout-resultant" in staged_fail_nonunit_diagonal
-    @test length(staged_fail_nonunit_diagonal) >= 1
+    @test "mg-q0-nonunit-normalized-bezout-resultant" in supported_nonunit_diagonal
+    @test "mg-q0-nonunit-extracted-bezout-resultant" in supported_nonunit_diagonal
+    @test length(supported_nonunit_diagonal) >= 2
 
     split_entry = by_id["mg-split-lemma-x-square"]
     split_witness = first(split_entry.witnesses)
@@ -470,6 +473,16 @@ end
         ),
     )
     @test_throws ArgumentError validate_sl3_murthy_gupta_fixture(bezout_bad)
+
+    extracted_entry = by_id["mg-q0-nonunit-extracted-bezout-resultant"]
+    extracted_witness = first(extracted_entry.witnesses)
+    extracted_bad = merge(
+        extracted_entry,
+        (;
+            witnesses = (merge(extracted_witness, (; p_prime = extracted_witness.p_prime + one(extracted_entry.ring.object))),),
+        ),
+    )
+    @test_throws ArgumentError validate_sl3_murthy_gupta_fixture(extracted_bad)
 
     branch_unit_bad = merge(
         bezout_entry,

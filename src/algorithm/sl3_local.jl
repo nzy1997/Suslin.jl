@@ -45,6 +45,28 @@ struct SL3LocalMurthyQUnitReduction
     locality_witness
 end
 
+struct SL3LocalMurthyQ0NonunitReduction
+    target
+    p0
+    q0
+    p_prime
+    q_prime
+    resultant
+    bezout_target
+    child_link_target
+    left_factor
+    first_elementary_factor
+    child_certificate
+    selected_variable
+    degree_p::Int
+    degree_q::Int
+    degree_p_prime::Int
+    degree_q_prime::Int
+    branch_unit
+    branch_unit_inverse
+    witness_source::Symbol
+end
+
 function Base.:(==)(left::SL3LocalQDegreeNormalization, right::SL3LocalQDegreeNormalization)
     return left.target == right.target &&
         left.quotient == right.quotient &&
@@ -54,21 +76,50 @@ function Base.:(==)(left::SL3LocalQDegreeNormalization, right::SL3LocalQDegreeNo
         left.selected_variable == right.selected_variable
 end
 
-function realize_sl3_local(A, X; check_monic::Bool=true)
-    return realize_sl3_local_certificate(A, X; check_monic).factors
+function realize_sl3_local(A, X; check_monic::Bool=true, murthy_q0_nonunit_witness=nothing)
+    return realize_sl3_local_certificate(
+        A,
+        X;
+        check_monic,
+        murthy_q0_nonunit_witness,
+    ).factors
 end
 
-function realize_sl3_local(p, q, r, s, X; check_monic::Bool=true)
-    return realize_sl3_local_certificate(p, q, r, s, X; check_monic).factors
+function realize_sl3_local(p, q, r, s, X; check_monic::Bool=true, murthy_q0_nonunit_witness=nothing)
+    return realize_sl3_local_certificate(
+        p,
+        q,
+        r,
+        s,
+        X;
+        check_monic,
+        murthy_q0_nonunit_witness,
+    ).factors
 end
 
-function realize_sl3_local_certificate(A, X; check_monic::Bool=true)
-    form = _recognize_sl3_local_matrix(A, X; check_monic)
+function realize_sl3_local_certificate(A, X; check_monic::Bool=true, murthy_q0_nonunit_witness=nothing)
+    form = _recognize_sl3_local_matrix(A, X; check_monic, murthy_q0_nonunit_witness)
     return _realize_sl3_local_certificate_form(form)
 end
 
-function realize_sl3_local_certificate(p, q, r, s, X; check_monic::Bool=true)
-    form = _recognize_sl3_local_parameters(p, q, r, s, X; check_monic)
+function realize_sl3_local_certificate(
+    p,
+    q,
+    r,
+    s,
+    X;
+    check_monic::Bool=true,
+    murthy_q0_nonunit_witness=nothing,
+)
+    form = _recognize_sl3_local_parameters(
+        p,
+        q,
+        r,
+        s,
+        X;
+        check_monic,
+        murthy_q0_nonunit_witness,
+    )
     return _realize_sl3_local_certificate_form(form)
 end
 
@@ -223,7 +274,7 @@ function sl3_local_split_lemma_certificate(
     return certificate
 end
 
-function _recognize_sl3_local_matrix(A, X; check_monic::Bool=true)
+function _recognize_sl3_local_matrix(A, X; check_monic::Bool=true, murthy_q0_nonunit_witness=nothing)
     nrows(A) == 3 || throw(ArgumentError("local SL_3 special-form recognition failed: A must be 3x3"))
     ncols(A) == 3 || throw(ArgumentError("local SL_3 special-form recognition failed: A must be 3x3"))
 
@@ -235,10 +286,26 @@ function _recognize_sl3_local_matrix(A, X; check_monic::Bool=true)
         throw(ArgumentError("local SL_3 special-form recognition failed: A must be an embedded 2x2 block with trailing identity"))
     end
 
-    return _recognize_sl3_local_parameters(A[1, 1], A[1, 2], A[2, 1], A[2, 2], X; check_monic)
+    return _recognize_sl3_local_parameters(
+        A[1, 1],
+        A[1, 2],
+        A[2, 1],
+        A[2, 2],
+        X;
+        check_monic,
+        murthy_q0_nonunit_witness,
+    )
 end
 
-function _recognize_sl3_local_parameters(p, q, r, s, X; check_monic::Bool=true)
+function _recognize_sl3_local_parameters(
+    p,
+    q,
+    r,
+    s,
+    X;
+    check_monic::Bool=true,
+    murthy_q0_nonunit_witness=nothing,
+)
     R = parent(p)
     parent(q) === R || throw(ArgumentError("p, q, r, s, and X must lie in the same polynomial or Laurent polynomial ring"))
     parent(r) === R || throw(ArgumentError("p, q, r, s, and X must lie in the same polynomial or Laurent polynomial ring"))
@@ -286,7 +353,7 @@ function _recognize_sl3_local_parameters(p, q, r, s, X; check_monic::Bool=true)
         degree_p = degree(p, var_idx)
         degree_q = degree(q, var_idx)
         if degree_q >= degree_p
-            return (; family = :murthy_q0_unit, R, p, q, r, s, X, target, var_idx)
+            return (; family = :murthy_q0_unit, R, p, q, r, s, X, target, var_idx, murthy_q0_nonunit_witness)
         end
 
         q_inverse = _unit_inverse_or_nothing(q)
@@ -300,10 +367,10 @@ function _recognize_sl3_local_parameters(p, q, r, s, X; check_monic::Bool=true)
 
         q0 = _sl3_local_constant_coefficient(q, var_idx, R)
         if _unit_inverse_or_nothing(q0) !== nothing
-            return (; family = :murthy_q0_unit, R, p, q, r, s, X, target, var_idx)
+            return (; family = :murthy_q0_unit, R, p, q, r, s, X, target, var_idx, murthy_q0_nonunit_witness)
         end
 
-        _throw_staged_sl3_local_failure("Murthy q(0)-nonunit Bezout/resultant branch is not implemented")
+        return (; family = :murthy_q0_nonunit_bezout_resultant, R, p, q, r, s, X, target, var_idx, murthy_q0_nonunit_witness)
     end
 
     q_inverse = _unit_inverse_or_nothing(q)
@@ -311,7 +378,7 @@ function _recognize_sl3_local_parameters(p, q, r, s, X; check_monic::Bool=true)
         return (; family = :q_unit, R, p, q, r, s, X, target, pivot_inverse = q_inverse)
     end
 
-    _throw_staged_sl3_local_failure("supported families require one open unipotent slice, a unit pivot p/s/q, or ordinary univariate monic p with q(0) a unit")
+    _throw_staged_sl3_local_failure("supported families require one open unipotent slice, a unit pivot p/s/q, or ordinary univariate monic p in the Murthy q(0)-unit or Bezout/resultant branches")
 end
 
 function _recognize_sl3_local_q_degree_normalization_parameters(p, q, r, s, X; check_monic::Bool=true)
@@ -390,6 +457,8 @@ end
 function _realize_sl3_local_certificate_form(form)
     if form.family == :murthy_q0_unit
         return _realize_sl3_local_murthy_q0_unit_certificate(form)
+    elseif form.family == :murthy_q0_nonunit_bezout_resultant
+        return _realize_sl3_local_murthy_q0_nonunit_certificate(form)
     end
 
     factors = _sl3_local_form_factors(form)
@@ -415,7 +484,11 @@ function _realize_sl3_local_murthy_q0_unit_certificate(form)
     degree_p = degree(form.p, form.var_idx)
     if degree_q >= degree_p
         normalization = sl3_local_q_degree_normalization(form.p, form.q, form.r, form.s, form.X)
-        normalized_certificate = realize_sl3_local_certificate(normalization.normalized_target, form.X)
+        normalized_certificate = realize_sl3_local_certificate(
+            normalization.normalized_target,
+            form.X;
+            murthy_q0_nonunit_witness = form.murthy_q0_nonunit_witness,
+        )
         certificate = SL3LocalRealizationCertificate(
             form.target,
             :murthy_q0_unit,
@@ -518,6 +591,124 @@ function _sl3_local_murthy_q0_unit_reduction(form)
     verify_sl3_local_murthy_q_unit_reduction(reduction) ||
         error("internal Murthy q(0)-unit reduction verification failed")
     return reduction
+end
+
+function _realize_sl3_local_murthy_q0_nonunit_certificate(form)
+    reduction = _sl3_local_murthy_q0_nonunit_reduction(form)
+    certificate = SL3LocalRealizationCertificate(
+        form.target,
+        :murthy_q0_nonunit_bezout_resultant,
+        vcat(
+            [reduction.left_factor, reduction.first_elementary_factor],
+            reduction.child_certificate.factors,
+        ),
+        form.X,
+        (; reduction),
+    )
+    verify_sl3_local_realization(certificate) ||
+        error("internal Murthy q(0)-nonunit Bezout/resultant certificate verification failed")
+    return certificate
+end
+
+function _sl3_local_murthy_q0_nonunit_reduction(form)
+    p_prime, q_prime, witness_source = _sl3_local_murthy_q0_nonunit_bezout_pair(form)
+    resultant = p_prime * form.p - q_prime * form.q
+    resultant == one(form.R) ||
+        throw(ArgumentError("Murthy q(0)-nonunit Bezout equality p_prime*p - q_prime*q must equal 1"))
+
+    degree_p = degree(form.p, form.var_idx)
+    degree_q = degree(form.q, form.var_idx)
+    degree_p_prime = degree(p_prime, form.var_idx)
+    degree_q_prime = degree(q_prime, form.var_idx)
+    degree_p_prime < degree_q ||
+        throw(ArgumentError("Murthy q(0)-nonunit p_prime degree guard failed"))
+    degree_q_prime < degree_p ||
+        throw(ArgumentError("Murthy q(0)-nonunit q_prime degree guard failed"))
+
+    branch_unit = _sl3_local_constant_coefficient(form.q + p_prime, form.var_idx, form.R)
+    branch_unit_inverse = _unit_inverse_or_nothing(branch_unit)
+    branch_unit_inverse === nothing &&
+        _throw_staged_sl3_local_failure("Murthy q(0)-nonunit Bezout child q(0) is not a unit")
+
+    bezout_target = _sl3_local_special_form_target(form.R, form.p, form.q, q_prime, p_prime)
+    child_link_target = _sl3_local_special_form_target(
+        form.R,
+        form.p + q_prime,
+        form.q + p_prime,
+        q_prime,
+        p_prime,
+    )
+    left_factor = elementary_matrix(3, 2, 1, form.r * p_prime - form.s * q_prime, form.R)
+    first_elementary_factor = elementary_matrix(3, 1, 2, -one(form.R), form.R)
+    child_entries = _sl3_local_target_entries(child_link_target)
+    child_entries === nothing &&
+        error("internal Murthy q(0)-nonunit child link target left special form")
+    child_form = (;
+        family = :murthy_q0_unit,
+        R = form.R,
+        p = child_entries.p,
+        q = child_entries.q,
+        r = child_entries.r,
+        s = child_entries.s,
+        X = form.X,
+        target = child_link_target,
+        var_idx = form.var_idx,
+        murthy_q0_nonunit_witness = nothing,
+    )
+    child_certificate = _realize_sl3_local_murthy_q0_unit_certificate(child_form)
+
+    form.target == left_factor * bezout_target ||
+        error("internal Murthy q(0)-nonunit Bezout reduction first equality failed")
+    bezout_target == first_elementary_factor * child_link_target ||
+        error("internal Murthy q(0)-nonunit Bezout reduction q0-unit equality failed")
+    verify_sl3_local_realization(child_certificate) ||
+        error("internal Murthy q(0)-nonunit child certificate verification failed")
+
+    reduction = SL3LocalMurthyQ0NonunitReduction(
+        form.target,
+        _sl3_local_constant_coefficient(form.p, form.var_idx, form.R),
+        _sl3_local_constant_coefficient(form.q, form.var_idx, form.R),
+        p_prime,
+        q_prime,
+        resultant,
+        bezout_target,
+        child_link_target,
+        left_factor,
+        first_elementary_factor,
+        child_certificate,
+        form.X,
+        degree_p,
+        degree_q,
+        degree_p_prime,
+        degree_q_prime,
+        branch_unit,
+        branch_unit_inverse,
+        witness_source,
+    )
+    verify_sl3_local_murthy_q0_nonunit_reduction(reduction) ||
+        error("internal Murthy q(0)-nonunit Bezout/resultant reduction verification failed")
+    return reduction
+end
+
+function _sl3_local_murthy_q0_nonunit_bezout_pair(form)
+    if form.murthy_q0_nonunit_witness !== nothing
+        witness = form.murthy_q0_nonunit_witness
+        hasproperty(witness, :p_prime) ||
+            throw(ArgumentError("Murthy q(0)-nonunit witness must provide p_prime"))
+        hasproperty(witness, :q_prime) ||
+            throw(ArgumentError("Murthy q(0)-nonunit witness must provide q_prime"))
+        return (
+            _coerce_into_ring(form.R, witness.p_prime, "Murthy q(0)-nonunit p_prime witness"),
+            _coerce_into_ring(form.R, witness.q_prime, "Murthy q(0)-nonunit q_prime witness"),
+            :supplied_bezout_witness,
+        )
+    end
+
+    g, a, b = gcdx(form.p, form.q)
+    g_inverse = _unit_inverse_or_nothing(g)
+    g_inverse === nothing &&
+        _throw_staged_sl3_local_failure("Murthy q(0)-nonunit Bezout extraction did not produce a unit gcd")
+    return (g_inverse * a, -g_inverse * b, :extracted_bezout_witness)
 end
 
 function _sl3_local_split_lemma_normalize_inputs(R, values...)
@@ -638,6 +829,15 @@ end
 function verify_sl3_local_murthy_q_unit_reduction(reduction)::Bool
     try
         return _sl3_local_murthy_q0_unit_reduction_verification(reduction).overall_ok
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function verify_sl3_local_murthy_q0_nonunit_reduction(reduction)::Bool
+    try
+        return _sl3_local_murthy_q0_nonunit_reduction_verification(reduction).overall_ok
     catch err
         err isa InterruptException && rethrow()
         return false
@@ -846,6 +1046,150 @@ function _sl3_local_murthy_q0_unit_reduction_verification(reduction)
         degree_ok,
         locality_witness_ok,
         split_certificate_ok,
+        final_factors_ok,
+    )
+end
+
+function _sl3_local_murthy_q0_nonunit_reduction_verification(reduction)
+    target = reduction.target
+    bezout_target = reduction.bezout_target
+    child_link_target = reduction.child_link_target
+    target_size_ok = nrows(target) == 3 && ncols(target) == 3
+    bezout_size_ok = nrows(bezout_target) == 3 && ncols(bezout_target) == 3
+    child_link_size_ok = nrows(child_link_target) == 3 && ncols(child_link_target) == 3
+    size_ok = target_size_ok && bezout_size_ok && child_link_size_ok
+    R = size_ok ? base_ring(target) : nothing
+    bezout_ring_ok = size_ok && _same_base_ring(base_ring(bezout_target), R)
+    child_link_ring_ok = size_ok && _same_base_ring(base_ring(child_link_target), R)
+    selected_var_idx = size_ok ? findfirst(isequal(reduction.selected_variable), collect(gens(R))) : nothing
+    ordinary_univariate_ok = child_link_ring_ok &&
+        _sl3_local_supports_murthy_q0_unit_branch(R, selected_var_idx === nothing ? 0 : selected_var_idx)
+    entries = ordinary_univariate_ok ? _sl3_local_target_entries(target) : nothing
+    bezout_entries = ordinary_univariate_ok ? _sl3_local_target_entries(bezout_target) : nothing
+    child_entries = ordinary_univariate_ok ? _sl3_local_target_entries(child_link_target) : nothing
+    shape_ok = entries !== nothing && bezout_entries !== nothing && child_entries !== nothing
+    variable_ok = ordinary_univariate_ok &&
+        parent(reduction.selected_variable) === R &&
+        reduction.selected_variable in collect(gens(R))
+    var_idx = variable_ok ? findfirst(isequal(reduction.selected_variable), collect(gens(R))) : nothing
+    scalar_ring_ok = ordinary_univariate_ok &&
+        parent(reduction.p0) === R &&
+        parent(reduction.q0) === R &&
+        parent(reduction.p_prime) === R &&
+        parent(reduction.q_prime) === R &&
+        parent(reduction.resultant) === R &&
+        parent(reduction.branch_unit) === R &&
+        parent(reduction.branch_unit_inverse) === R
+    factor_size_ok = ordinary_univariate_ok &&
+        nrows(reduction.left_factor) == 3 &&
+        ncols(reduction.left_factor) == 3 &&
+        nrows(reduction.first_elementary_factor) == 3 &&
+        ncols(reduction.first_elementary_factor) == 3
+    factor_ring_ok = factor_size_ok &&
+        _same_base_ring(base_ring(reduction.left_factor), R) &&
+        _same_base_ring(base_ring(reduction.first_elementary_factor), R)
+    witness_source_ok =
+        reduction.witness_source in (:supplied_bezout_witness, :extracted_bezout_witness)
+
+    determinant_ok = false
+    constants_ok = false
+    bezout_ok = false
+    degree_ok = false
+    branch_unit_ok = false
+    bezout_target_ok = false
+    child_link_target_ok = false
+    factors_ok = false
+    replay_ok = false
+    child_certificate_ok = false
+    final_factors_ok = false
+    if shape_ok && variable_ok && scalar_ring_ok && factor_ring_ok && witness_source_ok
+        p = entries.p
+        q = entries.q
+        r = entries.r
+        s = entries.s
+        determinant_ok =
+            det(target) == one(R) &&
+            det(bezout_target) == one(R) &&
+            det(child_link_target) == one(R)
+        constants_ok =
+            reduction.p0 == _sl3_local_constant_coefficient(p, var_idx, R) &&
+            reduction.q0 == _sl3_local_constant_coefficient(q, var_idx, R)
+        bezout_ok =
+            reduction.resultant == reduction.p_prime * p - reduction.q_prime * q &&
+            reduction.resultant == one(R)
+        degree_ok =
+            reduction.degree_p == degree(p, var_idx) &&
+            reduction.degree_q == degree(q, var_idx) &&
+            reduction.degree_p_prime == degree(reduction.p_prime, var_idx) &&
+            reduction.degree_q_prime == degree(reduction.q_prime, var_idx) &&
+            reduction.degree_p_prime < reduction.degree_q &&
+            reduction.degree_q_prime < reduction.degree_p
+        branch_unit_ok =
+            reduction.branch_unit == _sl3_local_constant_coefficient(child_entries.q, var_idx, R) &&
+            reduction.branch_unit ==
+                reduction.q0 + _sl3_local_constant_coefficient(reduction.p_prime, var_idx, R) &&
+            reduction.branch_unit * reduction.branch_unit_inverse == one(R)
+        bezout_target_ok =
+            bezout_entries.p == p &&
+            bezout_entries.q == q &&
+            bezout_entries.r == reduction.q_prime &&
+            bezout_entries.s == reduction.p_prime
+        child_link_target_ok =
+            child_entries.p == p + reduction.q_prime &&
+            child_entries.q == q + reduction.p_prime &&
+            child_entries.r == reduction.q_prime &&
+            child_entries.s == reduction.p_prime
+        factors_ok =
+            reduction.left_factor ==
+                elementary_matrix(3, 2, 1, r * reduction.p_prime - s * reduction.q_prime, R) &&
+            reduction.first_elementary_factor == elementary_matrix(3, 1, 2, -one(R), R)
+        replay_ok =
+            target == reduction.left_factor * bezout_target &&
+            bezout_target == reduction.first_elementary_factor * child_link_target
+        child_certificate = reduction.child_certificate
+        child_certificate_ok =
+            verify_sl3_local_realization(child_certificate) &&
+            child_certificate.target == child_link_target &&
+            child_certificate.selected_variable == reduction.selected_variable &&
+            child_certificate.branch == :murthy_q0_unit
+        final_factors_ok =
+            child_certificate_ok &&
+            _sl3_local_factor_product(
+                vcat(
+                    [reduction.left_factor, reduction.first_elementary_factor],
+                    child_certificate.factors,
+                ),
+                R,
+            ) == target
+    end
+
+    overall_ok = size_ok && bezout_ring_ok && child_link_ring_ok && ordinary_univariate_ok &&
+        shape_ok && variable_ok && scalar_ring_ok && factor_size_ok && factor_ring_ok &&
+        witness_source_ok && determinant_ok && constants_ok && bezout_ok &&
+        degree_ok && branch_unit_ok && bezout_target_ok && child_link_target_ok &&
+        factors_ok && replay_ok && child_certificate_ok && final_factors_ok
+    return (;
+        overall_ok,
+        size_ok,
+        bezout_ring_ok,
+        child_link_ring_ok,
+        ordinary_univariate_ok,
+        shape_ok,
+        variable_ok,
+        scalar_ring_ok,
+        factor_size_ok,
+        factor_ring_ok,
+        witness_source_ok,
+        determinant_ok,
+        constants_ok,
+        bezout_ok,
+        degree_ok,
+        branch_unit_ok,
+        bezout_target_ok,
+        child_link_target_ok,
+        factors_ok,
+        replay_ok,
+        child_certificate_ok,
         final_factors_ok,
     )
 end
@@ -1080,6 +1424,11 @@ function _sl3_local_certificate_expected_factors(certificate)
             witness.reduction.split_certificate.factors,
             [witness.reduction.inverse_elimination_factor],
         )
+    elseif certificate.branch == :murthy_q0_nonunit_bezout_resultant
+        return vcat(
+            [witness.reduction.left_factor, witness.reduction.first_elementary_factor],
+            witness.reduction.child_certificate.factors,
+        )
     end
 end
 
@@ -1111,6 +1460,8 @@ function _sl3_local_branch_witness_ok(certificate)
         return _sl3_local_q_degree_certificate_witness_ok(certificate)
     elseif certificate.branch == :murthy_q0_unit
         return _sl3_local_murthy_q0_unit_certificate_witness_ok(certificate)
+    elseif certificate.branch == :murthy_q0_nonunit_bezout_resultant
+        return _sl3_local_murthy_q0_nonunit_certificate_witness_ok(certificate)
     end
 end
 
@@ -1164,6 +1515,14 @@ function _sl3_local_murthy_q0_unit_certificate_witness_ok(certificate)
     return true
 end
 
+function _sl3_local_murthy_q0_nonunit_certificate_witness_ok(certificate)
+    reduction = certificate.witness.reduction
+    verify_sl3_local_murthy_q0_nonunit_reduction(reduction) || return false
+    reduction.target == certificate.target || return false
+    reduction.selected_variable == certificate.selected_variable || return false
+    return true
+end
+
 function _sl3_local_witness_keys_ok(branch, witness)
     witness isa NamedTuple || return false
     if branch in (:open_s_one, :open_p_one)
@@ -1176,6 +1535,8 @@ function _sl3_local_witness_keys_ok(branch, witness)
         return keys(witness) == (:normalization,)
     elseif branch == :murthy_q0_unit
         return keys(witness) == (:normalization, :normalized_certificate, :reduction)
+    elseif branch == :murthy_q0_nonunit_bezout_resultant
+        return keys(witness) == (:reduction,)
     end
 
     return false
