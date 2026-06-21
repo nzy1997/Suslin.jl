@@ -147,6 +147,16 @@ end
     @test_throws ArgumentError Suslin._sl3_local_form_factors((; family = :unknown_branch, R))
     @test_throws ArgumentError Suslin._sl3_local_form_witness((; family = :unknown_branch))
 
+    M, (U, V) = Oscar.polynomial_ring(QQ, ["U", "V"])
+    nonmonic_cross_err = try
+        Suslin.realize_sl3_local(U * V + one(M), one(M), zero(M), one(M), U)
+        nothing
+    catch err
+        err
+    end
+    @test nonmonic_cross_err isa ArgumentError
+    @test occursin("p must be monic in X", sprint(showerror, nonmonic_cross_err))
+
     S, (Y,) = Oscar.polynomial_ring(QQ, ["Y"])
     foreign_variable_cert = Suslin.SL3LocalRealizationCertificate(
         open_cert.target,
