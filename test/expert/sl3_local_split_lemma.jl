@@ -191,4 +191,18 @@ end
         unit_replay.witness,
     )
     @test !Suslin.verify_sl3_local_split_lemma_replay(tampered_replay)
+
+    malformed_replay = Suslin.SL3LocalSplitLemmaReplay(
+        :malformed,
+        one(R),
+        one(R),
+        one(R),
+        [],
+        [],
+        [],
+        [],
+        one(R),
+        (;),
+    )
+    @test !Suslin.verify_sl3_local_split_lemma_replay(malformed_replay)
 end
