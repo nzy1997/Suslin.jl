@@ -185,6 +185,24 @@ end
     @test diagnostic.solver_status == :not_attempted
 end
 
+@testset "Unsupported local solver failure reports local solver diagnostic" begin
+    R, (X, Y) = Oscar.polynomial_ring(QQ, ["X", "Y"])
+    A = identity_matrix(R, 6)
+    A[1:3, 1:3] = matrix(R, [
+        X X * Y - one(R) zero(R);
+        one(R) Y zero(R);
+        zero(R) zero(R) one(R)
+    ])
+
+    diagnostic = Suslin._diagnose_sl3_local_obligation(A, R, [1, 2, 3], X, :polynomial)
+    @test diagnostic.status == :failure
+    @test diagnostic.failure_code == :local_solver_failure
+    @test diagnostic.determinant_status == :determinant_one
+    @test diagnostic.local_shape_reason == :embedded_2x2_with_trailing_identity
+    @test diagnostic.solver_status == :failure
+    @test occursin("supported families require", diagnostic.message)
+end
+
 @testset "Embedded q-unit local solver success uses stable diagnostic enums" begin
     R, (X,) = Oscar.polynomial_ring(QQ, ["X"])
     A = identity_matrix(R, 6)
