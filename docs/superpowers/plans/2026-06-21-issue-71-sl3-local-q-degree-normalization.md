@@ -22,7 +22,7 @@
 
 ## File Structure
 
-- Modify `src/algorithm/sl3_local.jl`: add q-degree normalization helper methods, witness construction, polynomial-only guard, degree helper, and branch-specific verifier support.
+- Modify `src/algorithm/sl3_local.jl`: factor out general special-form recognition, add q-degree normalization helper methods, witness construction, polynomial-only guard, degree helper, and branch-specific verifier support.
 - Create `test/expert/sl3_local_q_degree_normalization.jl`: focused tests for two exact polynomial examples, fixture reuse, certificate replay, and negative controls.
 - Modify `test/runtests.jl`: register the expert test after `expert/sl3_local_certificate.jl`.
 
@@ -153,12 +153,12 @@ end
     end
 
     case = first(cases)
-    non_monic = 2 * case.p
-    non_monic_s = case.s
-    non_monic_q = case.q
-    non_monic_r = case.r
+    non_monic = 2 * case.X^2 + one(case.R)
+    non_monic_q = one(case.R)
+    non_monic_r = -one(case.R)
+    non_monic_s = zero(case.R)
     non_monic_target = _q_degree_target(case.R, non_monic, non_monic_q, non_monic_r, non_monic_s)
-    @test det(non_monic_target) == non_monic * non_monic_s - non_monic_q * non_monic_r
+    @test det(non_monic_target) == one(case.R)
     @test_throws ArgumentError Suslin.normalize_sl3_local_q_degree(
         non_monic,
         non_monic_q,
@@ -208,29 +208,114 @@ Expected: FAIL with `UndefVarError` or equivalent because `normalize_sl3_local_q
 - Modify: `test/expert/sl3_local_q_degree_normalization.jl`
 
 **Interfaces:**
-- Consumes: `_recognize_sl3_local_matrix(A, X; check_monic)`, `_recognize_sl3_local_parameters(p, q, r, s, X; check_monic)`, `_sl3_local_target_entries(target)`, `_sl3_local_factor_sequences_equal(left, right)`, and `elementary_matrix`.
+- Consumes: `_sl3_local_target_entries(target)`, `_sl3_local_factor_sequences_equal(left, right)`, and `elementary_matrix`.
+- Produces: `_recognize_sl3_local_special_form_matrix(A, X; check_monic=true)`.
+- Produces: `_recognize_sl3_local_special_form_parameters(p, q, r, s, X; check_monic=true)`.
 - Produces: `normalize_sl3_local_q_degree(A, X; check_monic::Bool=true)::SL3LocalRealizationCertificate`.
 - Produces: `normalize_sl3_local_q_degree(p, q, r, s, X; check_monic::Bool=true)::SL3LocalRealizationCertificate`.
 - Extends: `verify_sl3_local_realization(cert)::Bool` for `cert.branch == :q_degree_normalization`.
 
-- [ ] **Step 1: Add q-degree helper methods**
+- [ ] **Step 1: Factor out general special-form recognition**
+
+In `src/algorithm/sl3_local.jl`, replace the bodies of
+`_recognize_sl3_local_matrix` and `_recognize_sl3_local_parameters` with a
+general special-form validator plus the existing supported-family selection:
+
+```julia
+function _recognize_sl3_local_matrix(A, X; check_monic::Bool=true)
+    form = _recognize_sl3_local_special_form_matrix(A, X; check_monic)
+    return _recognize_sl3_local_supported_family(form)
+end
+
+function _recognize_sl3_local_parameters(p, q, r, s, X; check_monic::Bool=true)
+    form = _recognize_sl3_local_special_form_parameters(p, q, r, s, X; check_monic)
+    return _recognize_sl3_local_supported_family(form)
+end
+
+function _recognize_sl3_local_special_form_matrix(A, X; check_monic::Bool=true)
+    nrows(A) == 3 || throw(ArgumentError("local SL_3 special-form recognition failed: A must be 3x3"))
+    ncols(A) == 3 || throw(ArgumentError("local SL_3 special-form recognition failed: A must be 3x3"))
+
+    R = base_ring(A)
+    parent(X) === R || throw(ArgumentError("A and X must lie in the same polynomial or Laurent polynomial ring"))
+    if A[1, 3] != zero(R) || A[2, 3] != zero(R) ||
+            A[3, 1] != zero(R) || A[3, 2] != zero(R) ||
+            A[3, 3] != one(R)
+        throw(ArgumentError("local SL_3 special-form recognition failed: A must be an embedded 2x2 block with trailing identity"))
+    end
+
+    return _recognize_sl3_local_special_form_parameters(A[1, 1], A[1, 2], A[2, 1], A[2, 2], X; check_monic)
+end
+
+function _recognize_sl3_local_special_form_parameters(p, q, r, s, X; check_monic::Bool=true)
+    R = parent(p)
+    parent(q) === R || throw(ArgumentError("p, q, r, s, and X must lie in the same polynomial or Laurent polynomial ring"))
+    parent(r) === R || throw(ArgumentError("p, q, r, s, and X must lie in the same polynomial or Laurent polynomial ring"))
+    parent(s) === R || throw(ArgumentError("p, q, r, s, and X must lie in the same polynomial or Laurent polynomial ring"))
+    parent(X) === R || throw(ArgumentError("p, q, r, s, and X must lie in the same polynomial or Laurent polynomial ring"))
+
+    ring_gens = collect(gens(R))
+    var_idx = findfirst(isequal(X), ring_gens)
+    var_idx === nothing && throw(ArgumentError("X must be one of the polynomial or Laurent polynomial ring generators"))
+
+    if check_monic
+        if _is_laurent_polynomial_ring(R)
+            throw(ArgumentError("p monicity check is only supported for ordinary polynomial local SL_3 inputs; pass check_monic=false only when the caller has discharged the local monicity assumption"))
+        end
+        _is_monic_in_variable(p, var_idx, R) || throw(ArgumentError("p must be monic in X"))
+    end
+
+    target = matrix(R, [
+        p q zero(R);
+        r s zero(R);
+        zero(R) zero(R) one(R)
+    ])
+    det(target) == one(R) || throw(ArgumentError("constructed matrix must have determinant 1"))
+
+    return (; R, p, q, r, s, X, target)
+end
+
+function _recognize_sl3_local_supported_family(form)
+    if form.s == one(form.R) && form.p == one(form.R) + form.q * form.r
+        return merge(form, (; family = :open_s_one))
+    end
+
+    if form.p == one(form.R) && form.s == one(form.R) + form.q * form.r
+        return merge(form, (; family = :open_p_one))
+    end
+
+    s_inverse = _unit_inverse_or_nothing(form.s)
+    if s_inverse !== nothing
+        return merge(form, (; family = :s_unit, pivot_inverse = s_inverse))
+    end
+
+    p_inverse = _unit_inverse_or_nothing(form.p)
+    if p_inverse !== nothing
+        return merge(form, (; family = :p_unit, pivot_inverse = p_inverse))
+    end
+
+    _throw_staged_sl3_local_failure("supported families require one open unipotent slice or a unit diagonal pivot p or s")
+end
+```
+
+- [ ] **Step 2: Add q-degree helper methods**
 
 In `src/algorithm/sl3_local.jl`, insert these methods after the existing
 `realize_sl3_local_certificate` methods:
 
 ```julia
 function normalize_sl3_local_q_degree(A, X; check_monic::Bool=true)
-    form = _recognize_sl3_local_matrix(A, X; check_monic)
+    form = _recognize_sl3_local_special_form_matrix(A, X; check_monic)
     return _normalize_sl3_local_q_degree_form(form)
 end
 
 function normalize_sl3_local_q_degree(p, q, r, s, X; check_monic::Bool=true)
-    form = _recognize_sl3_local_parameters(p, q, r, s, X; check_monic)
+    form = _recognize_sl3_local_special_form_parameters(p, q, r, s, X; check_monic)
     return _normalize_sl3_local_q_degree_form(form)
 end
 ```
 
-- [ ] **Step 2: Add normalization construction helpers**
+- [ ] **Step 3: Add normalization construction helpers**
 
 In `src/algorithm/sl3_local.jl`, insert these helpers after
 `_realize_sl3_local_form(form)`:
@@ -295,7 +380,7 @@ function _sl3_local_degree_in_variable(value, R, X)
 end
 ```
 
-- [ ] **Step 3: Extend verifier for partial q-degree certificates**
+- [ ] **Step 4: Extend verifier for partial q-degree certificates**
 
 In `_sl3_local_realization_verification(certificate)`, replace:
 
@@ -306,11 +391,11 @@ factors_ok = size_ok && verify_factorization(target, certificate.factors)
 with:
 
 ```julia
-factors_ok = size_ok && if certificate.branch == :q_degree_normalization
-    _sl3_local_q_degree_reconstruction_ok(certificate)
-else
+factors_ok = size_ok && (
+    certificate.branch == :q_degree_normalization ?
+    _sl3_local_q_degree_reconstruction_ok(certificate) :
     verify_factorization(target, certificate.factors)
-end
+)
 ```
 
 In `_sl3_local_certificate_expected_factors(certificate)`, add this branch before
@@ -388,7 +473,7 @@ function _sl3_local_q_degree_reconstruction_ok(certificate)
 end
 ```
 
-- [ ] **Step 4: Run focused test to verify GREEN**
+- [ ] **Step 5: Run focused test to verify GREEN**
 
 Run:
 
