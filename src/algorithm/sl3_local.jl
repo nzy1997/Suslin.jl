@@ -6,6 +6,15 @@ struct SL3LocalRealizationCertificate
     witness
 end
 
+struct SL3LocalQDegreeNormalization
+    target
+    quotient
+    remainder
+    normalized_target
+    elementary_correction
+    selected_variable
+end
+
 struct SL3LocalSplitLemmaReplay
     split_id::Symbol
     original_target
@@ -17,6 +26,15 @@ struct SL3LocalSplitLemmaReplay
     wrapper_factors::Vector
     reassembled_product
     witness
+end
+
+function Base.:(==)(left::SL3LocalQDegreeNormalization, right::SL3LocalQDegreeNormalization)
+    return left.target == right.target &&
+        left.quotient == right.quotient &&
+        left.remainder == right.remainder &&
+        left.normalized_target == right.normalized_target &&
+        left.elementary_correction == right.elementary_correction &&
+        left.selected_variable == right.selected_variable
 end
 
 function realize_sl3_local(A, X; check_monic::Bool=true)
@@ -35,6 +53,58 @@ end
 function realize_sl3_local_certificate(p, q, r, s, X; check_monic::Bool=true)
     form = _recognize_sl3_local_parameters(p, q, r, s, X; check_monic)
     return _realize_sl3_local_certificate_form(form)
+end
+
+function sl3_local_q_degree_normalization(A, X; check_monic::Bool=true)
+    nrows(A) == 3 || throw(ArgumentError("q-degree normalization requires a local SL_3 special-form matrix"))
+    ncols(A) == 3 || throw(ArgumentError("q-degree normalization requires a local SL_3 special-form matrix"))
+    entries = _sl3_local_target_entries(A)
+    entries === nothing && throw(ArgumentError("q-degree normalization requires a local SL_3 special-form matrix"))
+    return sl3_local_q_degree_normalization(entries.p, entries.q, entries.r, entries.s, X; check_monic)
+end
+
+function sl3_local_q_degree_normalization(p, q, r, s, X; check_monic::Bool=true)
+    form = _recognize_sl3_local_q_degree_normalization_parameters(p, q, r, s, X; check_monic)
+    quotient, remainder = _sl3_local_divrem_monic_in_variable(form.q, form.p, form.var_idx, form.R)
+    normalized_target = _sl3_local_special_form_target(
+        form.R,
+        form.p,
+        remainder,
+        form.r,
+        form.s - quotient * form.r,
+    )
+    record = SL3LocalQDegreeNormalization(
+        form.target,
+        quotient,
+        remainder,
+        normalized_target,
+        elementary_matrix(3, 1, 2, quotient, form.R),
+        form.X,
+    )
+    verify_sl3_local_q_degree_normalization(record) ||
+        error("internal Murthy q-degree normalization verification failed")
+    return record
+end
+
+function sl3_local_q_degree_normalization_certificate(record::SL3LocalQDegreeNormalization)
+    verify_sl3_local_q_degree_normalization(record) ||
+        throw(ArgumentError("Murthy q-degree normalization record must verify before certificate construction"))
+    certificate = SL3LocalRealizationCertificate(
+        record.target,
+        :murthy_q_degree_normalization,
+        [record.normalized_target, record.elementary_correction],
+        record.selected_variable,
+        (; normalization = record),
+    )
+    verify_sl3_local_realization(certificate) ||
+        error("internal Murthy q-degree normalization certificate verification failed")
+    return certificate
+end
+
+function sl3_local_q_degree_normalization_certificate(args...; check_monic::Bool=true)
+    return sl3_local_q_degree_normalization_certificate(
+        sl3_local_q_degree_normalization(args...; check_monic),
+    )
 end
 
 function sl3_local_split_lemma_replay(
@@ -195,6 +265,27 @@ function _recognize_sl3_local_parameters(p, q, r, s, X; check_monic::Bool=true)
     end
 
     _throw_staged_sl3_local_failure("supported families require one open unipotent slice or a unit diagonal pivot p or s")
+end
+
+function _recognize_sl3_local_q_degree_normalization_parameters(p, q, r, s, X; check_monic::Bool=true)
+    R = parent(p)
+    parent(q) === R || throw(ArgumentError("p, q, r, s, and X must lie in the same polynomial ring"))
+    parent(r) === R || throw(ArgumentError("p, q, r, s, and X must lie in the same polynomial ring"))
+    parent(s) === R || throw(ArgumentError("p, q, r, s, and X must lie in the same polynomial ring"))
+    parent(X) === R || throw(ArgumentError("p, q, r, s, and X must lie in the same polynomial ring"))
+    _is_laurent_polynomial_ring(R) &&
+        throw(ArgumentError("q-degree normalization is only supported for ordinary polynomial local SL_3 inputs"))
+
+    ring_gens = collect(gens(R))
+    var_idx = findfirst(isequal(X), ring_gens)
+    var_idx === nothing && throw(ArgumentError("X must be one of the polynomial ring generators"))
+    if check_monic
+        _is_monic_in_variable(p, var_idx, R) || throw(ArgumentError("p must be monic in X"))
+    end
+
+    target = _sl3_local_special_form_target(R, p, q, r, s)
+    det(target) == one(R) || throw(ArgumentError("constructed matrix must have determinant 1"))
+    return (; R, p, q, r, s, X, var_idx, target)
 end
 
 function _sl3_local_form_factors(form)
@@ -363,6 +454,90 @@ function verify_sl3_local_split_lemma_replay(replay)::Bool
         err isa InterruptException && rethrow()
         return false
     end
+end
+
+function verify_sl3_local_q_degree_normalization(record)::Bool
+    try
+        return _sl3_local_q_degree_normalization_verification(record).overall_ok
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function _sl3_local_q_degree_normalization_verification(record)
+    target = record.target
+    normalized_target = record.normalized_target
+    target_size_ok = nrows(target) == 3 && ncols(target) == 3
+    normalized_size_ok = nrows(normalized_target) == 3 && ncols(normalized_target) == 3
+    size_ok = target_size_ok && normalized_size_ok
+    R = size_ok ? base_ring(target) : nothing
+    normalized_ring_ok = size_ok && _same_base_ring(base_ring(normalized_target), R)
+    ordinary_polynomial_ok = normalized_ring_ok && !_is_laurent_polynomial_ring(R)
+    quotient_ring_ok = ordinary_polynomial_ok && parent(record.quotient) === R
+    remainder_ring_ok = ordinary_polynomial_ok && parent(record.remainder) === R
+    variable_ok = ordinary_polynomial_ok &&
+        parent(record.selected_variable) === R &&
+        record.selected_variable in collect(gens(R))
+    correction_size_ok =
+        ordinary_polynomial_ok &&
+        nrows(record.elementary_correction) == 3 &&
+        ncols(record.elementary_correction) == 3
+    correction_ring_ok = correction_size_ok && _same_base_ring(base_ring(record.elementary_correction), R)
+    entries = ordinary_polynomial_ok ? _sl3_local_target_entries(target) : nothing
+    normalized_entries = ordinary_polynomial_ok ? _sl3_local_target_entries(normalized_target) : nothing
+    shape_ok = entries !== nothing && normalized_entries !== nothing
+
+    determinant_ok = false
+    monic_ok = false
+    division_ok = false
+    degree_ok = false
+    normalized_target_ok = false
+    correction_ok = false
+    replay_ok = false
+    if shape_ok && quotient_ring_ok && remainder_ring_ok && variable_ok && correction_ring_ok
+        var_idx = findfirst(isequal(record.selected_variable), collect(gens(R)))
+        p = entries.p
+        q = entries.q
+        r = entries.r
+        s = entries.s
+        determinant_ok = det(target) == one(R) && det(normalized_target) == one(R)
+        monic_ok = _is_monic_in_variable(p, var_idx, R)
+        division_ok = q == record.quotient * p + record.remainder
+        degree_ok = degree(record.remainder, var_idx) < degree(p, var_idx)
+        normalized_target_ok =
+            normalized_entries.p == p &&
+            normalized_entries.q == record.remainder &&
+            normalized_entries.r == r &&
+            normalized_entries.s == s - record.quotient * r
+        correction_ok =
+            record.elementary_correction == elementary_matrix(3, 1, 2, record.quotient, R)
+        replay_ok = normalized_target * record.elementary_correction == target
+    end
+
+    overall_ok = size_ok && normalized_ring_ok && ordinary_polynomial_ok &&
+        quotient_ring_ok && remainder_ring_ok && variable_ok && correction_size_ok &&
+        correction_ring_ok && shape_ok && determinant_ok && monic_ok &&
+        division_ok && degree_ok && normalized_target_ok && correction_ok && replay_ok
+    return (;
+        overall_ok,
+        size_ok,
+        normalized_ring_ok,
+        ordinary_polynomial_ok,
+        quotient_ring_ok,
+        remainder_ring_ok,
+        variable_ok,
+        correction_size_ok,
+        correction_ring_ok,
+        shape_ok,
+        determinant_ok,
+        monic_ok,
+        division_ok,
+        degree_ok,
+        normalized_target_ok,
+        correction_ok,
+        replay_ok,
+    )
 end
 
 function _sl3_local_split_lemma_verification(replay)
@@ -572,6 +747,11 @@ function _sl3_local_certificate_expected_factors(certificate)
             witness.second_child_certificate.factors,
             witness.split.suffix_factors,
         )
+    elseif certificate.branch == :murthy_q_degree_normalization
+        return [
+            witness.normalization.normalized_target,
+            witness.normalization.elementary_correction,
+        ]
     end
 end
 
@@ -597,6 +777,8 @@ function _sl3_local_branch_witness_ok(certificate)
         return witness.pivot == p && witness.pivot * witness.pivot_inverse == one(R)
     elseif certificate.branch == :murthy_split_lemma
         return _sl3_local_split_certificate_witness_ok(certificate)
+    elseif certificate.branch == :murthy_q_degree_normalization
+        return _sl3_local_q_degree_certificate_witness_ok(certificate)
     end
 end
 
@@ -617,6 +799,14 @@ function _sl3_local_split_certificate_witness_ok(certificate)
     return true
 end
 
+function _sl3_local_q_degree_certificate_witness_ok(certificate)
+    normalization = certificate.witness.normalization
+    verify_sl3_local_q_degree_normalization(normalization) || return false
+    normalization.target == certificate.target || return false
+    normalization.selected_variable == certificate.selected_variable || return false
+    return true
+end
+
 function _sl3_local_witness_keys_ok(branch, witness)
     witness isa NamedTuple || return false
     if branch in (:open_s_one, :open_p_one)
@@ -625,6 +815,8 @@ function _sl3_local_witness_keys_ok(branch, witness)
         return keys(witness) == (:pivot, :pivot_inverse)
     elseif branch == :murthy_split_lemma
         return keys(witness) == (:split, :first_child_certificate, :second_child_certificate)
+    elseif branch == :murthy_q_degree_normalization
+        return keys(witness) == (:normalization,)
     end
 
     return false
@@ -634,18 +826,33 @@ function _throw_staged_sl3_local_failure(reason::AbstractString)
     throw(ArgumentError("staged local SL_3 solver failure: $(reason)"))
 end
 
-function _is_monic_in_variable(p, var_idx::Int, R)
-    iszero(p) && return false
+function _sl3_local_divrem_monic_in_variable(q, p, var_idx::Int, R)
+    degree_p = degree(p, var_idx)
+    degree_p >= 0 || throw(ArgumentError("p must have nonnegative degree in X"))
+    _is_monic_in_variable(p, var_idx, R) || throw(ArgumentError("p must be monic in X"))
 
-    target_degree = degree(p, var_idx)
-    target_degree < 0 && return false
+    quotient = zero(R)
+    remainder = q
+    X = collect(gens(R))[var_idx]
+    while !iszero(remainder) && degree(remainder, var_idx) >= degree_p
+        degree_remainder = degree(remainder, var_idx)
+        degree_gap = degree_remainder - degree_p
+        leading = _sl3_local_coefficient_in_variable_degree(remainder, var_idx, degree_remainder, R)
+        term = leading * X^degree_gap
+        quotient += term
+        remainder -= term * p
+    end
 
+    return quotient, remainder
+end
+
+function _sl3_local_coefficient_in_variable_degree(value, var_idx::Int, target_degree::Int, R)
     ring_gens = collect(gens(R))
     total = zero(R)
-    for (coeff, exponents) in zip(AbstractAlgebra.coefficients(p), AbstractAlgebra.exponent_vectors(p))
+    for (coeff, exponents) in zip(AbstractAlgebra.coefficients(value), AbstractAlgebra.exponent_vectors(value))
         exponents[var_idx] == target_degree || continue
         term = R(coeff)
-        for idx in 1:length(ring_gens)
+        for idx in eachindex(ring_gens)
             idx == var_idx && continue
             exponent = exponents[idx]
             exponent == 0 && continue
@@ -654,5 +861,14 @@ function _is_monic_in_variable(p, var_idx::Int, R)
         total += term
     end
 
-    return total == one(R)
+    return total
+end
+
+function _is_monic_in_variable(p, var_idx::Int, R)
+    iszero(p) && return false
+
+    target_degree = degree(p, var_idx)
+    target_degree < 0 && return false
+
+    return _sl3_local_coefficient_in_variable_degree(p, var_idx, target_degree, R) == one(R)
 end
