@@ -79,6 +79,26 @@ function _ecp_acceptance_capture_error(f)
     end
 end
 
+function _ecp_acceptance_tampered_staged_certificate(
+    staged;
+    monicity = staged.monicity,
+    lower_reduction = staged.lower_reduction,
+    normality_witness = staged.normality_witness,
+)
+    return Suslin.ECPStagedColumnReductionCertificate(
+        staged.original_column,
+        staged.ring,
+        monicity,
+        staged.link_step,
+        lower_reduction,
+        normality_witness,
+        staged.induction_normality,
+        staged.factors,
+        staged.final_column,
+        staged.verification,
+    )
+end
+
 @testset "public ECP unimodular-column pipeline" begin
     R, cases = _ecp_acceptance_gf2_cases()
     public_factors_by_name = Dict{String, Any}()
@@ -98,6 +118,24 @@ end
     legacy = Suslin.ecp_column_reduction_certificate(canonical, R)
     @test any(stage -> stage.kind == :monicity_normalization, legacy.stages)
     @test legacy.factors != staged.factors
+
+    tampered_monicity = _ecp_acceptance_tampered_staged_certificate(
+        staged;
+        monicity = merge(staged.monicity, (; source = :tampered_monicity)),
+    )
+    @test !Suslin.verify_ecp_staged_column_reduction(tampered_monicity)
+
+    tampered_lower_reduction = _ecp_acceptance_tampered_staged_certificate(
+        staged;
+        lower_reduction = Any[],
+    )
+    @test !Suslin.verify_ecp_staged_column_reduction(tampered_lower_reduction)
+
+    tampered_normality = _ecp_acceptance_tampered_staged_certificate(
+        staged;
+        normality_witness = merge(staged.normality_witness, (; source = :tampered_normality)),
+    )
+    @test !Suslin.verify_ecp_staged_column_reduction(tampered_normality)
 
     permuted = cases[2][2]
     permuted_cert = Suslin.ecp_column_reduction_certificate(permuted, R)
@@ -127,6 +165,23 @@ end
         ),
     )
     @test err isa ArgumentError
+    @test (
+        occursin("lower-variable reduction", sprint(showerror, err)) ||
+        occursin("v(0)", sprint(showerror, err))
+    )
+
+    err = _ecp_acceptance_capture_error(
+        () -> Suslin._ecp_public_staged_reduction_certificate(
+            canonical,
+            R;
+            lower_reduction = Any[],
+        ),
+    )
+    @test err isa ArgumentError
+    @test (
+        occursin("lower-variable reduction", sprint(showerror, err)) ||
+        occursin("v(0)", sprint(showerror, err))
+    )
 
     good_link = Suslin.ecp_link_step_certificate(
         canonical,

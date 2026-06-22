@@ -141,3 +141,70 @@ Observed GREEN:
 ### Concerns
 
 - I only reran the focused expert file and the requested induction/normality regression for this follow-up fix.
+
+## Final Review Fix: Staged Replay Field Consistency
+
+### What Changed
+
+- Added focused regressions in `test/expert/elementary_column_property.jl` proving that top-level staged-certificate tampering now fails verification when any of these fields are changed independently of the nested verified certificates:
+  - `monicity`
+  - `lower_reduction`
+  - `normality_witness`
+- Strengthened the existing `lower_reduction = Any[]` regression to require an `ArgumentError` message mentioning `lower-variable reduction` or `v(0)`.
+- Added a focused internal-helper regression showing that `_ecp_public_staged_reduction_certificate` no longer falls back to the legacy reducer after the deterministic public route has already been recognized; an injected staged-construction failure now propagates as an `ArgumentError`.
+- Updated `src/algorithm/column_reduction.jl` so `_ecp_staged_column_reduction_replay_summary` now checks top-level staged fields against the nested verified route:
+  - `original_column` must agree across the staged certificate, link-step certificate, and induction/normality certificate
+  - `monicity` must equal the replayed monicity data derived from `link_step.link_witness`
+  - `lower_reduction` must match the nested lower-reduction certificate or lower-variable factor sequence
+  - `normality_witness` must match the nested induction/normality witness
+- Updated `_ecp_public_staged_reduction_certificate` so it accepts optional internal dependency injection for focused testing, catches `ArgumentError` only while recognizing an unsupported deterministic route through `_ecp_default_public_link_witness`, and otherwise lets recognized-route staged-construction failures surface.
+
+### RED Output
+
+Command:
+
+```bash
+julia --project=. -e 'include("test/expert/elementary_column_property.jl")'
+```
+
+Observed RED:
+
+- Exit code: `1`
+- Three new tamper checks failed because `verify_ecp_staged_column_reduction` still returned `true` after top-level `monicity`, `lower_reduction`, and `normality_witness` were modified.
+- The recognized-route propagation regression failed with a `MethodError` because `_ecp_public_staged_reduction_certificate` did not yet accept injected staged-construction inputs.
+- Summary: `31 passed, 5 failed, 0 errored`
+
+### GREEN Output
+
+Command:
+
+```bash
+julia --project=. -e 'include("test/expert/elementary_column_property.jl")'
+```
+
+Observed GREEN:
+
+- Exit code: `0`
+- Summary: `public ECP unimodular-column pipeline | 36 passed, 36 total`
+
+### Regression Output
+
+1. `julia --project=. -e 'include("test/expert/ecp_induction_normality.jl")'`
+   - Exit code: `0`
+   - Summary: `ECP induction and normality replay | 27 passed, 27 total`
+
+### Files Changed
+
+- `src/algorithm/column_reduction.jl`
+- `test/expert/elementary_column_property.jl`
+- `docs/superpowers/plans/2026-06-23-ecp-public-unimodular-pipeline-task-1-2-report.md`
+
+### Self-Review
+
+- The staged replay verifier now treats the top-level staged fields as part of the trusted surface instead of assuming the nested certificates are the only state worth checking.
+- The public helper change is intentionally narrow: unsupported-route recognition still falls back quietly, but once the deterministic route is recognized, downstream staged-construction failures are surfaced instead of being silently hidden by the legacy reducer.
+- The only new internal surface is keyword-based dependency injection on the non-exported helper, which keeps the public API unchanged while making the supported-route failure mode testable.
+
+### Concerns
+
+- I reran the focused staged-pipeline expert file and the requested induction/normality regression only; I did not rerun the broader expert suite in this follow-up.

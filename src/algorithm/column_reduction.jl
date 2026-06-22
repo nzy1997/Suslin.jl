@@ -1922,10 +1922,19 @@ end
 
 function _ecp_staged_column_reduction_replay_summary(certificate)
     route = (:validation, :monicity_forcing, :link_witness, :link_step, :induction_normality)
+    original_column_ok = certificate.original_column == certificate.link_step.original_column &&
+        certificate.original_column == certificate.induction_normality.original_column
     link_step_ok = verify_ecp_link_step_certificate(certificate.link_step)
     link_witness_ok = link_step_ok && verify_ecp_link_witness(certificate.link_step.link_witness)
     induction_normality_ok = verify_ecp_induction_normality_certificate(certificate.induction_normality)
-    monicity_ok = link_witness_ok && certificate.monicity.selected_monic_ok
+    monicity_ok = link_witness_ok &&
+        certificate.monicity == _ecp_staged_replayed_monicity(certificate.link_step.link_witness)
+    lower_reduction_ok = _ecp_staged_lower_reduction_matches(
+        certificate.lower_reduction,
+        certificate.induction_normality,
+    )
+    normality_witness_ok =
+        certificate.normality_witness == certificate.induction_normality.normality_witness
     factors_match_ok = _ecp_factor_sequences_equal(certificate.factors, certificate.induction_normality.final_factors)
     replayed_final_column = _apply_reduction_factors(
         certificate.factors,
@@ -1935,10 +1944,13 @@ function _ecp_staged_column_reduction_replay_summary(certificate)
     final_column_ok = certificate.final_column == replayed_final_column
     target_ok = certificate.final_column == _target_reduced_column(certificate.ring, length(certificate.original_column))
     overall_ok = all((
+        original_column_ok,
         link_witness_ok,
         link_step_ok,
         induction_normality_ok,
         monicity_ok,
+        lower_reduction_ok,
+        normality_witness_ok,
         factors_match_ok,
         final_column_ok,
         target_ok,
@@ -1946,14 +1958,38 @@ function _ecp_staged_column_reduction_replay_summary(certificate)
     return (;
         route,
         overall_ok,
+        original_column_ok,
         link_witness_ok,
         link_step_ok,
         induction_normality_ok,
         monicity_ok,
+        lower_reduction_ok,
+        normality_witness_ok,
         factors_match_ok,
         final_column_ok,
         target_ok,
         replayed_final_column,
+    )
+end
+
+function _ecp_staged_replayed_monicity(link_witness::ECPLinkWitnessRecord)
+    return (;
+        source = :link_witness,
+        variable_order = link_witness.variable_order,
+        selected_variable_index = link_witness.selected_variable_index,
+        selected_variable = link_witness.selected_variable,
+        selected_monic_index = link_witness.selected_monic_index,
+        selected_monic_entry = link_witness.selected_monic_entry,
+        selected_monic_ok = _ecp_link_witness_replay_summary(link_witness).selected_monic_ok,
+    )
+end
+
+function _ecp_staged_lower_reduction_matches(lower_reduction, induction_normality)
+    lower_reduction == induction_normality.lower_reduction_certificate && return true
+    _ecp_is_concrete_factor_sequence(lower_reduction) || return false
+    return _ecp_factor_sequences_equal(
+        collect(lower_reduction),
+        induction_normality.lower_variable_factors,
     )
 end
 
@@ -2231,30 +2267,40 @@ function _ecp_substitution_map_tuple(variables, values)
     return tuple(((; variable = variables[idx], value = values[idx]) for idx in eachindex(variables))...)
 end
 
-function _ecp_public_staged_reduction_certificate(column, R)
+function _ecp_public_staged_reduction_certificate(
+    column,
+    R;
+    variable_order = tuple(gens(R)...),
+    selected_variable = nothing,
+    supplied_link_witness = nothing,
+    lower_reduction = nothing,
+    normality_witness = nothing,
+)
     _is_laurent_polynomial_ring(R) && return nothing
     _has_at_least_two_generators(R) || return nothing
-    selected_variable = first(gens(R))
-    link_witness = try
-        _ecp_default_public_link_witness(column, R, selected_variable)
-    catch err
-        err isa InterruptException && rethrow()
-        err isa ArgumentError || rethrow()
-        return nothing
+    normalized_order = _ecp_normalize_variable_order(R, variable_order)
+    isempty(normalized_order) && return nothing
+    selected_variable = selected_variable === nothing ? first(normalized_order) : selected_variable
+    link_witness = if supplied_link_witness === nothing
+        try
+            _ecp_default_public_link_witness(column, R, selected_variable)
+        catch err
+            err isa InterruptException && rethrow()
+            err isa ArgumentError || rethrow()
+            return nothing
+        end
+    else
+        supplied_link_witness
     end
-    try
-        return ecp_staged_column_reduction_certificate(
-            column,
-            R;
-            variable_order = tuple(gens(R)...),
-            selected_variable,
-            supplied_link_witness = link_witness,
-        )
-    catch err
-        err isa InterruptException && rethrow()
-        err isa ArgumentError || rethrow()
-        return nothing
-    end
+    return ecp_staged_column_reduction_certificate(
+        column,
+        R;
+        variable_order,
+        selected_variable,
+        supplied_link_witness = link_witness,
+        lower_reduction = lower_reduction,
+        normality_witness = normality_witness,
+    )
 end
 
 function _ecp_first_monic_entry_index(column, R)
