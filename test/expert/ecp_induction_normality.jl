@@ -143,6 +143,30 @@ end
           Suslin._target_reduced_column(qq.R, length(qq.column))
     @test Suslin.verify_ecp_induction_normality_certificate(qq.certificate)
 
+    explicit_sequence = Suslin.ecp_induction_normality_certificate(
+        qq.column,
+        qq.R;
+        link_step = qq.link,
+        lower_reduction = copy(qq.lower.factors),
+        normality_witness = qq.witness,
+    )
+    @test Suslin.verify_ecp_induction_normality_certificate(explicit_sequence)
+
+    reordered_witness = (;
+        sl2_entry = qq.witness.sl2_entry,
+        sl2_indices = qq.witness.sl2_indices,
+        conjugator = qq.witness.conjugator,
+        source = qq.witness.source,
+    )
+    reordered_witness_certificate = Suslin.ecp_induction_normality_certificate(
+        qq.column,
+        qq.R;
+        link_step = qq.link,
+        lower_reduction = qq.lower,
+        normality_witness = reordered_witness,
+    )
+    @test Suslin.verify_ecp_induction_normality_certificate(reordered_witness_certificate)
+
     tampered_lifted = copy(qq.certificate.lifted_lower_variable_factors)
     tampered_lifted[1] = identity_matrix(qq.R, length(qq.column))
     tampered_lifted_certificate = _replace_record_field(
@@ -173,5 +197,38 @@ end
         link_step = qq.link,
         lower_reduction = qq.lower,
         normality_witness = identity_witness,
+    )
+
+    @test_throws ArgumentError Suslin.ecp_induction_normality_certificate(
+        qq.column,
+        qq.R;
+        link_step = qq.link,
+        lower_reduction = qq.lower,
+    )
+
+    wrong_conjugator_witness = merge(qq.witness, (; conjugator = identity_matrix(qq.R, length(qq.column))))
+    @test_throws ArgumentError Suslin.ecp_induction_normality_certificate(
+        qq.column,
+        qq.R;
+        link_step = qq.link,
+        lower_reduction = qq.lower,
+        normality_witness = wrong_conjugator_witness,
+    )
+
+    @test_throws ArgumentError Suslin.ecp_induction_normality_certificate(
+        qq.column,
+        qq.R;
+        link_step = qq.link,
+        lower_reduction = (; factors = qq.lower.factors),
+        normality_witness = qq.witness,
+    )
+
+    non_elementary_lower_reduction = [_factor_product(qq.lower.factors, qq.R, length(qq.column))]
+    @test_throws ArgumentError Suslin.ecp_induction_normality_certificate(
+        qq.column,
+        qq.R;
+        link_step = qq.link,
+        lower_reduction = non_elementary_lower_reduction,
+        normality_witness = qq.witness,
     )
 end

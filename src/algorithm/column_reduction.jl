@@ -923,10 +923,21 @@ function _ecp_verified_lower_reduction(lower_reduction, lower_column, R)
         return lower_reduction, lower_reduction.factors
     end
 
+    _ecp_is_concrete_factor_sequence(lower_reduction) ||
+        throw(ArgumentError("lower-variable reduction must be an ECP certificate or a concrete elementary factor sequence"))
     factors = collect(lower_reduction)
+    n = length(lower_column)
+    all(factor -> _ecp_is_elementary_factor(factor, R, n), factors) ||
+        throw(ArgumentError("lower-variable factor sequence must contain only elementary factors over R"))
     _apply_reduction_factors(factors, lower_column, R) == _target_reduced_column(R, length(lower_column)) ||
         throw(ArgumentError("lower-variable factor sequence does not reduce v(0) to e_n"))
     return nothing, factors
+end
+
+function _ecp_is_concrete_factor_sequence(value)
+    value isa AbstractVector && return true
+    value isa Tuple && !(value isa NamedTuple) && return true
+    return false
 end
 
 function _ecp_induction_normality_rewrite(normality_witness, lower_column, lifted_lower_factors, R)
@@ -988,7 +999,8 @@ function _ecp_induction_normality_rewrite(normality_witness, lower_column, lifte
 end
 
 function _ecp_normality_witness_keys_ok(normality_witness)
-    return propertynames(normality_witness) == (:source, :conjugator, :sl2_indices, :sl2_entry)
+    names = propertynames(normality_witness)
+    return all(field -> field in names, (:source, :conjugator, :sl2_indices, :sl2_entry))
 end
 
 function _ecp_induction_normality_replay_summary(certificate)
@@ -1066,14 +1078,19 @@ function _ecp_induction_normality_replay_summary(certificate)
 end
 
 function _ecp_is_elementary_factor(factor, R, n::Int)
-    nrows(factor) == n || return false
-    ncols(factor) == n || return false
-    _same_base_ring(base_ring(factor), R) || return false
-    identity = identity_matrix(R, n)
-    positions = [(row, col) for row in 1:n, col in 1:n if factor[row, col] != identity[row, col]]
-    length(positions) == 1 || return false
-    row, col = only(positions)
-    return row != col
+    try
+        nrows(factor) == n || return false
+        ncols(factor) == n || return false
+        _same_base_ring(base_ring(factor), R) || return false
+        identity = identity_matrix(R, n)
+        positions = [(row, col) for row in 1:n, col in 1:n if factor[row, col] != identity[row, col]]
+        length(positions) == 1 || return false
+        row, col = only(positions)
+        return row != col
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
 end
 
 _ecp_namedtuple_keys_exact(value, expected::Tuple) = Tuple(propertynames(value)) == expected
