@@ -41,6 +41,24 @@ struct ECPMonicitySearchFailure
     message::String
 end
 
+struct ECPLinkWitnessRecord
+    original_column
+    ring
+    variable_order
+    selected_variable_index::Int
+    selected_variable
+    selected_monic_index::Int
+    selected_monic_entry
+    residue_probes
+    tail_reductions
+    resultants
+    bezout_coefficients
+    coverage_multipliers
+    path_points
+    metadata
+    verification
+end
+
 function reduce_unimodular_column(v::AbstractVector, R)
     return ecp_column_reduction_certificate(v, R).factors
 end
@@ -61,6 +79,82 @@ function ecp_column_reduction_certificate(v::AbstractVector, R)
     certificate = ECPColumnReductionCertificate(column, R, stages, factors, final_column, verification)
     verify_ecp_column_reduction(certificate) || error("internal ECP column reduction certificate storage verification failed")
     return certificate
+end
+
+function ecp_link_witness(
+    v::AbstractVector,
+    R;
+    variable_order = tuple(gens(R)...),
+    selected_variable = nothing,
+    selected_monic_index::Integer = 1,
+    supplied_link_witness = nothing,
+)
+    _is_laurent_polynomial_ring(R) &&
+        throw(ArgumentError("ECP link witnesses currently support ordinary polynomial columns only"))
+    supplied_link_witness === nothing &&
+        throw(ArgumentError("Park-Woodburn ECP link witness extraction is not implemented; pass supplied_link_witness metadata with source = :supplied_link_witness"))
+
+    column = _validated_unimodular_column(v, R)
+    normalized_order = _ecp_normalize_variable_order(R, variable_order)
+    isempty(normalized_order) && selected_variable === nothing &&
+        throw(ArgumentError("variable_order must contain at least one generator when selected_variable is not provided"))
+    selected_variable = selected_variable === nothing ? first(normalized_order) : selected_variable
+    selected_variable_index = _ecp_selected_variable_index(R, selected_variable)
+    selected_monic_index = Int(selected_monic_index)
+    selected_monic_index == 1 ||
+        throw(ArgumentError("Park-Woodburn ECP link witnesses require the selected monic entry to be first"))
+    _is_monic_in_variable(column[selected_monic_index], R, selected_variable_index) ||
+        throw(ArgumentError("selected first entry must be monic in the selected variable"))
+
+    metadata = (; source = _ecp_link_field(supplied_link_witness, :source))
+    metadata.source == :supplied_link_witness ||
+        throw(ArgumentError("supplied ECP link witness metadata must use source = :supplied_link_witness"))
+    record, verification = try
+        local replay_record = ECPLinkWitnessRecord(
+            tuple(column...),
+            R,
+            tuple(normalized_order...),
+            selected_variable_index,
+            gens(R)[selected_variable_index],
+            selected_monic_index,
+            column[selected_monic_index],
+            tuple(_ecp_link_field(supplied_link_witness, :residue_probes)...),
+            tuple(_ecp_link_field(supplied_link_witness, :tail_reductions)...),
+            tuple(_ecp_link_field(supplied_link_witness, :resultants)...),
+            tuple(_ecp_link_field(supplied_link_witness, :bezout_coefficients)...),
+            tuple(_ecp_link_field(supplied_link_witness, :coverage_multipliers)...),
+            tuple(_ecp_link_field(supplied_link_witness, :path_points)...),
+            metadata,
+            nothing,
+        )
+        replay_record, _ecp_link_witness_replay_summary(replay_record)
+    catch err
+        err isa InterruptException && rethrow()
+        err isa ArgumentError && rethrow()
+        throw(ArgumentError("supplied Park-Woodburn ECP link witness data failed exact replay verification"))
+    end
+    verification.overall_ok ||
+        throw(ArgumentError("supplied Park-Woodburn ECP link witness data failed exact replay verification"))
+    stored = ECPLinkWitnessRecord(
+        record.original_column,
+        record.ring,
+        record.variable_order,
+        record.selected_variable_index,
+        record.selected_variable,
+        record.selected_monic_index,
+        record.selected_monic_entry,
+        record.residue_probes,
+        record.tail_reductions,
+        record.resultants,
+        record.bezout_coefficients,
+        record.coverage_multipliers,
+        record.path_points,
+        record.metadata,
+        verification,
+    )
+    verify_ecp_link_witness(stored) ||
+        throw(ArgumentError("stored Park-Woodburn ECP link witness data failed exact replay verification"))
+    return stored
 end
 
 function _validated_unimodular_column(v::AbstractVector, R)
@@ -441,6 +535,18 @@ function _ecp_generator_index(R, variable)
     return generator_idx
 end
 
+function _ecp_link_field(source, field::Symbol)
+    hasproperty(source, field) || throw(ArgumentError("supplied ECP link witness missing field $(field)"))
+    return getproperty(source, field)
+end
+
+function _ecp_selected_variable_index(R, variable)
+    ring_gens = collect(gens(R))
+    idx = _ecp_variable_order_match_index(ring_gens, variable)
+    idx === nothing && throw(ArgumentError("selected_variable must be a generator of R"))
+    return idx
+end
+
 function _ecp_monicity_candidate_stage(
     column::AbstractVector,
     R,
@@ -612,6 +718,209 @@ function verify_ecp_column_reduction(certificate)::Bool
         err isa InterruptException && rethrow()
         return false
     end
+end
+
+function verify_ecp_link_witness(record)::Bool
+    try
+        replay = _ecp_link_witness_replay_summary(record)
+        return replay.overall_ok && record.verification == replay
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+_ecp_namedtuple_keys_exact(value, expected::Tuple) = Tuple(propertynames(value)) == expected
+
+function _ecp_generator_belongs_to_ring(R, generator)
+    return any(ring_generator -> ring_generator == generator, gens(R))
+end
+
+function _ecp_replayed_residue_probe(probe)
+    return (;
+        id = probe.id,
+        kind = probe.kind,
+        maximal_ideal_generators = tuple(probe.maximal_ideal_generators...),
+    )
+end
+
+function _ecp_link_witness_replay_summary(record)
+    R = record.ring
+    v1 = record.original_column[1]
+    tail_entries = record.original_column[2:end]
+    ring_generators = gens(R)
+    expected_probe_fields = (:id, :kind, :maximal_ideal_generators)
+
+    metadata_ok = record.metadata == (; source = :supplied_link_witness)
+    normalized_variable_order = try
+        tuple(_ecp_normalize_variable_order(R, record.variable_order)...)
+    catch
+        ()
+    end
+    variable_order_ok = normalized_variable_order == record.variable_order
+    selected_variable_index_ok = 1 <= record.selected_variable_index <= length(ring_generators)
+    replayed_selected_variable = selected_variable_index_ok ? ring_generators[record.selected_variable_index] : nothing
+    selected_variable_ok = selected_variable_index_ok &&
+        record.selected_variable == replayed_selected_variable
+    selected_variable_order_ok = variable_order_ok &&
+        count(==(record.selected_variable), record.variable_order) == 1
+    selected_monic_ok = selected_variable_index_ok &&
+        record.selected_monic_index == 1 &&
+        record.selected_monic_entry == v1 &&
+        _is_monic_in_variable(record.selected_monic_entry, R, record.selected_variable_index)
+    probe_shape_ok = all(record.residue_probes) do probe
+        _ecp_namedtuple_keys_exact(probe, expected_probe_fields) || return false
+        generators = tuple(probe.maximal_ideal_generators...)
+        return all(generator -> _ecp_generator_belongs_to_ring(R, generator), generators)
+    end
+    replayed_residue_probes = probe_shape_ok ?
+        tuple((_ecp_replayed_residue_probe(probe) for probe in record.residue_probes)...) :
+        ()
+    stored_probe_metadata_ok = if isnothing(record.verification)
+        true
+    elseif hasproperty(record.verification, :replayed_residue_probes)
+        record.verification.replayed_residue_probes == replayed_residue_probes
+    else
+        false
+    end
+    metadata_shape_ok = probe_shape_ok && stored_probe_metadata_ok
+
+    probe_ids = tuple((probe.id for probe in record.residue_probes)...)
+    lengths_ok = length(record.tail_reductions) == length(record.residue_probes) &&
+        length(record.resultants) == length(record.tail_reductions) &&
+        length(record.bezout_coefficients) == length(record.tail_reductions) &&
+        length(record.coverage_multipliers) == length(record.tail_reductions) &&
+        length(record.path_points) == length(record.tail_reductions) + 1
+
+    recomputed_tail_tilde_Gs = Any[]
+    tail_reduction_ok = lengths_ok && metadata_shape_ok
+    for (idx, tail) in enumerate(record.tail_reductions)
+        hasproperty(tail, :probe_id) || return _ecp_invalid_link_replay(record, metadata_ok, variable_order_ok, selected_variable_index_ok, selected_variable_ok, selected_variable_order_ok, selected_monic_ok, metadata_shape_ok, lengths_ok, recomputed_tail_tilde_Gs)
+        hasproperty(tail, :G) || return _ecp_invalid_link_replay(record, metadata_ok, variable_order_ok, selected_variable_index_ok, selected_variable_ok, selected_variable_order_ok, selected_monic_ok, metadata_shape_ok, lengths_ok, recomputed_tail_tilde_Gs)
+        hasproperty(tail, :lifted_tail_coefficients) || return _ecp_invalid_link_replay(record, metadata_ok, variable_order_ok, selected_variable_index_ok, selected_variable_ok, selected_variable_order_ok, selected_monic_ok, metadata_shape_ok, lengths_ok, recomputed_tail_tilde_Gs)
+        hasproperty(tail, :tilde_G) || return _ecp_invalid_link_replay(record, metadata_ok, variable_order_ok, selected_variable_index_ok, selected_variable_ok, selected_variable_order_ok, selected_monic_ok, metadata_shape_ok, lengths_ok, recomputed_tail_tilde_Gs)
+        coeffs = tuple(tail.lifted_tail_coefficients...)
+        length(coeffs) == length(tail_entries) || (tail_reduction_ok = false; push!(recomputed_tail_tilde_Gs, zero(R)); continue)
+        recomputed_tilde_G = zero(R)
+        for j in eachindex(coeffs)
+            recomputed_tilde_G += _coerce_into_ring(R, coeffs[j], "lifted tail coefficient") * tail_entries[j]
+        end
+        push!(recomputed_tail_tilde_Gs, recomputed_tilde_G)
+        tail_reduction_ok &= tail.probe_id in probe_ids
+        tail_reduction_ok &= tail.probe_id == record.residue_probes[idx].id
+        tail_reduction_ok &= tail.G == recomputed_tilde_G
+        tail_reduction_ok &= tail.tilde_G == recomputed_tilde_G
+    end
+    recomputed_tail_tilde_Gs_tuple = tuple(recomputed_tail_tilde_Gs...)
+
+    recomputed_resultants = Any[]
+    resultants_ok = lengths_ok && tail_reduction_ok
+    for (idx, tilde_G) in enumerate(recomputed_tail_tilde_Gs_tuple)
+        recomputed_resultant = resultant(v1, tilde_G, record.selected_variable_index)
+        push!(recomputed_resultants, recomputed_resultant)
+        resultants_ok &= record.resultants[idx] == recomputed_resultant
+    end
+    recomputed_resultants_tuple = tuple(recomputed_resultants...)
+
+    bezout_ok = lengths_ok && tail_reduction_ok && resultants_ok
+    for idx in eachindex(record.bezout_coefficients)
+        bezout = record.bezout_coefficients[idx]
+        hasproperty(bezout, :f) || return _ecp_invalid_link_replay(record, metadata_ok, variable_order_ok, selected_variable_index_ok, selected_variable_ok, selected_variable_order_ok, selected_monic_ok, metadata_shape_ok, lengths_ok, recomputed_tail_tilde_Gs_tuple, recomputed_resultants_tuple)
+        hasproperty(bezout, :h) || return _ecp_invalid_link_replay(record, metadata_ok, variable_order_ok, selected_variable_index_ok, selected_variable_ok, selected_variable_order_ok, selected_monic_ok, metadata_shape_ok, lengths_ok, recomputed_tail_tilde_Gs_tuple, recomputed_resultants_tuple)
+        bezout_identity = bezout.f * v1 + bezout.h * recomputed_tail_tilde_Gs_tuple[idx]
+        bezout_ok &= bezout_identity == recomputed_resultants_tuple[idx]
+    end
+
+    coverage_total = zero(R)
+    coverage_ok = lengths_ok && resultants_ok
+    for idx in eachindex(record.coverage_multipliers)
+        coverage_total += record.coverage_multipliers[idx] * recomputed_resultants_tuple[idx]
+    end
+    coverage_ok &= coverage_total == one(R)
+
+    path_ok = lengths_ok && coverage_ok
+    if path_ok
+        path_ok &= record.path_points[1] == zero(R)
+        for idx in eachindex(record.coverage_multipliers)
+            expected_step = record.coverage_multipliers[idx] * recomputed_resultants_tuple[idx] * record.selected_variable
+            actual_step = record.path_points[idx + 1] - record.path_points[idx]
+            path_ok &= actual_step == expected_step
+        end
+        path_ok &= record.path_points[end] == record.selected_variable
+    end
+
+    overall_ok = metadata_ok &&
+        variable_order_ok &&
+        selected_variable_index_ok &&
+        selected_variable_ok &&
+        selected_variable_order_ok &&
+        selected_monic_ok &&
+        metadata_shape_ok &&
+        lengths_ok &&
+        tail_reduction_ok &&
+        resultants_ok &&
+        bezout_ok &&
+        coverage_ok &&
+        path_ok
+    return (;
+        overall_ok,
+        metadata_ok,
+        variable_order_ok,
+        normalized_variable_order,
+        selected_variable_index_ok,
+        selected_variable_ok,
+        replayed_selected_variable,
+        selected_variable_order_ok,
+        selected_monic_ok,
+        metadata_shape_ok,
+        lengths_ok,
+        replayed_residue_probes,
+        tail_reduction_ok,
+        resultants_ok,
+        bezout_ok,
+        coverage_ok,
+        path_ok,
+        recomputed_tail_tilde_Gs = recomputed_tail_tilde_Gs_tuple,
+        recomputed_resultants = recomputed_resultants_tuple,
+        coverage_total,
+    )
+end
+
+function _ecp_invalid_link_replay(
+    record,
+    metadata_ok,
+    variable_order_ok,
+    selected_variable_index_ok,
+    selected_variable_ok,
+    selected_variable_order_ok,
+    selected_monic_ok,
+    metadata_shape_ok,
+    lengths_ok,
+    recomputed_tail_tilde_Gs = (),
+    recomputed_resultants = (),
+)
+    return (;
+        overall_ok = false,
+        metadata_ok,
+        variable_order_ok,
+        normalized_variable_order = (),
+        selected_variable_index_ok,
+        selected_variable_ok,
+        replayed_selected_variable = nothing,
+        selected_variable_order_ok,
+        selected_monic_ok,
+        metadata_shape_ok,
+        lengths_ok,
+        replayed_residue_probes = (),
+        tail_reduction_ok = false,
+        resultants_ok = false,
+        bezout_ok = false,
+        coverage_ok = false,
+        path_ok = false,
+        recomputed_tail_tilde_Gs = tuple(recomputed_tail_tilde_Gs...),
+        recomputed_resultants = tuple(recomputed_resultants...),
+        coverage_total = zero(record.ring),
+    )
 end
 
 function _ecp_column_reduction_replay_summary(certificate)
