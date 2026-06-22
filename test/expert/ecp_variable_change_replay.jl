@@ -177,7 +177,7 @@ function _assert_variable_change_stage(entry)
         (:selected_monic_index, stage.selected_monic_index == length(stage.transformed_column) ? 1 : stage.selected_monic_index + 1),
         (:selected_monic_entry, zero(R)),
         (:first_coordinate_strategy, stage.first_coordinate_strategy == :already_first ? :not_moved : :already_first),
-        (:first_coordinate_move_factors, ()),
+        (:first_coordinate_move_factors, (identity_matrix(R, length(column)),)),
         (:first_coordinate_column, _replace_tuple_entry(stage.first_coordinate_column, 1, target[end, 1])),
         (:variable_change_verification, merge(stage.variable_change_verification, (; selected_monic_ok = false))),
     )
