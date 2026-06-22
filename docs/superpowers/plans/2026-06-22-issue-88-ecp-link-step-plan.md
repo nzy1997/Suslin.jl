@@ -18,6 +18,7 @@
 - Keep new names non-exported expert/internal APIs accessed as `Suslin.<name>` in expert tests.
 - Support ordinary polynomial rings and validated #87 `:supplied_link_witness` records only.
 - Stage-fail unsupported path columns or unsupported non-identity `SL_2` families with `ArgumentError`.
+- Stage-fail verified supplied witnesses whose residue-probe signature is not one of the explicitly supported #87 fixture families.
 - Do not perform lower-variable induction or normality rewrite.
 - Do not implement Quillen patching, factor-count optimization, random search, or public reducer routing.
 - Verification command required by issue #88: `julia --project=. -e 'include("test/expert/ecp_link_step.jl")'`.
@@ -169,14 +170,16 @@ function _ecp_evaluate_at_selected_variable(values, selected_variable_index::Int
 end
 
 function _ecp_link_step_segment(witness::ECPLinkWitnessRecord, idx::Int, path_columns)
-    # Verify delta, tail, Bezout, divisibility, endpoint reductions, SL2 identity, and transport factors.
+    # Verify supported fixture family, delta, tail, Bezout, divisibility,
+    # endpoint reductions, SL2 identity, and transport factors.
 end
 ```
 
 Segment records must include `index`, `from_path_point`, `to_path_point`,
 `delta`, `from_column`, `to_column`, `sl2_block`, `sl2_embedding`,
-`elementary_factors`, `forward_factors`, `inverse_factors`, `link_identity`,
-and `verification`.
+`elementary_factors`, `forward_factors`, `inverse_factors`, `support_family`,
+`endpoint_transport_matrix`, `from_certificate`, `to_certificate`,
+`link_identity`, and `verification`.
 
 - [ ] **Step 4: Add factor inversion and composition helpers**
 
@@ -200,6 +203,11 @@ end
 ```
 
 Use these helpers to set `segment.forward_factors = vcat(_ecp_inverse_factor_sequence(to_cert.factors), from_cert.factors)` and `segment.inverse_factors = _ecp_inverse_factor_sequence(segment.forward_factors)`.
+The constructor must first check the witness probe IDs and only allow the
+known #87 fixture signatures `(:gf2_fixture_probe,)` and
+`(:qq_y_probe, :qq_x_probe)`, recording
+`:supplied_fixture_identity_sl2_endpoint_transport`; all other verified
+supplied witnesses must throw `ArgumentError`.
 
 - [ ] **Step 5: Add replay verifier**
 

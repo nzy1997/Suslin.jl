@@ -27,13 +27,17 @@ for that exact step:
 - the Bezout pair at `b_{i-1}` proves the step ideal identity;
 - `v(b_i) - v(b_{i-1})` is exactly divisible by `delta`.
 
-For the first supported family, the actual segment transport is built from
-existing replayable ECP column-reduction certificates for the two endpoint path
-columns. If `F_from * v(b_{i-1}) = e_n` and `F_to * v(b_i) = e_n`, the segment
-transport is `F_to^{-1} * F_from`, recorded as elementary `E_n` factors and
-verified by replay. The `SL_2` contribution is recorded explicitly as the
-supported identity block for this family and verified as determinant one; fuller
-Park-Woodburn `SL_2` block extraction remains staged for later witness families.
+For the first supported family, the implementation is deliberately limited to
+the fixture-backed supplied witnesses from #87. The supported probe signatures
+are replayed explicitly before construction; other verified link witnesses stage
+fail instead of falling through to a generic shortcut. For those supported
+fixtures, segment transport is built from existing replayable ECP
+column-reduction certificates for the two endpoint path columns. If
+`F_from * v(b_{i-1}) = e_n` and `F_to * v(b_i) = e_n`, the segment transport is
+`F_to^{-1} * F_from`, recorded as elementary `E_n` factors and verified by
+replay. The `SL_2` contribution is recorded explicitly as the supported identity
+block for this family and verified as determinant one; fuller Park-Woodburn
+`SL_2` block extraction remains staged for later witness families.
 
 ## Alternatives Considered
 
@@ -60,8 +64,8 @@ Production code adds non-exported expert/internal names:
 `link_witness` may be supplied directly as a validated `ECPLinkWitnessRecord`.
 If it is omitted, the constructor builds one using the existing
 `ecp_link_witness` supplied-witness interface. Laurent rings, malformed witness
-records, unsupported path columns, and non-identity `SL_2` family requests fail
-with `ArgumentError`.
+records, unsupported path columns, unknown supplied-witness probe signatures,
+and non-identity `SL_2` family requests fail with `ArgumentError`.
 
 The certificate stores:
 
@@ -84,8 +88,9 @@ Add `test/expert/ecp_link_step.jl` with the two #87 fixture witnesses:
 The verifier checks every path column, every segment map, the composed forward
 map, the composed inverse map to the lower-variable obligation, and stored
 verification equality. Negative controls tamper one segment `SL_2` block, one
-segment elementary contribution, and one link witness identity; construction or
-replay verification must fail.
+segment elementary contribution, one link witness identity, and one
+verified-but-unsupported supplied witness family; construction or replay
+verification must fail.
 
 ## Out Of Scope
 

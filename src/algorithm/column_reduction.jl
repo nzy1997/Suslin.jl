@@ -1047,23 +1047,12 @@ function _ecp_link_step_segment(witness::ECPLinkWitnessRecord, idx::Int, path_co
     from_column = path_columns[idx]
     to_column = path_columns[idx + 1]
     link_identity = _ecp_link_step_identity(witness, idx, from_column, to_column, delta)
-
-    from_certificate = try
-        ecp_column_reduction_certificate(collect(from_column), R)
-    catch err
-        err isa InterruptException && rethrow()
-        throw(ArgumentError("unsupported ECP link step source path column at segment $(idx)"))
-    end
-    to_certificate = try
-        ecp_column_reduction_certificate(collect(to_column), R)
-    catch err
-        err isa InterruptException && rethrow()
-        throw(ArgumentError("unsupported ECP link step target path column at segment $(idx)"))
-    end
+    support_family = _ecp_link_step_supported_family(witness)
+    transport = _ecp_link_step_identity_transport(R, from_column, to_column, link_identity, support_family)
 
     sl2_block = identity_matrix(R, 2)
     sl2_embedding = block_embedding(sl2_block, n, (1, 2))
-    forward_factors = vcat(_ecp_inverse_factor_sequence(to_certificate.factors), from_certificate.factors)
+    forward_factors = copy(transport.factors)
     inverse_factors = _ecp_inverse_factor_sequence(forward_factors)
     elementary_factors = copy(forward_factors)
     verification = _ecp_link_step_segment_verification(
@@ -1075,8 +1064,10 @@ function _ecp_link_step_segment(witness::ECPLinkWitnessRecord, idx::Int, path_co
         elementary_factors,
         forward_factors,
         inverse_factors,
-        from_certificate,
-        to_certificate,
+        support_family,
+        transport.endpoint_transport_matrix,
+        transport.from_certificate,
+        transport.to_certificate,
         link_identity,
     )
     verification.overall_ok ||
@@ -1093,8 +1084,10 @@ function _ecp_link_step_segment(witness::ECPLinkWitnessRecord, idx::Int, path_co
         elementary_factors,
         forward_factors,
         inverse_factors,
-        from_certificate,
-        to_certificate,
+        support_family,
+        endpoint_transport_matrix = transport.endpoint_transport_matrix,
+        from_certificate = transport.from_certificate,
+        to_certificate = transport.to_certificate,
         link_identity,
         verification,
     )
@@ -1124,6 +1117,7 @@ function _ecp_link_step_identity(witness::ECPLinkWitnessRecord, idx::Int, from_c
     return (;
         resultant = resultant_value,
         coverage_multiplier,
+        delta,
         expected_delta,
         delta_ok = delta == expected_delta,
         evaluated_tail_coefficients,
@@ -1165,6 +1159,44 @@ function _ecp_link_step_divided_differences(from_column, to_column, delta, R)
     return tuple(quotients...), true
 end
 
+function _ecp_link_step_supported_family(witness::ECPLinkWitnessRecord)
+    probe_ids = tuple((probe.id for probe in witness.residue_probes)...)
+    if probe_ids == (:gf2_fixture_probe,) || probe_ids == (:qq_y_probe, :qq_x_probe)
+        return :supplied_fixture_identity_sl2_endpoint_transport
+    end
+    throw(ArgumentError("unsupported ECP link step family for supplied link witness probes $(probe_ids)"))
+end
+
+function _ecp_link_step_identity_transport(R, from_column, to_column, link_identity, support_family::Symbol)
+    link_identity.overall_ok ||
+        throw(ArgumentError("ECP link step requires a replayed link identity"))
+    support_family == :supplied_fixture_identity_sl2_endpoint_transport ||
+        throw(ArgumentError("unsupported ECP link step family $(support_family)"))
+    from_certificate = try
+        ecp_column_reduction_certificate(collect(from_column), R)
+    catch err
+        err isa InterruptException && rethrow()
+        throw(ArgumentError("unsupported ECP link step source path column"))
+    end
+    to_certificate = try
+        ecp_column_reduction_certificate(collect(to_column), R)
+    catch err
+        err isa InterruptException && rethrow()
+        throw(ArgumentError("unsupported ECP link step target path column"))
+    end
+    factors = vcat(_ecp_inverse_factor_sequence(to_certificate.factors), from_certificate.factors)
+    endpoint_transport_matrix = _factor_sequence_product(factors, R, length(from_column))
+    endpoint_transport_matrix * matrix(R, length(from_column), 1, collect(from_column)) ==
+        matrix(R, length(to_column), 1, collect(to_column)) ||
+        throw(ErrorException("internal error: ECP link step endpoint transport does not map path endpoints"))
+    return (;
+        from_certificate,
+        to_certificate,
+        endpoint_transport_matrix,
+        factors,
+    )
+end
+
 function _ecp_inverse_elementary_factor(factor)
     R = base_ring(factor)
     n = nrows(factor)
@@ -1190,6 +1222,8 @@ function _ecp_link_step_segment_verification(
     elementary_factors,
     forward_factors,
     inverse_factors,
+    support_family,
+    endpoint_transport_matrix,
     from_certificate,
     to_certificate,
     link_identity,
@@ -1203,17 +1237,21 @@ function _ecp_link_step_segment_verification(
         det(sl2_block) == one(R) &&
         sl2_block == identity_matrix(R, 2)
     sl2_embedding_ok = sl2_embedding == block_embedding(sl2_block, n, (1, 2))
+    support_family_ok = support_family == :supplied_fixture_identity_sl2_endpoint_transport
     endpoint_reductions_ok = verify_ecp_column_reduction(from_certificate) &&
         verify_ecp_column_reduction(to_certificate) &&
         from_certificate.original_column == collect(from_column) &&
         to_certificate.original_column == collect(to_column)
+    endpoint_transport_ok = endpoint_transport_matrix == _factor_sequence_product(forward_factors, R, n)
     elementary_factors_ok = _ecp_factor_sequences_equal(elementary_factors, forward_factors)
     forward_map_ok = _apply_reduction_factors(forward_factors, collect(from_column), R) == to_matrix
     inverse_map_ok = _apply_reduction_factors(inverse_factors, collect(to_column), R) == from_matrix
     inverse_sequence_ok = _ecp_factor_sequences_equal(inverse_factors, _ecp_inverse_factor_sequence(forward_factors))
     overall_ok = sl2_block_ok &&
         sl2_embedding_ok &&
+        support_family_ok &&
         endpoint_reductions_ok &&
+        endpoint_transport_ok &&
         elementary_factors_ok &&
         link_identity.overall_ok &&
         forward_map_ok &&
@@ -1223,7 +1261,9 @@ function _ecp_link_step_segment_verification(
         overall_ok,
         sl2_block_ok,
         sl2_embedding_ok,
+        support_family_ok,
         endpoint_reductions_ok,
+        endpoint_transport_ok,
         elementary_factors_ok,
         link_identity_ok = link_identity.overall_ok,
         forward_map_ok,
@@ -1331,6 +1371,8 @@ function _ecp_link_step_segment_equivalent(left, right)
         _ecp_factor_sequences_equal(left.elementary_factors, right.elementary_factors) &&
         _ecp_factor_sequences_equal(left.forward_factors, right.forward_factors) &&
         _ecp_factor_sequences_equal(left.inverse_factors, right.inverse_factors) &&
+        left.support_family == right.support_family &&
+        left.endpoint_transport_matrix == right.endpoint_transport_matrix &&
         _ecp_column_certificates_equivalent(left.from_certificate, right.from_certificate) &&
         _ecp_column_certificates_equivalent(left.to_certificate, right.to_certificate) &&
         left.link_identity == right.link_identity &&

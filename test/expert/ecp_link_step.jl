@@ -135,6 +135,37 @@ function _assert_link_step_composed_maps(record)
           matrix(R, length(record.lower_variable_column), 1, collect(record.lower_variable_column))
 end
 
+function _unsupported_identity_sl2_case()
+    R, (x, y) = Oscar.polynomial_ring(GF(2), ["x", "y"])
+    column = [x^2 + y + one(R), x * y^2, x^2 + y^2]
+    r1 = resultant(column[1], column[2], 1)
+    r2 = resultant(column[1], column[3], 1)
+    bezout1 = coordinates(r1, ideal(R, [column[1], column[2]]))
+    bezout2 = coordinates(r2, ideal(R, [column[1], column[3]]))
+    coverage = coordinates(one(R), ideal(R, [r1, r2]))
+    g1 = coverage[1, 1]
+    g2 = coverage[1, 2]
+    witness = (;
+        source = :supplied_link_witness,
+        residue_probes = (
+            (; id = :unsupported_p1, kind = :deterministic_fixture, maximal_ideal_generators = (y,)),
+            (; id = :unsupported_p2, kind = :deterministic_fixture, maximal_ideal_generators = (x,)),
+        ),
+        tail_reductions = (
+            (; probe_id = :unsupported_p1, G = column[2], lifted_tail_coefficients = (one(R), zero(R)), tilde_G = column[2]),
+            (; probe_id = :unsupported_p2, G = column[3], lifted_tail_coefficients = (zero(R), one(R)), tilde_G = column[3]),
+        ),
+        resultants = (r1, r2),
+        bezout_coefficients = (
+            (; f = bezout1[1, 1], h = bezout1[1, 2]),
+            (; f = bezout2[1, 1], h = bezout2[1, 2]),
+        ),
+        coverage_multipliers = (g1, g2),
+        path_points = (zero(R), r1 * g1 * x, x),
+    )
+    return (; R, x, y, column, witness)
+end
+
 @testset "ECP link step certificate replays path transport" begin
     gf2_entry = _case_by_id("ecp-variable-change-monic-gf2")
     gf2_column = _column(gf2_entry)
@@ -150,6 +181,8 @@ end
     @test length(gf2_record.segments) == 1
     @test gf2_record.lower_variable_column == gf2_record.path_columns[1]
     @test gf2_record.transformed_column == tuple(gf2_column...)
+    @test all(segment -> segment.support_family == :supplied_fixture_identity_sl2_endpoint_transport, gf2_record.segments)
+    @test all(segment -> segment.verification.endpoint_transport_ok, gf2_record.segments)
     _assert_link_step_segment_maps(gf2_record)
     _assert_link_step_composed_maps(gf2_record)
     @test Suslin.verify_ecp_link_step_certificate(gf2_record)
@@ -172,6 +205,8 @@ end
     @test any(segment -> segment.delta != zero(qq_entry.ring.object), qq_record.segments)
     @test qq_record.verification.composed_forward_ok == true
     @test qq_record.verification.composed_reduction_ok == true
+    @test all(segment -> segment.support_family == :supplied_fixture_identity_sl2_endpoint_transport, qq_record.segments)
+    @test all(segment -> segment.verification.endpoint_transport_ok, qq_record.segments)
     _assert_link_step_segment_maps(qq_record)
     _assert_link_step_composed_maps(qq_record)
     @test Suslin.verify_ecp_link_step_certificate(qq_record)
@@ -195,5 +230,20 @@ end
             qq_witness;
             path_points = (zero(R), x * y^2 + one(R), x),
         ),
+    )
+
+    unsupported = _unsupported_identity_sl2_case()
+    unsupported_witness = Suslin.ecp_link_witness(
+        unsupported.column,
+        unsupported.R;
+        variable_order = (unsupported.x, unsupported.y),
+        selected_variable = unsupported.x,
+        supplied_link_witness = unsupported.witness,
+    )
+    @test Suslin.verify_ecp_link_witness(unsupported_witness)
+    @test_throws ArgumentError Suslin.ecp_link_step_certificate(
+        unsupported.column,
+        unsupported.R;
+        link_witness = unsupported_witness,
     )
 end
