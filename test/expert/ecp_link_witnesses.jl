@@ -199,6 +199,30 @@ end
         qq_record,
         :residue_probes,
         (
+            merge(qq_record.residue_probes[1], (; kind = :tampered_kind)),
+            qq_record.residue_probes[2],
+        ),
+    ))
+    @test !Suslin.verify_ecp_link_witness(_tamper_record_field(
+        qq_record,
+        :residue_probes,
+        (
+            merge(qq_record.residue_probes[1], (; maximal_ideal_generators = (x,))),
+            qq_record.residue_probes[2],
+        ),
+    ))
+    @test !Suslin.verify_ecp_link_witness(_tamper_record_field(
+        qq_record,
+        :residue_probes,
+        (
+            merge(qq_record.residue_probes[1], (; maximal_ideal_generators = (x, y))),
+            qq_record.residue_probes[2],
+        ),
+    ))
+    @test !Suslin.verify_ecp_link_witness(_tamper_record_field(
+        qq_record,
+        :residue_probes,
+        (
             merge(qq_record.residue_probes[1], (; maximal_ideal_generators = (x + one(R),))),
             qq_record.residue_probes[2],
         ),

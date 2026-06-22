@@ -728,6 +728,14 @@ function _ecp_generator_belongs_to_ring(R, generator)
     return any(ring_generator -> ring_generator == generator, gens(R))
 end
 
+function _ecp_replayed_residue_probe(probe)
+    return (;
+        id = probe.id,
+        kind = probe.kind,
+        maximal_ideal_generators = tuple(probe.maximal_ideal_generators...),
+    )
+end
+
 function _ecp_link_witness_replay_summary(record)
     R = record.ring
     v1 = record.original_column[1]
@@ -752,11 +760,22 @@ function _ecp_link_witness_replay_summary(record)
         record.selected_monic_index == 1 &&
         record.selected_monic_entry == v1 &&
         _is_monic_in_variable(record.selected_monic_entry, R, record.selected_variable_index)
-    metadata_shape_ok = all(record.residue_probes) do probe
+    probe_shape_ok = all(record.residue_probes) do probe
         _ecp_namedtuple_keys_exact(probe, expected_probe_fields) || return false
         generators = tuple(probe.maximal_ideal_generators...)
         return all(generator -> _ecp_generator_belongs_to_ring(R, generator), generators)
     end
+    replayed_residue_probes = probe_shape_ok ?
+        tuple((_ecp_replayed_residue_probe(probe) for probe in record.residue_probes)...) :
+        ()
+    stored_probe_metadata_ok = if isnothing(record.verification)
+        true
+    elseif hasproperty(record.verification, :replayed_residue_probes)
+        record.verification.replayed_residue_probes == replayed_residue_probes
+    else
+        false
+    end
+    metadata_shape_ok = probe_shape_ok && stored_probe_metadata_ok
 
     probe_ids = tuple((probe.id for probe in record.residue_probes)...)
     lengths_ok = length(record.tail_reductions) == length(record.residue_probes) &&
@@ -847,6 +866,7 @@ function _ecp_link_witness_replay_summary(record)
         selected_monic_ok,
         metadata_shape_ok,
         lengths_ok,
+        replayed_residue_probes,
         tail_reduction_ok,
         resultants_ok,
         bezout_ok,
@@ -883,6 +903,7 @@ function _ecp_invalid_link_replay(
         selected_monic_ok,
         metadata_shape_ok,
         lengths_ok,
+        replayed_residue_probes = (),
         tail_reduction_ok = false,
         resultants_ok = false,
         bezout_ok = false,
