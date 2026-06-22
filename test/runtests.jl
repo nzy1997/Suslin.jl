@@ -19,6 +19,7 @@ const TEST_GROUP_FILES = Dict(
         "internal/toricbuilder_issue38_fixture.jl",
         "internal/toricbuilder_problem_catalog.jl",
         "internal/sl3_murthy_gupta_fixtures.jl",
+        "internal/ecp_column_fixtures.jl",
     ],
     "expert" => [
         "expert/elementary_matrices.jl",
