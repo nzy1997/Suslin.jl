@@ -68,6 +68,23 @@ function _tamper_witness(cert)
     )
 end
 
+function _tamper_witness_with_extra_entry(cert)
+    stages = collect(cert.stages)
+    witness_idx = findfirst(stage -> stage.kind == :witness_unit, stages)
+    witness_idx === nothing && error("certificate has no witness stage")
+    stage = stages[witness_idx]
+    witness = tuple(stage.witness..., one(cert.ring))
+    stages[witness_idx] = merge(stage, (; witness))
+    return Suslin.ECPColumnReductionCertificate(
+        cert.original_column,
+        cert.ring,
+        tuple(stages...),
+        cert.factors,
+        cert.final_column,
+        cert.verification,
+    )
+end
+
 function _tamper_monicity_inverse(cert)
     stages = collect(cert.stages)
     monic_idx = findfirst(stage -> stage.kind == :monicity_normalization, stages)
@@ -133,7 +150,9 @@ end
     @test any(stage -> stage.kind == :monicity_normalization, monic_cert.stages)
     _assert_ecp_certificate_replays(monic_cert)
 
-    embedded_cert = Suslin.ecp_column_reduction_certificate(_ecp_cert_column(cases["ecp-longer-embedded-block-gf2"]), cases["ecp-longer-embedded-block-gf2"].ring.object)
+    S, (t,) = Oscar.polynomial_ring(GF(2), ["t"])
+    embedded_column = [zero(S), t^2, t^3, t^2 + t + one(S)]
+    embedded_cert = Suslin.ecp_column_reduction_certificate(embedded_column, S)
     @test any(stage -> stage.kind == :embedded_three_block, embedded_cert.stages)
     _assert_ecp_certificate_replays(embedded_cert)
 
@@ -152,6 +171,7 @@ end
 
     @test !Suslin.verify_ecp_column_reduction(_tamper_first_factor(unit_cert))
     @test !Suslin.verify_ecp_column_reduction(_tamper_witness(witness_cert))
+    @test !Suslin.verify_ecp_column_reduction(_tamper_witness_with_extra_entry(witness_cert))
     @test !Suslin.verify_ecp_column_reduction(_tamper_monicity_inverse(monic_cert))
     @test !Suslin.verify_ecp_column_reduction(_tamper_embedded_indices(embedded_cert))
     @test !Suslin.verify_ecp_column_reduction(_tamper_laurent_shift(laurent_cert))

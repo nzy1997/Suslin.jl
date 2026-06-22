@@ -184,15 +184,10 @@ function _reduce_polynomial_unimodular_column_exact(column::AbstractVector, R)
 end
 
 function _reduce_polynomial_unimodular_column_exact_certificate(column::AbstractVector, R)
-    if length(column) > 3
-        block_factors = _reduce_via_supported_three_block_certificate(column, R)
-        block_factors !== nothing && return block_factors
-    end
-
     factors = _reduce_exact_small_column_certificate(column, R)
     factors !== nothing && return factors
 
-    if length(column) <= 3
+    if length(column) > 3
         block_factors = _reduce_via_supported_three_block_certificate(column, R)
         block_factors !== nothing && return block_factors
     end
@@ -507,6 +502,7 @@ function _ecp_replay_stage(stage, input_column, R)
                 (:kind, :input_column, :witness, :pivot_index, :witness_unit, :witness_unit_inverse, :unit_creation_factors, :created_column, :unit_stage, :factors, :output_column),
             ) &&
             stage.input_column == _ecp_column_tuple(input_column) &&
+            length(stage.witness) == length(input_column) &&
             witness_total == one(R) &&
             stage.witness_unit == witness[stage.pivot_index] &&
             stage.witness_unit_inverse == inv(witness[stage.pivot_index]) &&
