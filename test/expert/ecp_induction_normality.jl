@@ -152,6 +152,14 @@ end
     )
     @test Suslin.verify_ecp_induction_normality_certificate(explicit_sequence)
 
+    implicit_lower = Suslin.ecp_induction_normality_certificate(
+        qq.column,
+        qq.R;
+        link_step = qq.link,
+        normality_witness = qq.witness,
+    )
+    @test Suslin.verify_ecp_induction_normality_certificate(implicit_lower)
+
     reordered_witness = (;
         sl2_entry = qq.witness.sl2_entry,
         sl2_indices = qq.witness.sl2_indices,
@@ -189,6 +197,33 @@ end
         tampered_rewrite,
     )
     @test !Suslin.verify_ecp_induction_normality_certificate(tampered_rewrite_certificate)
+
+    tampered_lower_sequence_certificate = _replace_record_field(
+        qq.certificate,
+        :lower_reduction_certificate,
+        nothing,
+    )
+    tampered_lower_sequence_certificate = _replace_record_field(
+        tampered_lower_sequence_certificate,
+        :lower_variable_factors,
+        [:not_a_matrix],
+    )
+    @test !Suslin.verify_ecp_induction_normality_certificate(tampered_lower_sequence_certificate)
+
+    tampered_shape_witness = (;
+        source = :supplied_normality_witness,
+        conjugator = identity_matrix(qq.R, 2),
+        sl2_indices = (2, 1),
+        sl2_entry = one(qq.R),
+    )
+    @test_throws ArgumentError Suslin._ecp_induction_normality_rewrite(
+        tampered_shape_witness,
+        [one(qq.R), zero(qq.R)],
+        [],
+        qq.R,
+    )
+
+    @test !Suslin.verify_ecp_induction_normality_certificate((;))
 
     identity_witness = merge(qq.witness, (; sl2_entry = zero(qq.R)))
     @test_throws ArgumentError Suslin.ecp_induction_normality_certificate(
