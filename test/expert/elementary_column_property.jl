@@ -109,6 +109,7 @@ end
     canonical = cases[1][2]
     staged = Suslin.ecp_staged_column_reduction_certificate(canonical, R)
     @test Suslin.verify_ecp_staged_column_reduction(staged)
+    @test !Suslin.verify_ecp_staged_column_reduction((; malformed = true))
     @test staged.verification.route == (:validation, :monicity_forcing, :link_witness, :link_step, :induction_normality)
     @test staged.verification.link_witness_ok
     @test staged.verification.link_step_ok
@@ -118,6 +119,15 @@ end
     legacy = Suslin.ecp_column_reduction_certificate(canonical, R)
     @test any(stage -> stage.kind == :monicity_normalization, legacy.stages)
     @test legacy.factors != staged.factors
+
+    explicit_public_staged = Suslin._ecp_public_staged_reduction_certificate(
+        canonical,
+        R;
+        supplied_link_witness = _ecp_acceptance_good_link_witness(canonical, R),
+    )
+    @test Suslin.verify_ecp_staged_column_reduction(explicit_public_staged)
+    @test _ecp_acceptance_apply(explicit_public_staged.factors, canonical, R) ==
+          _ecp_acceptance_target(R, length(canonical))
 
     tampered_monicity = _ecp_acceptance_tampered_staged_certificate(
         staged;
