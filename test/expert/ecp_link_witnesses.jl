@@ -64,6 +64,7 @@ end
 function _mutate_witness(
     witness;
     residue_probes = witness.residue_probes,
+    tail_reductions = witness.tail_reductions,
     resultants = witness.resultants,
     bezout_coefficients = witness.bezout_coefficients,
     coverage_multipliers = witness.coverage_multipliers,
@@ -71,6 +72,7 @@ function _mutate_witness(
 )
     return merge(witness, (;
         residue_probes,
+        tail_reductions,
         resultants,
         bezout_coefficients,
         coverage_multipliers,
@@ -179,6 +181,29 @@ end
             coverage_multipliers = (one(R), one(R)),
         ),
     )
+    malformed_tail_err = try
+        Suslin.ecp_link_witness(
+            qq_column,
+            R;
+            variable_order = qq_entry.ring.generators,
+            selected_variable = x,
+            supplied_link_witness = _mutate_witness(
+                qq_witness;
+                tail_reductions = (
+                    merge(qq_witness.tail_reductions[1], (; lifted_tail_coefficients = y)),
+                    qq_witness.tail_reductions[2],
+                ),
+            ),
+        )
+        nothing
+    catch caught
+        caught
+    end
+    @test malformed_tail_err isa ArgumentError
+    @test occursin(
+        "supplied Park-Woodburn ECP link witness data failed exact replay verification",
+        sprint(showerror, malformed_tail_err),
+    )
     @test_throws ArgumentError Suslin.ecp_link_witness(
         qq_column,
         R;
@@ -189,6 +214,20 @@ end
             path_points = (zero(R), y^2 * x + one(R), x),
         ),
     )
+    empty_order_err = try
+        Suslin.ecp_link_witness(
+            qq_column,
+            R;
+            variable_order = (),
+            supplied_link_witness = qq_witness,
+        )
+        nothing
+    catch caught
+        caught
+    end
+    @test empty_order_err isa ArgumentError
+    @test occursin("variable_order", sprint(showerror, empty_order_err)) ||
+        occursin("at least one", sprint(showerror, empty_order_err))
 
     bad_verification = merge(qq_record.verification, (; coverage_ok = false, overall_ok = false))
     @test !Suslin.verify_ecp_link_witness(_tamper_record_field(qq_record, :verification, bad_verification))
@@ -241,6 +280,14 @@ end
         (
             merge(qq_record.residue_probes[1], (; maximal_ideal_generators = (y,), unexpected = :extra_field)),
             qq_record.residue_probes[2],
+        ),
+    ))
+    @test !Suslin.verify_ecp_link_witness(_tamper_record_field(
+        qq_record,
+        :tail_reductions,
+        (
+            merge(qq_record.tail_reductions[1], (; lifted_tail_coefficients = y)),
+            qq_record.tail_reductions[2],
         ),
     ))
 end

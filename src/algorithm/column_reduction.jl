@@ -96,6 +96,8 @@ function ecp_link_witness(
 
     column = _validated_unimodular_column(v, R)
     normalized_order = _ecp_normalize_variable_order(R, variable_order)
+    isempty(normalized_order) && selected_variable === nothing &&
+        throw(ArgumentError("variable_order must contain at least one generator when selected_variable is not provided"))
     selected_variable = selected_variable === nothing ? first(normalized_order) : selected_variable
     selected_variable_index = _ecp_selected_variable_index(R, selected_variable)
     selected_monic_index = Int(selected_monic_index)
@@ -107,24 +109,30 @@ function ecp_link_witness(
     metadata = (; source = _ecp_link_field(supplied_link_witness, :source))
     metadata.source == :supplied_link_witness ||
         throw(ArgumentError("supplied ECP link witness metadata must use source = :supplied_link_witness"))
-    record = ECPLinkWitnessRecord(
-        tuple(column...),
-        R,
-        tuple(normalized_order...),
-        selected_variable_index,
-        gens(R)[selected_variable_index],
-        selected_monic_index,
-        column[selected_monic_index],
-        tuple(_ecp_link_field(supplied_link_witness, :residue_probes)...),
-        tuple(_ecp_link_field(supplied_link_witness, :tail_reductions)...),
-        tuple(_ecp_link_field(supplied_link_witness, :resultants)...),
-        tuple(_ecp_link_field(supplied_link_witness, :bezout_coefficients)...),
-        tuple(_ecp_link_field(supplied_link_witness, :coverage_multipliers)...),
-        tuple(_ecp_link_field(supplied_link_witness, :path_points)...),
-        metadata,
-        nothing,
-    )
-    verification = _ecp_link_witness_replay_summary(record)
+    record, verification = try
+        local replay_record = ECPLinkWitnessRecord(
+            tuple(column...),
+            R,
+            tuple(normalized_order...),
+            selected_variable_index,
+            gens(R)[selected_variable_index],
+            selected_monic_index,
+            column[selected_monic_index],
+            tuple(_ecp_link_field(supplied_link_witness, :residue_probes)...),
+            tuple(_ecp_link_field(supplied_link_witness, :tail_reductions)...),
+            tuple(_ecp_link_field(supplied_link_witness, :resultants)...),
+            tuple(_ecp_link_field(supplied_link_witness, :bezout_coefficients)...),
+            tuple(_ecp_link_field(supplied_link_witness, :coverage_multipliers)...),
+            tuple(_ecp_link_field(supplied_link_witness, :path_points)...),
+            metadata,
+            nothing,
+        )
+        replay_record, _ecp_link_witness_replay_summary(replay_record)
+    catch err
+        err isa InterruptException && rethrow()
+        err isa ArgumentError && rethrow()
+        throw(ArgumentError("supplied Park-Woodburn ECP link witness data failed exact replay verification"))
+    end
     verification.overall_ok ||
         throw(ArgumentError("supplied Park-Woodburn ECP link witness data failed exact replay verification"))
     stored = ECPLinkWitnessRecord(
@@ -144,8 +152,14 @@ function ecp_link_witness(
         record.metadata,
         verification,
     )
-    verify_ecp_link_witness(stored) ||
+    try
+        verify_ecp_link_witness(stored) ||
+            throw(ArgumentError("stored Park-Woodburn ECP link witness data failed exact replay verification"))
+    catch err
+        err isa InterruptException && rethrow()
+        err isa ArgumentError && rethrow()
         throw(ArgumentError("stored Park-Woodburn ECP link witness data failed exact replay verification"))
+    end
     return stored
 end
 
