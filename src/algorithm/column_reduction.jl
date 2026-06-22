@@ -73,6 +73,21 @@ struct ECPLinkStepCertificate
     verification
 end
 
+struct ECPInductionNormalityCertificate
+    original_column
+    ring
+    link_step::ECPLinkStepCertificate
+    lower_variable_column
+    lower_reduction_certificate
+    lower_variable_factors::Vector
+    lifted_lower_variable_factors::Vector
+    normality_witness
+    normality_rewrite
+    final_factors::Vector
+    final_column
+    verification
+end
+
 function reduce_unimodular_column(v::AbstractVector, R)
     return ecp_column_reduction_certificate(v, R).factors
 end
@@ -229,6 +244,73 @@ function ecp_link_step_certificate(
     )
     verify_ecp_link_step_certificate(certificate) ||
         throw(ArgumentError("stored Park-Woodburn ECP link step failed exact replay verification"))
+    return certificate
+end
+
+function ecp_induction_normality_certificate(
+    v::AbstractVector,
+    R;
+    link_step = nothing,
+    lower_reduction = nothing,
+    normality_witness = nothing,
+)
+    _is_laurent_polynomial_ring(R) &&
+        throw(ArgumentError("ECP induction/normality currently supports ordinary polynomial columns only"))
+    link_step === nothing &&
+        throw(ArgumentError("ECP induction/normality requires a verified link-step certificate"))
+    verify_ecp_link_step_certificate(link_step) ||
+        throw(ArgumentError("ECP induction/normality requires a verified link-step certificate"))
+    _same_base_ring(link_step.ring, R) ||
+        throw(ArgumentError("ECP induction/normality input ring must match the link-step ring"))
+
+    column = _validated_unimodular_column(v, R)
+    tuple(column...) == link_step.original_column ||
+        throw(ArgumentError("ECP induction/normality input column must match the link-step column"))
+
+    lower_column = collect(link_step.lower_variable_column)
+    lower_certificate, lower_factors = _ecp_verified_lower_reduction(lower_reduction, lower_column, R)
+    lifted_lower_factors = [_lift_polynomial_reduction_factor(factor, R) for factor in lower_factors]
+    normality_rewrite = _ecp_induction_normality_rewrite(
+        normality_witness,
+        lower_column,
+        lifted_lower_factors,
+        R,
+    )
+    final_factors = vcat(lifted_lower_factors, normality_rewrite.rewrite_factors, link_step.reduction_factors)
+    final_column = _apply_reduction_factors(final_factors, column, R)
+    provisional = ECPInductionNormalityCertificate(
+        tuple(column...),
+        R,
+        link_step,
+        tuple(lower_column...),
+        lower_certificate,
+        lower_factors,
+        lifted_lower_factors,
+        normality_witness,
+        normality_rewrite,
+        final_factors,
+        final_column,
+        nothing,
+    )
+    verification = _ecp_induction_normality_replay_summary(provisional)
+    verification.overall_ok ||
+        throw(ArgumentError("constructed ECP induction/normality certificate failed exact replay verification"))
+    certificate = ECPInductionNormalityCertificate(
+        provisional.original_column,
+        provisional.ring,
+        provisional.link_step,
+        provisional.lower_variable_column,
+        provisional.lower_reduction_certificate,
+        provisional.lower_variable_factors,
+        provisional.lifted_lower_variable_factors,
+        provisional.normality_witness,
+        provisional.normality_rewrite,
+        provisional.final_factors,
+        provisional.final_column,
+        verification,
+    )
+    verify_ecp_induction_normality_certificate(certificate) ||
+        throw(ArgumentError("stored ECP induction/normality certificate failed exact replay verification"))
     return certificate
 end
 
@@ -813,6 +895,185 @@ function verify_ecp_link_step_certificate(certificate)::Bool
         err isa InterruptException && rethrow()
         return false
     end
+end
+
+function verify_ecp_induction_normality_certificate(certificate)::Bool
+    try
+        replay = _ecp_induction_normality_replay_summary(certificate)
+        return replay.overall_ok && certificate.verification == replay
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function _ecp_verified_lower_reduction(lower_reduction, lower_column, R)
+    if lower_reduction === nothing
+        certificate = ecp_column_reduction_certificate(lower_column, R)
+        return certificate, certificate.factors
+    end
+
+    if lower_reduction isa ECPColumnReductionCertificate
+        verify_ecp_column_reduction(lower_reduction) ||
+            throw(ArgumentError("lower-variable reduction certificate does not verify"))
+        _same_base_ring(lower_reduction.ring, R) ||
+            throw(ArgumentError("lower-variable reduction ring must match the original ring"))
+        lower_reduction.original_column == lower_column ||
+            throw(ArgumentError("lower-variable reduction column must match v(0)"))
+        return lower_reduction, lower_reduction.factors
+    end
+
+    factors = collect(lower_reduction)
+    _apply_reduction_factors(factors, lower_column, R) == _target_reduced_column(R, length(lower_column)) ||
+        throw(ArgumentError("lower-variable factor sequence does not reduce v(0) to e_n"))
+    return nothing, factors
+end
+
+function _ecp_induction_normality_rewrite(normality_witness, lower_column, lifted_lower_factors, R)
+    normality_witness === nothing &&
+        throw(ArgumentError("ECP induction/normality requires explicit normality witness data"))
+    _ecp_normality_witness_keys_ok(normality_witness) ||
+        throw(ArgumentError("normality witness must contain source, conjugator, sl2_indices, and sl2_entry"))
+    normality_witness.source == :supplied_normality_witness ||
+        throw(ArgumentError("normality witness must use source = :supplied_normality_witness"))
+
+    n = length(lower_column)
+    lower_product = _factor_sequence_product(lifted_lower_factors, R, n)
+    conjugator = normality_witness.conjugator
+    nrows(conjugator) == n && ncols(conjugator) == n && _same_base_ring(base_ring(conjugator), R) ||
+        throw(ArgumentError("normality witness conjugator must be an n by n matrix over R"))
+    conjugator * lower_product == identity_matrix(R, n) ||
+        throw(ArgumentError("normality witness conjugator must invert the lifted lower-variable reduction"))
+
+    sl2_indices = tuple(normality_witness.sl2_indices...)
+    length(sl2_indices) == 2 || throw(ArgumentError("normality witness sl2_indices must contain two indices"))
+    fixed_index = Int(sl2_indices[1])
+    moving_index = Int(sl2_indices[2])
+    fixed_index == n || throw(ArgumentError("normality witness must use e_n as the fixed SL_2 coordinate"))
+    1 <= moving_index <= n && moving_index != fixed_index ||
+        throw(ArgumentError("normality witness moving index must be distinct and in range"))
+    entry = _coerce_into_ring(R, normality_witness.sl2_entry, "normality witness sl2_entry")
+    entry != zero(R) || throw(ArgumentError("normality witness must record a non-identity SL_2 contribution"))
+
+    sl2_block = elementary_matrix(2, 1, 2, entry, R)
+    sl2_embedding = block_embedding(sl2_block, n, sl2_indices)
+    rewrite_factors = try
+        realize_conjugate_elementary(conjugator, fixed_index, moving_index, entry)
+    catch err
+        err isa InterruptException && rethrow()
+        throw(ArgumentError("normality witness could not be rewritten into elementary factors"))
+    end
+    rewrite_product = _factor_sequence_product(rewrite_factors, R, n)
+    expected_rewrite_product = conjugator * sl2_embedding * lower_product
+    lower_matrix = matrix(R, n, 1, collect(lower_column))
+    fixed_lower_column_ok = rewrite_product * lower_matrix == lower_matrix
+    rewrite_product_ok = rewrite_product == expected_rewrite_product
+    return (;
+        source = :supplied_normality_witness,
+        conjugator,
+        lower_product,
+        sl2_indices,
+        fixed_index,
+        moving_index,
+        sl2_entry = entry,
+        sl2_block,
+        sl2_embedding,
+        rewrite_factors,
+        rewrite_product,
+        expected_rewrite_product,
+        rewrite_product_ok,
+        fixed_lower_column_ok,
+        overall_ok = rewrite_product_ok && fixed_lower_column_ok,
+    )
+end
+
+function _ecp_normality_witness_keys_ok(normality_witness)
+    return propertynames(normality_witness) == (:source, :conjugator, :sl2_indices, :sl2_entry)
+end
+
+function _ecp_induction_normality_replay_summary(certificate)
+    R = certificate.ring
+    n = length(certificate.original_column)
+    link_step_ok = verify_ecp_link_step_certificate(certificate.link_step)
+    input_ok = link_step_ok && certificate.original_column == certificate.link_step.original_column
+    lower_variable_column_ok = link_step_ok &&
+        certificate.lower_variable_column == certificate.link_step.lower_variable_column
+
+    lower_certificate, lower_factors = try
+        _ecp_verified_lower_reduction(
+            certificate.lower_reduction_certificate === nothing ?
+                certificate.lower_variable_factors :
+                certificate.lower_reduction_certificate,
+            collect(certificate.lower_variable_column),
+            R,
+        )
+    catch err
+        err isa InterruptException && rethrow()
+        nothing, Any[]
+    end
+    lower_reduction_ok = _ecp_factor_sequences_equal(certificate.lower_variable_factors, lower_factors)
+    lifted_lower_factors = [_lift_polynomial_reduction_factor(factor, R) for factor in lower_factors]
+    lifted_lower_factors_ok = _ecp_factor_sequences_equal(certificate.lifted_lower_variable_factors, lifted_lower_factors)
+
+    normality_rewrite = try
+        _ecp_induction_normality_rewrite(
+            certificate.normality_witness,
+            collect(certificate.lower_variable_column),
+            certificate.lifted_lower_variable_factors,
+            R,
+        )
+    catch err
+        err isa InterruptException && rethrow()
+        nothing
+    end
+    normality_rewrite_ok = normality_rewrite !== nothing &&
+        certificate.normality_rewrite == normality_rewrite &&
+        normality_rewrite.overall_ok
+
+    expected_final_factors = normality_rewrite === nothing ?
+        Any[] :
+        vcat(certificate.lifted_lower_variable_factors, normality_rewrite.rewrite_factors, certificate.link_step.reduction_factors)
+    final_factors_ok = _ecp_factor_sequences_equal(certificate.final_factors, expected_final_factors)
+    final_column = final_factors_ok ?
+        _apply_reduction_factors(certificate.final_factors, collect(certificate.original_column), R) :
+        zero_matrix(R, n, 1)
+    final_column_ok = certificate.final_column == final_column
+    final_reduction_ok = final_column == _target_reduced_column(R, n)
+    final_factors_elementary_ok = all(factor -> _ecp_is_elementary_factor(factor, R, n), certificate.final_factors)
+    overall_ok = link_step_ok &&
+        input_ok &&
+        lower_variable_column_ok &&
+        lower_reduction_ok &&
+        lifted_lower_factors_ok &&
+        normality_rewrite_ok &&
+        final_factors_ok &&
+        final_column_ok &&
+        final_reduction_ok &&
+        final_factors_elementary_ok
+    return (;
+        overall_ok,
+        link_step_ok,
+        input_ok,
+        lower_variable_column_ok,
+        lower_reduction_ok,
+        lifted_lower_factors_ok,
+        normality_rewrite_ok,
+        final_factors_ok,
+        final_column_ok,
+        final_reduction_ok,
+        final_factors_elementary_ok,
+    )
+end
+
+function _ecp_is_elementary_factor(factor, R, n::Int)
+    nrows(factor) == n || return false
+    ncols(factor) == n || return false
+    _same_base_ring(base_ring(factor), R) || return false
+    identity = identity_matrix(R, n)
+    positions = [(row, col) for row in 1:n, col in 1:n if factor[row, col] != identity[row, col]]
+    length(positions) == 1 || return false
+    row, col = only(positions)
+    return row != col
 end
 
 _ecp_namedtuple_keys_exact(value, expected::Tuple) = Tuple(propertynames(value)) == expected
