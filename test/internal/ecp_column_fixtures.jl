@@ -23,6 +23,7 @@ const REQUIRED_ECP_COLUMN_IDS = Set([
     "ecp-unit-entry-gf2",
     "ecp-witness-unit-gf2",
     "ecp-variable-change-monic-gf2",
+    "ecp-variable-change-permuted-gf2",
     "ecp-link-bezout-nonunit-witness-qq",
     "ecp-longer-embedded-block-gf2",
     "ecp-unsupported-unimodular-gf2",
