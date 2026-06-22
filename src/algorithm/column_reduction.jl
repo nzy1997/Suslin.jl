@@ -7,6 +7,40 @@ struct ECPColumnReductionCertificate
     verification
 end
 
+struct ECPMonicitySearchResult
+    original_column
+    ring
+    variable_order
+    max_shift_power::Int
+    shift_signs
+    source_variable_index::Int
+    source_variable
+    target_variable_index::Int
+    target_variable
+    shift_power::Int
+    shift_sign
+    shift_polynomial
+    selected_monic_index::Int
+    selected_monic_entry
+    stage
+    factors::Vector
+end
+
+struct ECPMonicitySearchFailure
+    kind::Symbol
+    original_column
+    ring
+    variable_order
+    max_shift_power::Int
+    shift_signs
+    source_variables
+    target_variable
+    shift_powers
+    shift_polynomials
+    attempted_candidates::Int
+    message::String
+end
+
 function reduce_unimodular_column(v::AbstractVector, R)
     return ecp_column_reduction_certificate(v, R).factors
 end
@@ -319,79 +353,198 @@ function _reduce_after_monicity_normalization(column::AbstractVector, R)
 end
 
 function _reduce_after_monicity_normalization_certificate(column::AbstractVector, R)
-    ring_gens = collect(gens(R))
-    last_var_idx = length(ring_gens)
-    last_var = ring_gens[end]
+    result = _deterministic_ecp_monicity_search(column, R)
+    return result isa ECPMonicitySearchResult ? (; factors = result.factors, stage = result.stage) : nothing
+end
 
-    for var_idx in 1:(length(ring_gens) - 1), shift_power in 1:3, shift_sign in (one(R), -one(R))
-        forward_values = copy(ring_gens)
-        forward_values[var_idx] = ring_gens[var_idx] + shift_sign * last_var^shift_power
-        transformed = [_coerce_into_ring(R, evaluate(entry, forward_values), "substituted column entry") for entry in column]
-        selected_monic_index = _ecp_first_monic_entry_index(transformed, R)
-        selected_monic_index === nothing && continue
+function _deterministic_ecp_monicity_search(
+    column::AbstractVector,
+    R;
+    variable_order = tuple(gens(R)...),
+    max_shift_power::Integer = 3,
+    shift_signs = (one(R), -one(R)),
+)
+    normalized_order = _ecp_normalize_variable_order(R, variable_order)
+    max_shift_power < 0 && throw(ArgumentError("max_shift_power must be nonnegative"))
 
-        transformed_result = _reduce_supported_unimodular_column_certificate(transformed, R)
-        transformed_result === nothing && continue
+    signs = tuple((_coerce_into_ring(R, sign, "shift sign") for sign in shift_signs)...)
 
-        inverse_values = copy(ring_gens)
-        inverse_values[var_idx] = ring_gens[var_idx] - shift_sign * last_var^shift_power
-        inverse_substituted_factors = [
-            _substitute_matrix_entries(factor, inverse_values, R)
-            for factor in transformed_result.factors
-        ]
-        factors = _checked_reduction_factors(
-            inverse_substituted_factors,
-            column,
-            R,
-            "monicity normalization reduction",
-        )
-        target = _target_reduced_column(R, length(column))
-        transformed_output = _apply_reduction_factors(transformed_result.factors, transformed, R)
-        original_output = _apply_reduction_factors(factors, column, R)
-        forward_substitution = _ecp_substitution_map_tuple(ring_gens, forward_values)
-        inverse_substitution = _ecp_substitution_map_tuple(ring_gens, inverse_values)
-        selected_monic_entry = transformed[selected_monic_index]
-        first_coordinate_move_factors = typeof(identity_matrix(R, length(column)))[]
-        first_coordinate_column = tuple(transformed...)
-        variable_change_verification = (;
-            selected_monic_ok = _is_monic_in_last_variable(selected_monic_entry, R),
-            transformed_reduction_ok = transformed_output == target,
-            original_reduction_ok = original_output == target,
-        )
-        stage = (;
-            kind = :monicity_normalization,
-            input_column = _ecp_column_tuple(column),
-            variable_order = tuple(ring_gens...),
-            variable_index = var_idx,
-            source_variable_index = var_idx,
-            source_variable = ring_gens[var_idx],
-            last_variable_index = last_var_idx,
-            target_variable_index = last_var_idx,
-            target_variable = last_var,
-            shift_power,
-            shift_sign,
-            shift_polynomial = shift_sign * last_var^shift_power,
-            forward_values = tuple(forward_values...),
-            inverse_values = tuple(inverse_values...),
-            forward_substitution,
-            inverse_substitution,
-            transformed_column = tuple(transformed...),
-            selected_monic_index,
-            selected_monic_entry,
-            first_coordinate_strategy = _ecp_first_coordinate_strategy(selected_monic_index),
-            first_coordinate_move_factors,
-            first_coordinate_column,
-            transformed_stage = transformed_result.stage,
-            transformed_factors = transformed_result.factors,
-            inverse_substituted_factors,
-            factors,
-            output_column = original_output,
-            variable_change_verification,
-        )
-        return (; factors, stage)
+    isempty(normalized_order) && return _ecp_monicity_search_failure(column, R, normalized_order, max_shift_power, signs, 0)
+    length(normalized_order) < 2 && return _ecp_monicity_search_failure(column, R, normalized_order, max_shift_power, signs, 0)
+
+    target_variable = normalized_order[end]
+    target_variable_index = _ecp_generator_index(R, target_variable)
+    attempted = 0
+    for source_variable in normalized_order[1:(end - 1)]
+        source_variable_index = _ecp_generator_index(R, source_variable)
+        for shift_power in 1:max_shift_power, shift_sign in signs
+            attempted += 1
+            candidate = _ecp_monicity_candidate_stage(
+                column,
+                R,
+                tuple(normalized_order...),
+                source_variable_index,
+                target_variable_index,
+                shift_power,
+                shift_sign,
+            )
+            candidate === nothing && continue
+            stage = candidate.stage
+            return ECPMonicitySearchResult(
+                tuple(column...),
+                R,
+                tuple(normalized_order...),
+                Int(max_shift_power),
+                signs,
+                stage.source_variable_index,
+                stage.source_variable,
+                stage.target_variable_index,
+                stage.target_variable,
+                stage.shift_power,
+                stage.shift_sign,
+                stage.shift_polynomial,
+                stage.selected_monic_index,
+                stage.selected_monic_entry,
+                stage,
+                candidate.factors,
+            )
+        end
     end
 
-    return nothing
+    return _ecp_monicity_search_failure(column, R, normalized_order, max_shift_power, signs, attempted)
+end
+
+function _ecp_normalize_variable_order(R, variable_order)
+    ring_gens = collect(gens(R))
+    normalized = Any[]
+    for variable in variable_order
+        match_idx = _ecp_variable_order_match_index(ring_gens, variable)
+        match_idx === nothing && throw(ArgumentError("variable_order must contain only generators of R"))
+        generator = ring_gens[match_idx]
+        any(existing -> existing == generator, normalized) &&
+            throw(ArgumentError("variable_order must not contain duplicate generators"))
+        push!(normalized, generator)
+    end
+    return tuple(normalized...)
+end
+
+function _ecp_variable_order_match_index(ring_gens::AbstractVector, variable)
+    match_idx = findfirst(generator -> generator == variable, ring_gens)
+    match_idx !== nothing && return match_idx
+    variable isa Symbol || return nothing
+    return findfirst(generator -> Symbol(string(generator)) == variable, ring_gens)
+end
+
+function _ecp_generator_index(R, variable)
+    generator_idx = findfirst(generator -> generator == variable, gens(R))
+    generator_idx === nothing && throw(ArgumentError("variable order must contain only generators of R"))
+    return generator_idx
+end
+
+function _ecp_monicity_candidate_stage(
+    column::AbstractVector,
+    R,
+    variable_order,
+    source_variable_index::Int,
+    target_variable_index::Int,
+    shift_power::Int,
+    shift_sign,
+)
+    ring_gens = collect(gens(R))
+    source_variable = ring_gens[source_variable_index]
+    target_variable = ring_gens[target_variable_index]
+
+    forward_values = copy(ring_gens)
+    forward_values[source_variable_index] = source_variable + shift_sign * target_variable^shift_power
+    transformed = [_coerce_into_ring(R, evaluate(entry, forward_values), "substituted column entry") for entry in column]
+    selected_monic_index = _ecp_first_monic_entry_index(transformed, R, target_variable_index)
+    selected_monic_index === nothing && return nothing
+
+    transformed_result = _reduce_supported_unimodular_column_certificate(transformed, R)
+    transformed_result === nothing && return nothing
+
+    inverse_values = copy(ring_gens)
+    inverse_values[source_variable_index] = source_variable - shift_sign * target_variable^shift_power
+    inverse_substituted_factors = [
+        _substitute_matrix_entries(factor, inverse_values, R)
+        for factor in transformed_result.factors
+    ]
+    factors = _checked_reduction_factors(
+        inverse_substituted_factors,
+        column,
+        R,
+        "monicity normalization reduction",
+    )
+    target = _target_reduced_column(R, length(column))
+    transformed_output = _apply_reduction_factors(transformed_result.factors, transformed, R)
+    original_output = _apply_reduction_factors(factors, column, R)
+    forward_substitution = _ecp_substitution_map_tuple(ring_gens, forward_values)
+    inverse_substitution = _ecp_substitution_map_tuple(ring_gens, inverse_values)
+    selected_monic_entry = transformed[selected_monic_index]
+    first_coordinate_move_factors = typeof(identity_matrix(R, length(column)))[]
+    first_coordinate_column = tuple(transformed...)
+    variable_change_verification = (;
+        selected_monic_ok = _is_monic_in_variable(selected_monic_entry, R, target_variable_index),
+        transformed_reduction_ok = transformed_output == target,
+        original_reduction_ok = original_output == target,
+    )
+    stage = (;
+        kind = :monicity_normalization,
+        input_column = _ecp_column_tuple(column),
+        variable_order = tuple(variable_order...),
+        variable_index = source_variable_index,
+        source_variable_index,
+        source_variable,
+        last_variable_index = target_variable_index,
+        target_variable_index,
+        target_variable,
+        shift_power,
+        shift_sign,
+        shift_polynomial = shift_sign * target_variable^shift_power,
+        forward_values = tuple(forward_values...),
+        inverse_values = tuple(inverse_values...),
+        forward_substitution,
+        inverse_substitution,
+        transformed_column = tuple(transformed...),
+        selected_monic_index,
+        selected_monic_entry,
+        first_coordinate_strategy = _ecp_first_coordinate_strategy(selected_monic_index),
+        first_coordinate_move_factors,
+        first_coordinate_column,
+        transformed_stage = transformed_result.stage,
+        transformed_factors = transformed_result.factors,
+        inverse_substituted_factors,
+        factors,
+        output_column = original_output,
+        variable_change_verification,
+    )
+    return (; factors, stage)
+end
+
+function _ecp_monicity_search_failure(column::AbstractVector, R, variable_order, max_shift_power::Integer, shift_signs, attempted_candidates::Int)
+    source_variables = length(variable_order) < 2 ? () : tuple(variable_order[1:(end - 1)]...)
+    target_variable = isempty(variable_order) ? nothing : variable_order[end]
+    shift_powers = tuple((1:Int(max_shift_power))...)
+    shift_polynomials = target_variable === nothing ? () : tuple((
+        sign * target_variable^power
+        for power in shift_powers
+        for sign in shift_signs
+    )...)
+    message = "exhausted deterministic ECP monicity search for variable_order=$(tuple(variable_order...)), max_shift_power=$(Int(max_shift_power)), attempted_candidates=$(attempted_candidates)"
+    return ECPMonicitySearchFailure(
+        :monicity_search_exhausted,
+        tuple(column...),
+        R,
+        tuple(variable_order...),
+        Int(max_shift_power),
+        tuple(shift_signs...),
+        source_variables,
+        target_variable,
+        shift_powers,
+        shift_polynomials,
+        attempted_candidates,
+        message,
+    )
 end
 
 function _reduce_laurent_unimodular_column(column::AbstractVector, R)
@@ -539,17 +692,76 @@ function _ecp_replay_stage(stage, input_column, R)
             stage.output_column == expected_output
         return (; ok, factors = expected_factors, output_column = expected_output)
     elseif stage.kind == :monicity_normalization
+        invalid_replay = (; ok = false, factors = Any[], output_column = matrix(R, length(input_column), 1, collect(input_column)))
+        required_keys = (
+            :kind,
+            :input_column,
+            :variable_order,
+            :variable_index,
+            :source_variable_index,
+            :source_variable,
+            :last_variable_index,
+            :target_variable_index,
+            :target_variable,
+            :shift_power,
+            :shift_sign,
+            :shift_polynomial,
+            :forward_values,
+            :inverse_values,
+            :forward_substitution,
+            :inverse_substitution,
+            :transformed_column,
+            :selected_monic_index,
+            :selected_monic_entry,
+            :first_coordinate_strategy,
+            :first_coordinate_move_factors,
+            :first_coordinate_column,
+            :transformed_stage,
+            :transformed_factors,
+            :inverse_substituted_factors,
+            :factors,
+            :output_column,
+            :variable_change_verification,
+        )
+        _ecp_stage_keys_ok(stage, required_keys) || return invalid_replay
+
         ring_gens = collect(gens(R))
-        last_var = ring_gens[end]
+        source_variable_index = stage.source_variable_index
+        target_variable_index = stage.target_variable_index
+        source_index_ok = source_variable_index isa Integer && 1 <= source_variable_index <= length(ring_gens)
+        target_index_ok = target_variable_index isa Integer && 1 <= target_variable_index <= length(ring_gens)
+        source_index_ok && target_index_ok || return invalid_replay
+
+        variable_order = try
+            collect(stage.variable_order)
+        catch err
+            err isa InterruptException && rethrow()
+            return invalid_replay
+        end
+        isempty(variable_order) && return invalid_replay
+        normalized_variable_order = try
+            _ecp_normalize_variable_order(R, variable_order)
+        catch err
+            err isa ArgumentError || rethrow()
+            nothing
+        end
+        normalized_variable_order === nothing && return invalid_replay
+
+        source_variable = stage.source_variable
+        target_variable = stage.target_variable
+        source_variable == ring_gens[source_variable_index] || return invalid_replay
+        target_variable == ring_gens[target_variable_index] || return invalid_replay
+        stage.shift_power isa Integer && stage.shift_power >= 0 || return invalid_replay
+
         forward_values = copy(ring_gens)
-        forward_values[stage.variable_index] = ring_gens[stage.variable_index] + stage.shift_sign * last_var^stage.shift_power
+        forward_values[source_variable_index] = source_variable + stage.shift_sign * target_variable^stage.shift_power
         substituted_column = [
             _coerce_into_ring(R, evaluate(entry, forward_values), "substituted column entry")
             for entry in input_column
         ]
         transformed_replay = _ecp_replay_stage(stage.transformed_stage, substituted_column, R)
         inverse_values = copy(ring_gens)
-        inverse_values[stage.variable_index] = ring_gens[stage.variable_index] - stage.shift_sign * last_var^stage.shift_power
+        inverse_values[source_variable_index] = source_variable - stage.shift_sign * target_variable^stage.shift_power
         forward_substitution = _ecp_substitution_map_tuple(ring_gens, forward_values)
         inverse_substitution = _ecp_substitution_map_tuple(ring_gens, inverse_values)
         selected_index_ok = stage.selected_monic_index isa Integer &&
@@ -557,7 +769,7 @@ function _ecp_replay_stage(stage, input_column, R)
         selected_monic_entry = selected_index_ok ? substituted_column[stage.selected_monic_index] : zero(R)
         selected_monic_ok = selected_index_ok &&
             stage.selected_monic_entry == selected_monic_entry &&
-            _is_monic_in_last_variable(selected_monic_entry, R)
+            _is_monic_in_variable(selected_monic_entry, R, target_variable_index)
         first_coordinate_strategy = selected_index_ok ?
             _ecp_first_coordinate_strategy(stage.selected_monic_index) :
             :invalid
@@ -574,18 +786,20 @@ function _ecp_replay_stage(stage, input_column, R)
             transformed_reduction_ok = transformed_output == target,
             original_reduction_ok = expected_output == target,
         )
-        ok = _ecp_stage_keys_ok(
-                stage,
-                (:kind, :input_column, :variable_order, :variable_index, :source_variable_index, :source_variable, :last_variable_index, :target_variable_index, :target_variable, :shift_power, :shift_sign, :shift_polynomial, :forward_values, :inverse_values, :forward_substitution, :inverse_substitution, :transformed_column, :selected_monic_index, :selected_monic_entry, :first_coordinate_strategy, :first_coordinate_move_factors, :first_coordinate_column, :transformed_stage, :transformed_factors, :inverse_substituted_factors, :factors, :output_column, :variable_change_verification),
-            ) &&
-            stage.input_column == _ecp_column_tuple(input_column) &&
-            stage.variable_order == tuple(ring_gens...) &&
+        source_order_index = findfirst(variable -> variable == source_variable, variable_order)
+        target_order_index = findfirst(variable -> variable == target_variable, variable_order)
+        ok = stage.input_column == _ecp_column_tuple(input_column) &&
+            stage.variable_order == tuple(normalized_variable_order...) &&
             stage.source_variable_index == stage.variable_index &&
             stage.source_variable == ring_gens[stage.source_variable_index] &&
-            stage.last_variable_index == length(ring_gens) &&
-            stage.target_variable_index == stage.last_variable_index &&
-            stage.target_variable == last_var &&
-            stage.shift_polynomial == stage.shift_sign * last_var^stage.shift_power &&
+            stage.last_variable_index == stage.target_variable_index &&
+            stage.target_variable == variable_order[end] &&
+            source_order_index !== nothing &&
+            target_order_index !== nothing &&
+            source_order_index < target_order_index &&
+            target_order_index == length(variable_order) &&
+            stage.target_variable == ring_gens[stage.target_variable_index] &&
+            stage.shift_polynomial == stage.shift_sign * stage.target_variable^stage.shift_power &&
             stage.forward_values == tuple(forward_values...) &&
             stage.inverse_values == tuple(inverse_values...) &&
             stage.forward_substitution == forward_substitution &&
@@ -695,7 +909,11 @@ function _ecp_substitution_map_tuple(variables, values)
 end
 
 function _ecp_first_monic_entry_index(column, R)
-    return findfirst(entry -> _is_monic_in_last_variable(entry, R), column)
+    return _ecp_first_monic_entry_index(column, R, ngens(R))
+end
+
+function _ecp_first_monic_entry_index(column, R, variable_index::Int)
+    return findfirst(entry -> _is_monic_in_variable(entry, R, variable_index), column)
 end
 
 function _ecp_first_coordinate_strategy(selected_monic_index::Int)
@@ -715,22 +933,29 @@ function _lift_polynomial_reduction_factor(factor, R)
     return matrix(R, nrows(factor), ncols(factor), vec(entries))
 end
 
-function _is_monic_in_last_variable(p, R)
+function _is_monic_in_variable(p, R, variable_index::Int)
     iszero(p) && return false
-    return _leading_coefficient_in_last_variable(p, R) == one(R)
+    return _leading_coefficient_in_variable(p, R, variable_index) == one(R)
 end
 
-function _leading_coefficient_in_last_variable(p, R)
-    last_idx = ngens(R)
-    target_degree = degree(p, last_idx)
+function _is_monic_in_last_variable(p, R)
+    return _is_monic_in_variable(p, R, ngens(R))
+end
+
+function _leading_coefficient_in_variable(p, R, variable_index::Int)
+    variable_index < 1 && return zero(R)
+    variable_index > ngens(R) && return zero(R)
+
+    target_degree = degree(p, variable_index)
     target_degree < 0 && return zero(R)
 
     ring_gens = collect(gens(R))
     total = zero(R)
     for (coeff, exponents) in zip(AbstractAlgebra.coefficients(p), AbstractAlgebra.exponent_vectors(p))
-        exponents[last_idx] == target_degree || continue
+        exponents[variable_index] == target_degree || continue
         term = R(coeff)
-        for idx in 1:(last_idx - 1)
+        for idx in eachindex(ring_gens)
+            idx == variable_index && continue
             exponent = exponents[idx]
             exponent == 0 && continue
             term *= ring_gens[idx]^exponent
@@ -739,6 +964,10 @@ function _leading_coefficient_in_last_variable(p, R)
     end
 
     return total
+end
+
+function _leading_coefficient_in_last_variable(p, R)
+    return _leading_coefficient_in_variable(p, R, ngens(R))
 end
 
 function _substitute_matrix_entries(M, values::AbstractVector, R)

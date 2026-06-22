@@ -48,6 +48,7 @@ const TEST_GROUP_FILES = Dict(
         "expert/unimodular_reduction_exact.jl",
         "expert/ecp_column_certificate.jl",
         "expert/ecp_variable_change_replay.jl",
+        "expert/ecp_monicity_search.jl",
     ],
 )
 
