@@ -59,6 +59,20 @@ struct ECPLinkWitnessRecord
     verification
 end
 
+struct ECPLinkStepCertificate
+    original_column
+    ring
+    link_witness::ECPLinkWitnessRecord
+    path_points
+    path_columns
+    segments
+    lower_variable_column
+    transformed_column
+    forward_factors::Vector
+    reduction_factors::Vector
+    verification
+end
+
 function reduce_unimodular_column(v::AbstractVector, R)
     return ecp_column_reduction_certificate(v, R).factors
 end
@@ -155,6 +169,67 @@ function ecp_link_witness(
     verify_ecp_link_witness(stored) ||
         throw(ArgumentError("stored Park-Woodburn ECP link witness data failed exact replay verification"))
     return stored
+end
+
+function ecp_link_step_certificate(
+    v::AbstractVector,
+    R;
+    link_witness = nothing,
+    variable_order = tuple(gens(R)...),
+    selected_variable = nothing,
+    selected_monic_index::Integer = 1,
+    supplied_link_witness = nothing,
+)
+    _is_laurent_polynomial_ring(R) &&
+        throw(ArgumentError("ECP link steps currently support ordinary polynomial columns only"))
+    witness = link_witness === nothing ?
+        ecp_link_witness(v, R; variable_order, selected_variable, selected_monic_index, supplied_link_witness) :
+        link_witness
+    verify_ecp_link_witness(witness) ||
+        throw(ArgumentError("ECP link step requires a verified Park-Woodburn link witness"))
+    _same_base_ring(witness.ring, R) ||
+        throw(ArgumentError("ECP link step input ring must match the link witness ring"))
+
+    column = _validated_unimodular_column(v, R)
+    tuple(column...) == witness.original_column ||
+        throw(ArgumentError("ECP link step input column must match the link witness column"))
+
+    path_columns = _ecp_link_step_path_columns(witness)
+    segments = _ecp_link_step_segments(witness, path_columns)
+    forward_factors = _ecp_link_step_forward_factors(segments)
+    reduction_factors = _ecp_link_step_reduction_factors(segments)
+    provisional = ECPLinkStepCertificate(
+        tuple(column...),
+        R,
+        witness,
+        witness.path_points,
+        path_columns,
+        segments,
+        first(path_columns),
+        tuple(column...),
+        forward_factors,
+        reduction_factors,
+        nothing,
+    )
+    verification = _ecp_link_step_replay_summary(provisional)
+    verification.overall_ok ||
+        throw(ArgumentError("constructed Park-Woodburn ECP link step failed exact replay verification"))
+    certificate = ECPLinkStepCertificate(
+        provisional.original_column,
+        provisional.ring,
+        provisional.link_witness,
+        provisional.path_points,
+        provisional.path_columns,
+        provisional.segments,
+        provisional.lower_variable_column,
+        provisional.transformed_column,
+        provisional.forward_factors,
+        provisional.reduction_factors,
+        verification,
+    )
+    verify_ecp_link_step_certificate(certificate) ||
+        throw(ArgumentError("stored Park-Woodburn ECP link step failed exact replay verification"))
+    return certificate
 end
 
 function _validated_unimodular_column(v::AbstractVector, R)
@@ -730,6 +805,16 @@ function verify_ecp_link_witness(record)::Bool
     end
 end
 
+function verify_ecp_link_step_certificate(certificate)::Bool
+    try
+        replay = _ecp_link_step_replay_summary(certificate)
+        return replay.overall_ok && certificate.verification == replay
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
 _ecp_namedtuple_keys_exact(value, expected::Tuple) = Tuple(propertynames(value)) == expected
 
 function _ecp_generator_belongs_to_ring(R, generator)
@@ -921,6 +1006,345 @@ function _ecp_invalid_link_replay(
         recomputed_resultants = tuple(recomputed_resultants...),
         coverage_total = zero(record.ring),
     )
+end
+
+function _ecp_link_step_path_columns(witness::ECPLinkWitnessRecord)
+    return tuple((
+        _ecp_evaluate_at_selected_variable(
+            witness.original_column,
+            witness.selected_variable_index,
+            point,
+            witness.ring,
+        )
+        for point in witness.path_points
+    )...)
+end
+
+function _ecp_evaluate_at_selected_variable(values, selected_variable_index::Int, point, R)
+    substitutions = collect(gens(R))
+    1 <= selected_variable_index <= length(substitutions) ||
+        throw(ArgumentError("selected variable index must be a generator index"))
+    substitutions[selected_variable_index] = _coerce_into_ring(R, point, "path point")
+    return tuple((
+        _coerce_into_ring(R, evaluate(value, substitutions), "path column entry")
+        for value in values
+    )...)
+end
+
+function _ecp_link_step_segments(witness::ECPLinkWitnessRecord, path_columns)
+    return tuple((
+        _ecp_link_step_segment(witness, idx, path_columns)
+        for idx in eachindex(witness.tail_reductions)
+    )...)
+end
+
+function _ecp_link_step_segment(witness::ECPLinkWitnessRecord, idx::Int, path_columns)
+    R = witness.ring
+    n = length(witness.original_column)
+    from_path_point = witness.path_points[idx]
+    to_path_point = witness.path_points[idx + 1]
+    delta = to_path_point - from_path_point
+    from_column = path_columns[idx]
+    to_column = path_columns[idx + 1]
+    link_identity = _ecp_link_step_identity(witness, idx, from_column, to_column, delta)
+
+    from_certificate = try
+        ecp_column_reduction_certificate(collect(from_column), R)
+    catch err
+        err isa InterruptException && rethrow()
+        throw(ArgumentError("unsupported ECP link step source path column at segment $(idx)"))
+    end
+    to_certificate = try
+        ecp_column_reduction_certificate(collect(to_column), R)
+    catch err
+        err isa InterruptException && rethrow()
+        throw(ArgumentError("unsupported ECP link step target path column at segment $(idx)"))
+    end
+
+    sl2_block = identity_matrix(R, 2)
+    sl2_embedding = block_embedding(sl2_block, n, (1, 2))
+    forward_factors = vcat(_ecp_inverse_factor_sequence(to_certificate.factors), from_certificate.factors)
+    inverse_factors = _ecp_inverse_factor_sequence(forward_factors)
+    elementary_factors = copy(forward_factors)
+    verification = _ecp_link_step_segment_verification(
+        R,
+        from_column,
+        to_column,
+        sl2_block,
+        sl2_embedding,
+        elementary_factors,
+        forward_factors,
+        inverse_factors,
+        from_certificate,
+        to_certificate,
+        link_identity,
+    )
+    verification.overall_ok ||
+        throw(ArgumentError("ECP link step segment $(idx) failed exact replay verification"))
+    return (;
+        index = idx,
+        from_path_point,
+        to_path_point,
+        delta,
+        from_column,
+        to_column,
+        sl2_block,
+        sl2_embedding,
+        elementary_factors,
+        forward_factors,
+        inverse_factors,
+        from_certificate,
+        to_certificate,
+        link_identity,
+        verification,
+    )
+end
+
+function _ecp_link_step_identity(witness::ECPLinkWitnessRecord, idx::Int, from_column, to_column, delta)
+    R = witness.ring
+    tail = witness.tail_reductions[idx]
+    bezout = witness.bezout_coefficients[idx]
+    resultant_value = witness.resultants[idx]
+    coverage_multiplier = witness.coverage_multipliers[idx]
+    from_path_point = witness.path_points[idx]
+    evaluated_tail_coefficients = tuple((
+        _ecp_evaluate_polynomial_at_selected_variable(coefficient, witness.selected_variable_index, from_path_point, R)
+        for coefficient in tail.lifted_tail_coefficients
+    )...)
+    evaluated_tilde_G = zero(R)
+    for tail_idx in eachindex(evaluated_tail_coefficients)
+        evaluated_tilde_G += evaluated_tail_coefficients[tail_idx] * from_column[tail_idx + 1]
+    end
+    evaluated_f = _ecp_evaluate_polynomial_at_selected_variable(bezout.f, witness.selected_variable_index, from_path_point, R)
+    evaluated_h = _ecp_evaluate_polynomial_at_selected_variable(bezout.h, witness.selected_variable_index, from_path_point, R)
+    evaluated_resultant = _ecp_evaluate_polynomial_at_selected_variable(resultant_value, witness.selected_variable_index, from_path_point, R)
+    bezout_total = evaluated_f * from_column[1] + evaluated_h * evaluated_tilde_G
+    divided_differences, divisibility_ok = _ecp_link_step_divided_differences(from_column, to_column, delta, R)
+    expected_delta = witness.selected_variable * resultant_value * coverage_multiplier
+    return (;
+        resultant = resultant_value,
+        coverage_multiplier,
+        expected_delta,
+        delta_ok = delta == expected_delta,
+        evaluated_tail_coefficients,
+        evaluated_tilde_G,
+        evaluated_f,
+        evaluated_h,
+        evaluated_resultant,
+        bezout_total,
+        bezout_ok = bezout_total == evaluated_resultant,
+        divided_differences,
+        divisibility_ok,
+        overall_ok = delta == expected_delta && bezout_total == evaluated_resultant && divisibility_ok,
+    )
+end
+
+function _ecp_evaluate_polynomial_at_selected_variable(value, selected_variable_index::Int, point, R)
+    substitutions = collect(gens(R))
+    substitutions[selected_variable_index] = _coerce_into_ring(R, point, "path point")
+    return _coerce_into_ring(R, evaluate(value, substitutions), "evaluated link identity entry")
+end
+
+function _ecp_link_step_divided_differences(from_column, to_column, delta, R)
+    differences = [to_column[idx] - from_column[idx] for idx in eachindex(from_column)]
+    if delta == zero(R)
+        return tuple((zero(R) for _ in differences)...), all(iszero, differences)
+    end
+
+    quotients = Any[]
+    for difference in differences
+        quotient = try
+            divexact(difference, delta)
+        catch err
+            err isa InterruptException && rethrow()
+            return tuple((zero(R) for _ in differences)...), false
+        end
+        quotient * delta == difference || return tuple((zero(R) for _ in differences)...), false
+        push!(quotients, quotient)
+    end
+    return tuple(quotients...), true
+end
+
+function _ecp_inverse_elementary_factor(factor)
+    R = base_ring(factor)
+    n = nrows(factor)
+    n == ncols(factor) || throw(ArgumentError("expected a square elementary factor"))
+    identity = identity_matrix(R, n)
+    positions = [(row, col) for row in 1:n, col in 1:n if factor[row, col] != identity[row, col]]
+    length(positions) == 1 || throw(ArgumentError("expected an elementary factor with one off-diagonal entry"))
+    row, col = only(positions)
+    row != col || throw(ArgumentError("expected an off-diagonal elementary factor"))
+    return elementary_matrix(n, row, col, -factor[row, col], R)
+end
+
+function _ecp_inverse_factor_sequence(factors)
+    return [_ecp_inverse_elementary_factor(factor) for factor in reverse(factors)]
+end
+
+function _ecp_link_step_segment_verification(
+    R,
+    from_column,
+    to_column,
+    sl2_block,
+    sl2_embedding,
+    elementary_factors,
+    forward_factors,
+    inverse_factors,
+    from_certificate,
+    to_certificate,
+    link_identity,
+)
+    n = length(from_column)
+    from_matrix = matrix(R, n, 1, collect(from_column))
+    to_matrix = matrix(R, n, 1, collect(to_column))
+    sl2_block_ok = nrows(sl2_block) == 2 &&
+        ncols(sl2_block) == 2 &&
+        _same_base_ring(base_ring(sl2_block), R) &&
+        det(sl2_block) == one(R) &&
+        sl2_block == identity_matrix(R, 2)
+    sl2_embedding_ok = sl2_embedding == block_embedding(sl2_block, n, (1, 2))
+    endpoint_reductions_ok = verify_ecp_column_reduction(from_certificate) &&
+        verify_ecp_column_reduction(to_certificate) &&
+        from_certificate.original_column == collect(from_column) &&
+        to_certificate.original_column == collect(to_column)
+    elementary_factors_ok = _ecp_factor_sequences_equal(elementary_factors, forward_factors)
+    forward_map_ok = _apply_reduction_factors(forward_factors, collect(from_column), R) == to_matrix
+    inverse_map_ok = _apply_reduction_factors(inverse_factors, collect(to_column), R) == from_matrix
+    inverse_sequence_ok = _ecp_factor_sequences_equal(inverse_factors, _ecp_inverse_factor_sequence(forward_factors))
+    overall_ok = sl2_block_ok &&
+        sl2_embedding_ok &&
+        endpoint_reductions_ok &&
+        elementary_factors_ok &&
+        link_identity.overall_ok &&
+        forward_map_ok &&
+        inverse_map_ok &&
+        inverse_sequence_ok
+    return (;
+        overall_ok,
+        sl2_block_ok,
+        sl2_embedding_ok,
+        endpoint_reductions_ok,
+        elementary_factors_ok,
+        link_identity_ok = link_identity.overall_ok,
+        forward_map_ok,
+        inverse_map_ok,
+        inverse_sequence_ok,
+    )
+end
+
+function _ecp_link_step_forward_factors(segments)
+    factors = Any[]
+    for segment in reverse(segments)
+        append!(factors, segment.forward_factors)
+    end
+    return factors
+end
+
+function _ecp_link_step_reduction_factors(segments)
+    factors = Any[]
+    for segment in segments
+        append!(factors, segment.inverse_factors)
+    end
+    return factors
+end
+
+function _ecp_link_step_replay_summary(certificate)
+    R = certificate.ring
+    witness_ok = verify_ecp_link_witness(certificate.link_witness)
+    input_ok = certificate.original_column == certificate.link_witness.original_column
+    path_points_ok = certificate.path_points == certificate.link_witness.path_points
+    recomputed_path_columns = witness_ok ? _ecp_link_step_path_columns(certificate.link_witness) : ()
+    path_columns_ok = certificate.path_columns == recomputed_path_columns
+    transformed_column_ok = !isempty(recomputed_path_columns) &&
+        certificate.transformed_column == certificate.original_column &&
+        certificate.transformed_column == recomputed_path_columns[end]
+    lower_variable_column_ok = !isempty(recomputed_path_columns) &&
+        certificate.lower_variable_column == recomputed_path_columns[1]
+
+    recomputed_segments = try
+        path_columns_ok ? _ecp_link_step_segments(certificate.link_witness, recomputed_path_columns) : ()
+    catch err
+        err isa InterruptException && rethrow()
+        ()
+    end
+    segments_ok = _ecp_link_step_segments_equivalent(certificate.segments, recomputed_segments) &&
+        all(segment -> segment.verification.overall_ok, certificate.segments)
+    recomputed_forward_factors = _ecp_link_step_forward_factors(certificate.segments)
+    recomputed_reduction_factors = _ecp_link_step_reduction_factors(certificate.segments)
+    forward_factors_ok = _ecp_factor_sequences_equal(certificate.forward_factors, recomputed_forward_factors)
+    reduction_factors_ok = _ecp_factor_sequences_equal(certificate.reduction_factors, recomputed_reduction_factors)
+
+    n = length(certificate.original_column)
+    composed_forward_ok = lower_variable_column_ok &&
+        transformed_column_ok &&
+        _apply_reduction_factors(certificate.forward_factors, collect(certificate.lower_variable_column), R) ==
+            matrix(R, n, 1, collect(certificate.transformed_column))
+    composed_reduction_ok = lower_variable_column_ok &&
+        transformed_column_ok &&
+        _apply_reduction_factors(certificate.reduction_factors, collect(certificate.transformed_column), R) ==
+            matrix(R, n, 1, collect(certificate.lower_variable_column))
+    overall_ok = witness_ok &&
+        input_ok &&
+        path_points_ok &&
+        path_columns_ok &&
+        transformed_column_ok &&
+        lower_variable_column_ok &&
+        segments_ok &&
+        forward_factors_ok &&
+        reduction_factors_ok &&
+        composed_forward_ok &&
+        composed_reduction_ok
+    return (;
+        overall_ok,
+        witness_ok,
+        input_ok,
+        path_points_ok,
+        path_columns_ok,
+        transformed_column_ok,
+        lower_variable_column_ok,
+        segments_ok,
+        forward_factors_ok,
+        reduction_factors_ok,
+        composed_forward_ok,
+        composed_reduction_ok,
+        segment_verifications = tuple((segment.verification for segment in certificate.segments)...),
+    )
+end
+
+function _ecp_link_step_segments_equivalent(left, right)
+    length(left) == length(right) || return false
+    for idx in eachindex(left)
+        _ecp_link_step_segment_equivalent(left[idx], right[idx]) || return false
+    end
+    return true
+end
+
+function _ecp_link_step_segment_equivalent(left, right)
+    return left.index == right.index &&
+        left.from_path_point == right.from_path_point &&
+        left.to_path_point == right.to_path_point &&
+        left.delta == right.delta &&
+        left.from_column == right.from_column &&
+        left.to_column == right.to_column &&
+        left.sl2_block == right.sl2_block &&
+        left.sl2_embedding == right.sl2_embedding &&
+        _ecp_factor_sequences_equal(left.elementary_factors, right.elementary_factors) &&
+        _ecp_factor_sequences_equal(left.forward_factors, right.forward_factors) &&
+        _ecp_factor_sequences_equal(left.inverse_factors, right.inverse_factors) &&
+        _ecp_column_certificates_equivalent(left.from_certificate, right.from_certificate) &&
+        _ecp_column_certificates_equivalent(left.to_certificate, right.to_certificate) &&
+        left.link_identity == right.link_identity &&
+        left.verification == right.verification
+end
+
+function _ecp_column_certificates_equivalent(left, right)
+    return verify_ecp_column_reduction(left) &&
+        verify_ecp_column_reduction(right) &&
+        left.original_column == right.original_column &&
+        left.ring == right.ring &&
+        _ecp_factor_sequences_equal(left.factors, right.factors) &&
+        left.final_column == right.final_column &&
+        left.verification == right.verification
 end
 
 function _ecp_column_reduction_replay_summary(certificate)
