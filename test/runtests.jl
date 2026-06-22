@@ -52,6 +52,7 @@ const TEST_GROUP_FILES = Dict(
         "expert/ecp_link_witnesses.jl",
         "expert/ecp_link_step.jl",
         "expert/ecp_induction_normality.jl",
+        "expert/elementary_column_property.jl",
     ],
 )
 
