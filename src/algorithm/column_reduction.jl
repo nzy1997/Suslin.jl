@@ -152,14 +152,8 @@ function ecp_link_witness(
         record.metadata,
         verification,
     )
-    try
-        verify_ecp_link_witness(stored) ||
-            throw(ArgumentError("stored Park-Woodburn ECP link witness data failed exact replay verification"))
-    catch err
-        err isa InterruptException && rethrow()
-        err isa ArgumentError && rethrow()
+    verify_ecp_link_witness(stored) ||
         throw(ArgumentError("stored Park-Woodburn ECP link witness data failed exact replay verification"))
-    end
     return stored
 end
 
