@@ -119,6 +119,15 @@ end
         supplied_link_witness = bad_link,
     )
 
+    err = _ecp_acceptance_capture_error(
+        () -> Suslin.ecp_staged_column_reduction_certificate(
+            canonical,
+            R;
+            lower_reduction = Any[],
+        ),
+    )
+    @test err isa ArgumentError
+
     good_link = Suslin.ecp_link_step_certificate(
         canonical,
         R;
@@ -136,5 +145,18 @@ end
         R;
         supplied_link_witness = _ecp_acceptance_good_link_witness(canonical, R),
         normality_witness = bad_normality,
+    )
+
+    err = _ecp_acceptance_capture_error(
+        () -> Suslin.ecp_staged_column_reduction_certificate(
+            canonical,
+            R;
+            variable_order = (),
+        ),
+    )
+    @test err isa ArgumentError
+    @test (
+        occursin("variable_order", sprint(showerror, err)) ||
+        occursin("at least one", sprint(showerror, err))
     )
 end

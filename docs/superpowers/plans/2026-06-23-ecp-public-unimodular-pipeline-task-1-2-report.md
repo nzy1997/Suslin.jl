@@ -79,3 +79,65 @@ Observed GREEN:
 ## Concerns
 
 - `_ecp_default_public_link_witness` currently recognizes only the hard-coded GF(2) fixture route from the plan. That is intentional for this task, but expanding public staged coverage later will need a less ad hoc witness recognizer.
+
+## Follow-up Fix: Staged Input Validation
+
+### What Changed
+
+- Added two focused regressions in `test/expert/elementary_column_property.jl`:
+  - `lower_reduction = Any[]` must throw `ArgumentError` instead of surfacing a raw `BoundsError`.
+  - `variable_order = ()` must throw a clearer staged `ArgumentError` mentioning `variable_order` or the need for at least one generator.
+- Updated `ecp_staged_column_reduction_certificate` in `src/algorithm/column_reduction.jl` to:
+  - reject empty `variable_order` before calling `first(normalized_order)`;
+  - validate injected `lower_reduction` through `_ecp_verified_lower_reduction` before synthesizing the default normality witness;
+  - pass the verified lower-column length into `_ecp_default_public_normality_witness` so the default witness no longer depends on `first(lower_factors)`.
+
+### RED Output
+
+Command:
+
+```bash
+julia --project=. -e 'include("test/expert/elementary_column_property.jl")'
+```
+
+Observed RED:
+
+- Exit code: `1`
+- Failure 1: `err isa ArgumentError` failed because the actual exception was `BoundsError(Any[], (1,))`.
+- Failure 2: the `variable_order = ()` assertion failed because the error text did not mention `variable_order` or `at least one`.
+- Summary: `28 passed, 2 failed, 0 errored`.
+
+### GREEN Output
+
+Command:
+
+```bash
+julia --project=. -e 'include("test/expert/elementary_column_property.jl")'
+```
+
+Observed GREEN:
+
+- Exit code: `0`
+- Summary: `public ECP unimodular-column pipeline | 30 passed, 30 total`
+
+### Regression Output
+
+1. `julia --project=. -e 'include("test/expert/ecp_induction_normality.jl")'`
+   - Exit code: `0`
+   - Summary: `ECP induction and normality replay | 27 passed, 27 total`
+
+### Files Changed
+
+- `src/algorithm/column_reduction.jl`
+- `test/expert/elementary_column_property.jl`
+- `docs/superpowers/plans/2026-06-23-ecp-public-unimodular-pipeline-task-1-2-report.md`
+
+### Self-Review
+
+- The constructor now uses the existing lower-reduction verifier instead of duplicating ad hoc factor extraction logic.
+- The default normality witness is derived from verified lower-column shape, which removes the raw indexing hazard even if the verified factor sequence is empty.
+- The change is scoped to staged expert input handling and does not alter the verified reduction route or factor order.
+
+### Concerns
+
+- I only reran the focused expert file and the requested induction/normality regression for this follow-up fix.

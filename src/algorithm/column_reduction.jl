@@ -348,6 +348,8 @@ function ecp_staged_column_reduction_certificate(
     _is_laurent_polynomial_ring(R) &&
         throw(ArgumentError("ECP staged public column pipeline currently supports ordinary polynomial columns only"))
     normalized_order = _ecp_normalize_variable_order(R, variable_order)
+    isempty(normalized_order) && selected_variable === nothing &&
+        throw(ArgumentError("variable_order must contain at least one generator when selected_variable is not provided"))
     selected_variable = selected_variable === nothing ? first(normalized_order) : selected_variable
     link_witness = supplied_link_witness === nothing ?
         _ecp_default_public_link_witness(column, R, selected_variable) :
@@ -360,20 +362,17 @@ function ecp_staged_column_reduction_certificate(
         selected_monic_index,
         supplied_link_witness = link_witness,
     )
-    lower_certificate = lower_reduction === nothing ?
-        ecp_column_reduction_certificate(collect(link.lower_variable_column), R) :
-        lower_reduction
-    lower_factors = lower_certificate isa ECPColumnReductionCertificate ?
-        lower_certificate.factors :
-        collect(lower_certificate)
+    lower_column = collect(link.lower_variable_column)
+    lower_certificate, lower_factors = _ecp_verified_lower_reduction(lower_reduction, lower_column, R)
+    lower_reduction_input = lower_certificate === nothing ? lower_factors : lower_certificate
     normality = normality_witness === nothing ?
-        _ecp_default_public_normality_witness(lower_factors, R) :
+        _ecp_default_public_normality_witness(lower_factors, length(lower_column), R) :
         normality_witness
     induction = ecp_induction_normality_certificate(
         column,
         R;
         link_step = link,
-        lower_reduction = lower_certificate,
+        lower_reduction = lower_reduction_input,
         normality_witness = normality,
     )
     monicity = (;
@@ -392,7 +391,7 @@ function ecp_staged_column_reduction_certificate(
         R,
         monicity,
         link,
-        lower_certificate,
+        lower_reduction_input,
         normality,
         induction,
         factors,
@@ -1699,8 +1698,7 @@ function _ecp_link_step_identity_transport(R, from_column, to_column, link_ident
     )
 end
 
-function _ecp_default_public_normality_witness(lower_factors, R)
-    n = nrows(first(lower_factors))
+function _ecp_default_public_normality_witness(lower_factors, n::Int, R)
     lower_product = _factor_sequence_product(lower_factors, R, n)
     return (;
         source = :supplied_normality_witness,
