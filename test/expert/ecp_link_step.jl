@@ -186,6 +186,27 @@ function _relabelled_unit_tail_case()
     return (; R, x, y, column, witness)
 end
 
+function _extra_generator_gf2_case()
+    R, (x, y, z) = Oscar.polynomial_ring(GF(2), ["x", "y", "z"])
+    column = [x + y^2, x * y + x + one(R), x^2 + x * y + y + one(R)]
+    G = y * column[2] + column[3]
+    witness = (;
+        source = :supplied_link_witness,
+        residue_probes = ((; id = :gf2_fixture_probe, kind = :deterministic_fixture, maximal_ideal_generators = (y,)),),
+        tail_reductions = ((;
+            probe_id = :gf2_fixture_probe,
+            G,
+            lifted_tail_coefficients = (y, one(R)),
+            tilde_G = G,
+        ),),
+        resultants = (one(R),),
+        bezout_coefficients = ((; f = x, h = one(R)),),
+        coverage_multipliers = (one(R),),
+        path_points = (zero(R), x),
+    )
+    return (; R, x, y, z, column, witness)
+end
+
 @testset "ECP link step certificate replays path transport" begin
     gf2_entry = _case_by_id("ecp-variable-change-monic-gf2")
     gf2_column = _column(gf2_entry)
@@ -305,5 +326,20 @@ end
         relabelled_unit_tail.column,
         relabelled_unit_tail.R;
         link_witness = relabelled_unit_tail_record,
+    )
+
+    extra_generator = _extra_generator_gf2_case()
+    extra_generator_record = Suslin.ecp_link_witness(
+        extra_generator.column,
+        extra_generator.R;
+        variable_order = (extra_generator.x, extra_generator.y, extra_generator.z),
+        selected_variable = extra_generator.x,
+        supplied_link_witness = extra_generator.witness,
+    )
+    @test Suslin.verify_ecp_link_witness(extra_generator_record)
+    @test_throws ArgumentError Suslin.ecp_link_step_certificate(
+        extra_generator.column,
+        extra_generator.R;
+        link_witness = extra_generator_record,
     )
 end

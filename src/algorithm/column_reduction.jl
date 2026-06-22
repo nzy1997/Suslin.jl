@@ -1204,7 +1204,7 @@ function _ecp_link_step_matches_gf2_fixture(witness::ECPLinkWitnessRecord)
     R = witness.ring
     !_ecp_link_step_base_characteristic_is(R, 2) && return false
     ring_generators = gens(R)
-    length(ring_generators) >= 2 || return false
+    length(ring_generators) == 2 || return false
     x, y = ring_generators[1], ring_generators[2]
     length(witness.original_column) == 3 || return false
     length(witness.residue_probes) == 1 || return false
@@ -1229,7 +1229,7 @@ function _ecp_link_step_matches_qq_fixture(witness::ECPLinkWitnessRecord)
     R = witness.ring
     !_ecp_link_step_base_characteristic_is(R, 0) && return false
     ring_generators = gens(R)
-    length(ring_generators) >= 2 || return false
+    length(ring_generators) == 2 || return false
     x, y = ring_generators[1], ring_generators[2]
     length(witness.original_column) == 3 || return false
     length(witness.residue_probes) == 2 || return false
