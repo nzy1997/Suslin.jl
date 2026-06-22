@@ -722,15 +722,41 @@ function verify_ecp_link_witness(record)::Bool
     end
 end
 
+_ecp_namedtuple_keys_exact(value, expected::Tuple) = Tuple(propertynames(value)) == expected
+
+function _ecp_generator_belongs_to_ring(R, generator)
+    return any(ring_generator -> ring_generator == generator, gens(R))
+end
+
 function _ecp_link_witness_replay_summary(record)
     R = record.ring
     v1 = record.original_column[1]
     tail_entries = record.original_column[2:end]
+    ring_generators = gens(R)
+    expected_probe_fields = (:id, :kind, :maximal_ideal_generators)
 
     metadata_ok = record.metadata == (; source = :supplied_link_witness)
-    selected_monic_ok = record.selected_monic_index == 1 &&
+    normalized_variable_order = try
+        tuple(_ecp_normalize_variable_order(R, record.variable_order)...)
+    catch
+        ()
+    end
+    variable_order_ok = normalized_variable_order == record.variable_order
+    selected_variable_index_ok = 1 <= record.selected_variable_index <= length(ring_generators)
+    replayed_selected_variable = selected_variable_index_ok ? ring_generators[record.selected_variable_index] : nothing
+    selected_variable_ok = selected_variable_index_ok &&
+        record.selected_variable == replayed_selected_variable
+    selected_variable_order_ok = variable_order_ok &&
+        count(==(record.selected_variable), record.variable_order) == 1
+    selected_monic_ok = selected_variable_index_ok &&
+        record.selected_monic_index == 1 &&
         record.selected_monic_entry == v1 &&
         _is_monic_in_variable(record.selected_monic_entry, R, record.selected_variable_index)
+    metadata_shape_ok = all(record.residue_probes) do probe
+        _ecp_namedtuple_keys_exact(probe, expected_probe_fields) || return false
+        generators = tuple(probe.maximal_ideal_generators...)
+        return all(generator -> _ecp_generator_belongs_to_ring(R, generator), generators)
+    end
 
     probe_ids = tuple((probe.id for probe in record.residue_probes)...)
     lengths_ok = length(record.tail_reductions) == length(record.residue_probes) &&
@@ -740,12 +766,12 @@ function _ecp_link_witness_replay_summary(record)
         length(record.path_points) == length(record.tail_reductions) + 1
 
     recomputed_tail_tilde_Gs = Any[]
-    tail_reduction_ok = lengths_ok
+    tail_reduction_ok = lengths_ok && metadata_shape_ok
     for (idx, tail) in enumerate(record.tail_reductions)
-        hasproperty(tail, :probe_id) || return _ecp_invalid_link_replay(record, metadata_ok, selected_monic_ok, lengths_ok, recomputed_tail_tilde_Gs)
-        hasproperty(tail, :G) || return _ecp_invalid_link_replay(record, metadata_ok, selected_monic_ok, lengths_ok, recomputed_tail_tilde_Gs)
-        hasproperty(tail, :lifted_tail_coefficients) || return _ecp_invalid_link_replay(record, metadata_ok, selected_monic_ok, lengths_ok, recomputed_tail_tilde_Gs)
-        hasproperty(tail, :tilde_G) || return _ecp_invalid_link_replay(record, metadata_ok, selected_monic_ok, lengths_ok, recomputed_tail_tilde_Gs)
+        hasproperty(tail, :probe_id) || return _ecp_invalid_link_replay(record, metadata_ok, variable_order_ok, selected_variable_index_ok, selected_variable_ok, selected_variable_order_ok, selected_monic_ok, metadata_shape_ok, lengths_ok, recomputed_tail_tilde_Gs)
+        hasproperty(tail, :G) || return _ecp_invalid_link_replay(record, metadata_ok, variable_order_ok, selected_variable_index_ok, selected_variable_ok, selected_variable_order_ok, selected_monic_ok, metadata_shape_ok, lengths_ok, recomputed_tail_tilde_Gs)
+        hasproperty(tail, :lifted_tail_coefficients) || return _ecp_invalid_link_replay(record, metadata_ok, variable_order_ok, selected_variable_index_ok, selected_variable_ok, selected_variable_order_ok, selected_monic_ok, metadata_shape_ok, lengths_ok, recomputed_tail_tilde_Gs)
+        hasproperty(tail, :tilde_G) || return _ecp_invalid_link_replay(record, metadata_ok, variable_order_ok, selected_variable_index_ok, selected_variable_ok, selected_variable_order_ok, selected_monic_ok, metadata_shape_ok, lengths_ok, recomputed_tail_tilde_Gs)
         coeffs = tuple(tail.lifted_tail_coefficients...)
         length(coeffs) == length(tail_entries) || (tail_reduction_ok = false; push!(recomputed_tail_tilde_Gs, zero(R)); continue)
         recomputed_tilde_G = zero(R)
@@ -772,8 +798,8 @@ function _ecp_link_witness_replay_summary(record)
     bezout_ok = lengths_ok && tail_reduction_ok && resultants_ok
     for idx in eachindex(record.bezout_coefficients)
         bezout = record.bezout_coefficients[idx]
-        hasproperty(bezout, :f) || return _ecp_invalid_link_replay(record, metadata_ok, selected_monic_ok, lengths_ok, recomputed_tail_tilde_Gs_tuple, recomputed_resultants_tuple)
-        hasproperty(bezout, :h) || return _ecp_invalid_link_replay(record, metadata_ok, selected_monic_ok, lengths_ok, recomputed_tail_tilde_Gs_tuple, recomputed_resultants_tuple)
+        hasproperty(bezout, :f) || return _ecp_invalid_link_replay(record, metadata_ok, variable_order_ok, selected_variable_index_ok, selected_variable_ok, selected_variable_order_ok, selected_monic_ok, metadata_shape_ok, lengths_ok, recomputed_tail_tilde_Gs_tuple, recomputed_resultants_tuple)
+        hasproperty(bezout, :h) || return _ecp_invalid_link_replay(record, metadata_ok, variable_order_ok, selected_variable_index_ok, selected_variable_ok, selected_variable_order_ok, selected_monic_ok, metadata_shape_ok, lengths_ok, recomputed_tail_tilde_Gs_tuple, recomputed_resultants_tuple)
         bezout_identity = bezout.f * v1 + bezout.h * recomputed_tail_tilde_Gs_tuple[idx]
         bezout_ok &= bezout_identity == recomputed_resultants_tuple[idx]
     end
@@ -797,7 +823,12 @@ function _ecp_link_witness_replay_summary(record)
     end
 
     overall_ok = metadata_ok &&
+        variable_order_ok &&
+        selected_variable_index_ok &&
+        selected_variable_ok &&
+        selected_variable_order_ok &&
         selected_monic_ok &&
+        metadata_shape_ok &&
         lengths_ok &&
         tail_reduction_ok &&
         resultants_ok &&
@@ -807,7 +838,14 @@ function _ecp_link_witness_replay_summary(record)
     return (;
         overall_ok,
         metadata_ok,
+        variable_order_ok,
+        normalized_variable_order,
+        selected_variable_index_ok,
+        selected_variable_ok,
+        replayed_selected_variable,
+        selected_variable_order_ok,
         selected_monic_ok,
+        metadata_shape_ok,
         lengths_ok,
         tail_reduction_ok,
         resultants_ok,
@@ -823,7 +861,12 @@ end
 function _ecp_invalid_link_replay(
     record,
     metadata_ok,
+    variable_order_ok,
+    selected_variable_index_ok,
+    selected_variable_ok,
+    selected_variable_order_ok,
     selected_monic_ok,
+    metadata_shape_ok,
     lengths_ok,
     recomputed_tail_tilde_Gs = (),
     recomputed_resultants = (),
@@ -831,7 +874,14 @@ function _ecp_invalid_link_replay(
     return (;
         overall_ok = false,
         metadata_ok,
+        variable_order_ok,
+        normalized_variable_order = (),
+        selected_variable_index_ok,
+        selected_variable_ok,
+        replayed_selected_variable = nothing,
+        selected_variable_order_ok,
         selected_monic_ok,
+        metadata_shape_ok,
         lengths_ok,
         tail_reduction_ok = false,
         resultants_ok = false,

@@ -63,12 +63,14 @@ end
 
 function _mutate_witness(
     witness;
+    residue_probes = witness.residue_probes,
     resultants = witness.resultants,
     bezout_coefficients = witness.bezout_coefficients,
     coverage_multipliers = witness.coverage_multipliers,
     path_points = witness.path_points,
 )
     return merge(witness, (;
+        residue_probes,
         resultants,
         bezout_coefficients,
         coverage_multipliers,
@@ -137,6 +139,21 @@ end
         R;
         variable_order = qq_entry.ring.generators,
         selected_variable = x,
+        selected_monic_index = 2,
+        supplied_link_witness = qq_witness,
+    )
+    @test_throws ArgumentError Suslin.ecp_link_witness(
+        qq_column,
+        R;
+        variable_order = qq_entry.ring.generators,
+        selected_variable = y,
+        supplied_link_witness = qq_witness,
+    )
+    @test_throws ArgumentError Suslin.ecp_link_witness(
+        qq_column,
+        R;
+        variable_order = qq_entry.ring.generators,
+        selected_variable = x,
         supplied_link_witness = _mutate_witness(
             qq_witness;
             resultants = (y^2 + one(R), y + one(R)),
@@ -176,6 +193,32 @@ end
     bad_verification = merge(qq_record.verification, (; coverage_ok = false, overall_ok = false))
     @test !Suslin.verify_ecp_link_witness(_tamper_record_field(qq_record, :verification, bad_verification))
     @test !Suslin.verify_ecp_link_witness(_tamper_record_field(qq_record, :path_points, _replace_tuple_entry(qq_record.path_points, 2, y^2 * x + one(R))))
+    @test !Suslin.verify_ecp_link_witness(_tamper_record_field(qq_record, :variable_order, (y, x)))
+    @test !Suslin.verify_ecp_link_witness(_tamper_record_field(qq_record, :selected_variable, y))
+    @test !Suslin.verify_ecp_link_witness(_tamper_record_field(
+        qq_record,
+        :residue_probes,
+        (
+            merge(qq_record.residue_probes[1], (; maximal_ideal_generators = (x + one(R),))),
+            qq_record.residue_probes[2],
+        ),
+    ))
+    @test !Suslin.verify_ecp_link_witness(_tamper_record_field(
+        qq_record,
+        :residue_probes,
+        (
+            merge(qq_record.residue_probes[1], (; id = :tampered_probe_id)),
+            qq_record.residue_probes[2],
+        ),
+    ))
+    @test !Suslin.verify_ecp_link_witness(_tamper_record_field(
+        qq_record,
+        :residue_probes,
+        (
+            merge(qq_record.residue_probes[1], (; maximal_ideal_generators = (y,), unexpected = :extra_field)),
+            qq_record.residue_probes[2],
+        ),
+    ))
 end
 
 @testset "ECP link witnesses remain staged without supplied metadata" begin
