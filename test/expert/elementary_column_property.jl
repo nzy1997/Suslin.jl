@@ -131,6 +131,27 @@ end
     )
     @test !Suslin.verify_ecp_staged_column_reduction(tampered_lower_reduction)
 
+    raw_lower_link = Suslin.ecp_link_step_certificate(
+        canonical,
+        R;
+        variable_order = gens(R),
+        selected_variable = first(gens(R)),
+        supplied_link_witness = _ecp_acceptance_good_link_witness(canonical, R),
+    )
+    raw_lower = Suslin.ecp_column_reduction_certificate(collect(raw_lower_link.lower_variable_column), R)
+    staged_with_raw_lower = Suslin.ecp_staged_column_reduction_certificate(
+        canonical,
+        R;
+        supplied_link_witness = _ecp_acceptance_good_link_witness(canonical, R),
+        lower_reduction = raw_lower.factors,
+    )
+    @test Suslin.verify_ecp_staged_column_reduction(staged_with_raw_lower)
+    tampered_missing_raw_lower = _ecp_acceptance_tampered_staged_certificate(
+        staged_with_raw_lower;
+        lower_reduction = nothing,
+    )
+    @test !Suslin.verify_ecp_staged_column_reduction(tampered_missing_raw_lower)
+
     tampered_normality = _ecp_acceptance_tampered_staged_certificate(
         staged;
         normality_witness = merge(staged.normality_witness, (; source = :tampered_normality)),

@@ -208,3 +208,64 @@ Observed GREEN:
 ### Concerns
 
 - I reran the focused staged-pipeline expert file and the requested induction/normality regression only; I did not rerun the broader expert suite in this follow-up.
+
+## Final Re-review Fix: Reject Raw Lower-Reduction Tampering
+
+### What Changed
+
+- Added a focused staged-certificate regression in `test/expert/elementary_column_property.jl` that:
+  - constructs `ecp_staged_column_reduction_certificate(canonical, R; lower_reduction = raw_lower.factors)`;
+  - verifies the untampered staged certificate;
+  - copies it with top-level `lower_reduction = nothing`;
+  - requires `verify_ecp_staged_column_reduction` to return `false`.
+- Tightened `_ecp_staged_lower_reduction_matches` in `src/algorithm/column_reduction.jl` so:
+  - direct equality with `induction_normality.lower_reduction_certificate` is accepted only when that nested certificate is present;
+  - otherwise the top-level staged field must be a concrete factor sequence matching `induction_normality.lower_variable_factors`.
+
+### RED Output
+
+Command:
+
+```bash
+julia --project=. -e 'include("test/expert/elementary_column_property.jl")'
+```
+
+Observed RED:
+
+- Exit code: `1`
+- Failure: `!(Suslin.verify_ecp_staged_column_reduction(tampered_missing_raw_lower))` was false, so the tampered staged certificate still verified.
+- Summary: `37 passed, 1 failed, 0 errored`
+
+### GREEN Output
+
+Command:
+
+```bash
+julia --project=. -e 'include("test/expert/elementary_column_property.jl")'
+```
+
+Observed GREEN:
+
+- Exit code: `0`
+- Summary: `public ECP unimodular-column pipeline | 38 passed, 38 total`
+
+### Regression Output
+
+1. `julia --project=. -e 'include("test/expert/ecp_induction_normality.jl")'`
+   - Exit code: `0`
+   - Summary: `ECP induction and normality replay | 27 passed, 27 total`
+
+### Files Changed
+
+- `src/algorithm/column_reduction.jl`
+- `test/expert/elementary_column_property.jl`
+- `docs/superpowers/plans/2026-06-23-ecp-public-unimodular-pipeline-task-1-2-report.md`
+
+### Self-Review
+
+- The fix is deliberately narrow: it only changes staged replay matching for the raw-lower-factor case and leaves the nested induction certificate logic untouched.
+- The regression exercises the exact review scenario instead of a nearby surrogate, which makes the protection durable against future replay refactors.
+
+### Concerns
+
+- Verification for this follow-up is limited to the focused staged-pipeline expert file and the requested induction/normality regression.

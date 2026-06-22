@@ -1985,7 +1985,8 @@ function _ecp_staged_replayed_monicity(link_witness::ECPLinkWitnessRecord)
 end
 
 function _ecp_staged_lower_reduction_matches(lower_reduction, induction_normality)
-    lower_reduction == induction_normality.lower_reduction_certificate && return true
+    induction_normality.lower_reduction_certificate !== nothing &&
+        return lower_reduction == induction_normality.lower_reduction_certificate
     _ecp_is_concrete_factor_sequence(lower_reduction) || return false
     return _ecp_factor_sequences_equal(
         collect(lower_reduction),
