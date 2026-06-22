@@ -1160,11 +1160,96 @@ function _ecp_link_step_divided_differences(from_column, to_column, delta, R)
 end
 
 function _ecp_link_step_supported_family(witness::ECPLinkWitnessRecord)
-    probe_ids = tuple((probe.id for probe in witness.residue_probes)...)
-    if probe_ids == (:gf2_fixture_probe,) || probe_ids == (:qq_y_probe, :qq_x_probe)
+    if _ecp_link_step_matches_gf2_fixture(witness) || _ecp_link_step_matches_qq_fixture(witness)
         return :supplied_fixture_identity_sl2_endpoint_transport
     end
+    probe_ids = tuple((probe.id for probe in witness.residue_probes)...)
     throw(ArgumentError("unsupported ECP link step family for supplied link witness probes $(probe_ids)"))
+end
+
+function _ecp_link_step_base_characteristic_is(R, value::Integer)
+    char = try
+        characteristic(base_ring(R))
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+    return char == value
+end
+
+function _ecp_link_step_probe_ideal_matches(probe, generators)
+    return hasproperty(probe, :kind) &&
+        hasproperty(probe, :maximal_ideal_generators) &&
+        probe.kind == :deterministic_fixture &&
+        tuple(probe.maximal_ideal_generators...) == generators
+end
+
+function _ecp_link_step_tail_matches(tail, G, lifted_tail_coefficients)
+    return hasproperty(tail, :G) &&
+        hasproperty(tail, :lifted_tail_coefficients) &&
+        hasproperty(tail, :tilde_G) &&
+        tail.G == G &&
+        tuple(tail.lifted_tail_coefficients...) == lifted_tail_coefficients &&
+        tail.tilde_G == G
+end
+
+function _ecp_link_step_bezout_matches(bezout, f, h)
+    return hasproperty(bezout, :f) &&
+        hasproperty(bezout, :h) &&
+        bezout.f == f &&
+        bezout.h == h
+end
+
+function _ecp_link_step_matches_gf2_fixture(witness::ECPLinkWitnessRecord)
+    R = witness.ring
+    !_ecp_link_step_base_characteristic_is(R, 2) && return false
+    ring_generators = gens(R)
+    length(ring_generators) >= 2 || return false
+    x, y = ring_generators[1], ring_generators[2]
+    length(witness.original_column) == 3 || return false
+    length(witness.residue_probes) == 1 || return false
+    length(witness.tail_reductions) == 1 || return false
+    length(witness.bezout_coefficients) == 1 || return false
+
+    expected_column = (x + y^2, x * y + x + one(R), x^2 + x * y + y + one(R))
+    expected_tail = y * expected_column[2] + expected_column[3]
+    return witness.selected_variable_index == 1 &&
+        witness.selected_variable == x &&
+        witness.selected_monic_index == 1 &&
+        witness.original_column == expected_column &&
+        _ecp_link_step_probe_ideal_matches(witness.residue_probes[1], (y,)) &&
+        _ecp_link_step_tail_matches(witness.tail_reductions[1], expected_tail, (y, one(R))) &&
+        witness.resultants == (one(R),) &&
+        _ecp_link_step_bezout_matches(witness.bezout_coefficients[1], x, one(R)) &&
+        witness.coverage_multipliers == (one(R),) &&
+        witness.path_points == (zero(R), x)
+end
+
+function _ecp_link_step_matches_qq_fixture(witness::ECPLinkWitnessRecord)
+    R = witness.ring
+    !_ecp_link_step_base_characteristic_is(R, 0) && return false
+    ring_generators = gens(R)
+    length(ring_generators) >= 2 || return false
+    x, y = ring_generators[1], ring_generators[2]
+    length(witness.original_column) == 3 || return false
+    length(witness.residue_probes) == 2 || return false
+    length(witness.tail_reductions) == 2 || return false
+    length(witness.bezout_coefficients) == 2 || return false
+
+    expected_column = (x^2 + y + one(R), x, y)
+    return witness.selected_variable_index == 1 &&
+        witness.selected_variable == x &&
+        witness.selected_monic_index == 1 &&
+        witness.original_column == expected_column &&
+        _ecp_link_step_probe_ideal_matches(witness.residue_probes[1], (y,)) &&
+        _ecp_link_step_probe_ideal_matches(witness.residue_probes[2], (x,)) &&
+        _ecp_link_step_tail_matches(witness.tail_reductions[1], y, (zero(R), one(R))) &&
+        _ecp_link_step_tail_matches(witness.tail_reductions[2], x, (one(R), zero(R))) &&
+        witness.resultants == (y^2, y + one(R)) &&
+        _ecp_link_step_bezout_matches(witness.bezout_coefficients[1], zero(R), y) &&
+        _ecp_link_step_bezout_matches(witness.bezout_coefficients[2], one(R), -x) &&
+        witness.coverage_multipliers == (one(R), one(R) - y) &&
+        witness.path_points == (zero(R), y^2 * x, x)
 end
 
 function _ecp_link_step_identity_transport(R, from_column, to_column, link_identity, support_family::Symbol)

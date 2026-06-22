@@ -166,6 +166,26 @@ function _unsupported_identity_sl2_case()
     return (; R, x, y, column, witness)
 end
 
+function _relabelled_unit_tail_case()
+    R, (x, y) = Oscar.polynomial_ring(GF(2), ["x", "y"])
+    column = [x + y, one(R), zero(R)]
+    witness = (;
+        source = :supplied_link_witness,
+        residue_probes = ((; id = :gf2_fixture_probe, kind = :deterministic_fixture, maximal_ideal_generators = (y,)),),
+        tail_reductions = ((;
+            probe_id = :gf2_fixture_probe,
+            G = one(R),
+            lifted_tail_coefficients = (one(R), zero(R)),
+            tilde_G = one(R),
+        ),),
+        resultants = (one(R),),
+        bezout_coefficients = ((; f = zero(R), h = one(R)),),
+        coverage_multipliers = (one(R),),
+        path_points = (zero(R), x),
+    )
+    return (; R, x, y, column, witness)
+end
+
 @testset "ECP link step certificate replays path transport" begin
     gf2_entry = _case_by_id("ecp-variable-change-monic-gf2")
     gf2_column = _column(gf2_entry)
@@ -245,5 +265,45 @@ end
         unsupported.column,
         unsupported.R;
         link_witness = unsupported_witness,
+    )
+
+    relabeled_witness = _mutate_witness(
+        unsupported.witness;
+        residue_probes = (
+            merge(unsupported.witness.residue_probes[1], (; id = :qq_y_probe)),
+            merge(unsupported.witness.residue_probes[2], (; id = :qq_x_probe)),
+        ),
+        tail_reductions = (
+            merge(unsupported.witness.tail_reductions[1], (; probe_id = :qq_y_probe)),
+            merge(unsupported.witness.tail_reductions[2], (; probe_id = :qq_x_probe)),
+        ),
+    )
+    relabeled_record = Suslin.ecp_link_witness(
+        unsupported.column,
+        unsupported.R;
+        variable_order = (unsupported.x, unsupported.y),
+        selected_variable = unsupported.x,
+        supplied_link_witness = relabeled_witness,
+    )
+    @test Suslin.verify_ecp_link_witness(relabeled_record)
+    @test_throws ArgumentError Suslin.ecp_link_step_certificate(
+        unsupported.column,
+        unsupported.R;
+        link_witness = relabeled_record,
+    )
+
+    relabelled_unit_tail = _relabelled_unit_tail_case()
+    relabelled_unit_tail_record = Suslin.ecp_link_witness(
+        relabelled_unit_tail.column,
+        relabelled_unit_tail.R;
+        variable_order = (relabelled_unit_tail.x, relabelled_unit_tail.y),
+        selected_variable = relabelled_unit_tail.x,
+        supplied_link_witness = relabelled_unit_tail.witness,
+    )
+    @test Suslin.verify_ecp_link_witness(relabelled_unit_tail_record)
+    @test_throws ArgumentError Suslin.ecp_link_step_certificate(
+        relabelled_unit_tail.column,
+        relabelled_unit_tail.R;
+        link_witness = relabelled_unit_tail_record,
     )
 end

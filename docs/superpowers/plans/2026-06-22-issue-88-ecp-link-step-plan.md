@@ -203,11 +203,11 @@ end
 ```
 
 Use these helpers to set `segment.forward_factors = vcat(_ecp_inverse_factor_sequence(to_cert.factors), from_cert.factors)` and `segment.inverse_factors = _ecp_inverse_factor_sequence(segment.forward_factors)`.
-The constructor must first check the witness probe IDs and only allow the
-known #87 fixture signatures `(:gf2_fixture_probe,)` and
-`(:qq_y_probe, :qq_x_probe)`, recording
+The constructor must first match the exact algebraic content of the known #87
+fixture witness shapes, recording
 `:supplied_fixture_identity_sl2_endpoint_transport`; all other verified
-supplied witnesses must throw `ArgumentError`.
+supplied witnesses, including relabelled unsupported witnesses, must throw
+`ArgumentError`.
 
 - [ ] **Step 5: Add replay verifier**
 
