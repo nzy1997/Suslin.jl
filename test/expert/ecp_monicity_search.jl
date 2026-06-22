@@ -129,6 +129,8 @@ end
     @test old_bounded.source_variable == gens(old_bounded.ring)[1]
     @test old_bounded.target_variable == gens(old_bounded.ring)[2]
     @test old_bounded.shift_power == 2
+    @test Suslin._ecp_first_monic_entry_index([zero(old_bounded.ring), old_bounded.selected_monic_entry], old_bounded.ring) == 2
+    @test Suslin._leading_coefficient_in_last_variable(old_bounded.selected_monic_entry, old_bounded.ring) == one(old_bounded.ring)
 
     target_x_fixture = _target_x_fixture()
     target_x = _assert_success_reduces(
