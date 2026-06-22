@@ -68,9 +68,7 @@ function _checked_reduction_factors(factors, column::AbstractVector, R, stage::A
     return factors
 end
 
-function _reduce_unit_witness_column(column::AbstractVector, pivot_idx::Int, R)
-    return _unit_entry_reduction_certificate_stage(column, pivot_idx, R).factors
-end
+_reduce_unit_witness_column(column::AbstractVector, pivot_idx::Int, R) = _unit_entry_reduction_certificate_stage(column, pivot_idx, R).factors
 
 function _unit_entry_reduction_certificate_stage(column::AbstractVector, pivot_idx::Int, R)
     n = length(column)

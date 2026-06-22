@@ -156,6 +156,17 @@ end
     @test any(stage -> stage.kind == :embedded_three_block, embedded_cert.stages)
     _assert_ecp_certificate_replays(embedded_cert)
 
+    legacy_embedded_column = [one(S), t, t^2, t + one(S)]
+    legacy_subfactors = Suslin._reduce_exact_small_column(legacy_embedded_column[1:3], S)
+    legacy_embedded_factors = Suslin._embedded_three_block_reduction(
+        legacy_embedded_column,
+        S,
+        (1, 2, 3),
+        legacy_subfactors,
+    )
+    @test _ecp_cert_apply_factors(legacy_embedded_factors, legacy_embedded_column, S) ==
+          _ecp_cert_target_column(S, length(legacy_embedded_column))
+
     R, (x, y) = Suslin.suslin_laurent_polynomial_ring(GF(2), ["x", "y"])
     laurent_column = [
         x^-1 + x^-2 * y^2,
