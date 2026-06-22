@@ -177,6 +177,42 @@ end
     @test !Suslin.verify_ecp_column_reduction(_tamper_laurent_shift(laurent_cert))
     @test !Suslin.verify_ecp_column_reduction((; original_column = unit_cert.original_column))
 
+    supported_factors = Suslin._reduce_supported_unimodular_column(unit_cert.original_column, unit_cert.ring)
+    @test _ecp_cert_apply_factors(supported_factors, unit_cert.original_column, unit_cert.ring) ==
+          _ecp_cert_target_column(unit_cert.ring, length(unit_cert.original_column))
+
+    witness_stage = only(stage for stage in witness_cert.stages if stage.kind == :witness_unit)
+    witness_factors = Suslin._reduce_via_witness_unit(
+        witness_cert.original_column,
+        collect(witness_stage.witness),
+        witness_stage.pivot_index,
+        witness_cert.ring,
+    )
+    @test _ecp_cert_apply_factors(witness_factors, witness_cert.original_column, witness_cert.ring) ==
+          _ecp_cert_target_column(witness_cert.ring, length(witness_cert.original_column))
+
+    polynomial_factors = Suslin._reduce_polynomial_unimodular_column_exact(monic_cert.original_column, monic_cert.ring)
+    @test _ecp_cert_apply_factors(polynomial_factors, monic_cert.original_column, monic_cert.ring) ==
+          _ecp_cert_target_column(monic_cert.ring, length(monic_cert.original_column))
+
+    exact_small_factors = Suslin._reduce_exact_small_column(monic_cert.original_column, monic_cert.ring)
+    @test _ecp_cert_apply_factors(exact_small_factors, monic_cert.original_column, monic_cert.ring) ==
+          _ecp_cert_target_column(monic_cert.ring, length(monic_cert.original_column))
+
+    monicity_factors = Suslin._reduce_after_monicity_normalization(monic_cert.original_column, monic_cert.ring)
+    @test _ecp_cert_apply_factors(monicity_factors, monic_cert.original_column, monic_cert.ring) ==
+          _ecp_cert_target_column(monic_cert.ring, length(monic_cert.original_column))
+
+    unknown_stage_cert = Suslin.ECPColumnReductionCertificate(
+        unit_cert.original_column,
+        unit_cert.ring,
+        (unit_cert.stages[1], (; kind = :unknown_stage)),
+        Any[],
+        unit_cert.final_column,
+        nothing,
+    )
+    @test !Suslin.verify_ecp_column_reduction(unknown_stage_cert)
+
     unsupported = _ecp_cert_column(cases["ecp-unsupported-unimodular-gf2"])
     @test_throws ArgumentError Suslin.ecp_column_reduction_certificate(unsupported, cases["ecp-unsupported-unimodular-gf2"].ring.object)
 
