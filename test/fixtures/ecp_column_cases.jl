@@ -127,6 +127,31 @@ function catalog()
         consumer_issue_ids = ("#62",),
     )
 
+    variable_change_permuted_case = _case(
+        id = "ecp-variable-change-permuted-gf2",
+        kind = :variable_change,
+        stage_coverage = :supported,
+        ring_constructor = gf2_ring_constructor,
+        ring = _ring_metadata("GF(2)[x, y]", R2, ("x", "y"), (x, y)),
+        variable_order = (:x, :y),
+        entries = (
+            a = x + y^2,
+            b = x * y + x + one(R2),
+            c = x^2 + x * y + y + one(R2),
+        ),
+        column_order = (:b, :a, :c),
+        monicity = (;
+            selected_entry = :b,
+            variable_name = :y,
+            substitution = (; x = x + y^2),
+            transformed_entry = x * y + x + y^3 + y^2 + one(R2),
+        ),
+        witnesses = (),
+        expected = (; current_status = :passes),
+        source_refs = ("Issue 85 variable-change replay coverage",),
+        consumer_issue_ids = ("#62", "#85"),
+    )
+
     link_bezout_case = _case(
         id = "ecp-link-bezout-nonunit-witness-qq",
         kind = :link_bezout,
@@ -257,6 +282,7 @@ function catalog()
             unit_entry_case,
             witness_unit_case,
             variable_change_case,
+            variable_change_permuted_case,
             link_bezout_case,
             longer_embedded_block_case,
             unsupported_case,
