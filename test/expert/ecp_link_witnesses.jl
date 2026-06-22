@@ -181,6 +181,19 @@ end
             coverage_multipliers = (one(R), one(R)),
         ),
     )
+    @test_throws ArgumentError Suslin.ecp_link_witness(
+        qq_column,
+        R;
+        variable_order = qq_entry.ring.generators,
+        selected_variable = x,
+        supplied_link_witness = _mutate_witness(
+            qq_witness;
+            tail_reductions = (
+                (; probe_id = :qq_y_probe, lifted_tail_coefficients = (zero(R), one(R)), tilde_G = y),
+                qq_witness.tail_reductions[2],
+            ),
+        ),
+    )
     malformed_tail_err = try
         Suslin.ecp_link_witness(
             qq_column,
