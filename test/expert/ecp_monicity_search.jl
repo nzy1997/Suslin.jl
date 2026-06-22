@@ -53,6 +53,28 @@ function _search_tamper_stage_field(cert, field::Symbol, value)
     )
 end
 
+function _search_certificate_from_stage(column, R, stage)
+    factors = stage.factors
+    final_column = _search_apply_factors(factors, column, R)
+    cert = Suslin.ECPColumnReductionCertificate(
+        column,
+        R,
+        ((; kind = :validation, input_length = length(column), is_unimodular = true), stage),
+        factors,
+        final_column,
+        nothing,
+    )
+    verification = Suslin._ecp_column_reduction_replay_summary(cert)
+    return Suslin.ECPColumnReductionCertificate(
+        column,
+        R,
+        cert.stages,
+        factors,
+        final_column,
+        verification,
+    )
+end
+
 function _assert_success_reduces(entry; variable_order = tuple(gens(entry.ring.object)...), max_shift_power = 3)
     column = _search_column(entry)
     R = entry.ring.object
@@ -119,6 +141,9 @@ end
     @test target_x.shift_power == 2
     @test target_x.stage.target_variable_index == 1
     @test target_x.stage.source_variable_index == 2
+    target_x_cert = _search_certificate_from_stage(_search_column(target_x_fixture), target_x.ring, target_x.stage)
+    @test target_x_cert.verification.overall_ok == true
+    @test Suslin.verify_ecp_column_reduction(target_x_cert)
 
     exhausted_entry = cases["ecp-unsupported-unimodular-gf2"]
     exhausted_column = _search_column(exhausted_entry)
