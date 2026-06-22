@@ -135,6 +135,22 @@ function _assert_link_step_composed_maps(record)
           matrix(R, length(record.lower_variable_column), 1, collect(record.lower_variable_column))
 end
 
+function _link_step_record_shell(column, R, witness, path_columns)
+    return Suslin.ECPLinkStepCertificate(
+        tuple(column...),
+        R,
+        witness,
+        witness.path_points,
+        path_columns,
+        (),
+        first(path_columns),
+        tuple(column...),
+        Any[],
+        Any[],
+        nothing,
+    )
+end
+
 function _unsupported_identity_sl2_case()
     R, (x, y) = Oscar.polynomial_ring(GF(2), ["x", "y"])
     column = [x^2 + y + one(R), x * y^2, x^2 + y^2]
@@ -342,4 +358,52 @@ end
         extra_generator.R;
         link_witness = extra_generator_record,
     )
+
+    zero_delta_differences, zero_delta_ok = Suslin._ecp_link_step_divided_differences(
+        qq_record.path_columns[1],
+        qq_record.path_columns[1],
+        zero(R),
+        R,
+    )
+    @test zero_delta_ok
+    @test all(iszero, zero_delta_differences)
+
+    nondivisible_differences, nondivisible_ok = Suslin._ecp_link_step_divided_differences(
+        (zero(R),),
+        (one(R),),
+        x,
+        R,
+    )
+    @test !nondivisible_ok
+    @test all(iszero, nondivisible_differences)
+
+    @test Suslin._ecp_link_step_base_characteristic_is(nothing, 2) == false
+
+    transport_identity = (; overall_ok = true)
+    reducible_endpoint = (one(R), zero(R), zero(R))
+    unsupported_endpoint = (x, y, x * y)
+    @test_throws ArgumentError Suslin._ecp_link_step_identity_transport(
+        R,
+        unsupported_endpoint,
+        reducible_endpoint,
+        transport_identity,
+        :supplied_fixture_identity_sl2_endpoint_transport,
+    )
+    @test_throws ArgumentError Suslin._ecp_link_step_identity_transport(
+        R,
+        reducible_endpoint,
+        unsupported_endpoint,
+        transport_identity,
+        :supplied_fixture_identity_sl2_endpoint_transport,
+    )
+
+    unsupported_path_columns = Suslin._ecp_link_step_path_columns(unsupported_witness)
+    unsupported_shell = _link_step_record_shell(
+        unsupported.column,
+        unsupported.R,
+        unsupported_witness,
+        unsupported_path_columns,
+    )
+    @test !Suslin.verify_ecp_link_step_certificate(unsupported_shell)
+    @test !Suslin.verify_ecp_link_step_certificate(nothing)
 end
