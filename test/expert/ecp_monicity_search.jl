@@ -32,6 +32,27 @@ function _search_stage(result)
     return result.stage
 end
 
+function _search_monicity_stage(cert)
+    stages = [stage for stage in cert.stages if stage.kind == :monicity_normalization]
+    @test length(stages) == 1
+    return only(stages)
+end
+
+function _search_tamper_stage_field(cert, field::Symbol, value)
+    stages = collect(cert.stages)
+    stage_idx = findfirst(stage -> stage.kind == :monicity_normalization, stages)
+    stage_idx === nothing && error("certificate has no monicity-normalization stage")
+    stages[stage_idx] = merge(stages[stage_idx], NamedTuple{(field,)}((value,)))
+    return Suslin.ECPColumnReductionCertificate(
+        cert.original_column,
+        cert.ring,
+        tuple(stages...),
+        cert.factors,
+        cert.final_column,
+        cert.verification,
+    )
+end
+
 function _assert_success_reduces(entry; variable_order = tuple(gens(entry.ring.object)...), max_shift_power = 3)
     column = _search_column(entry)
     R = entry.ring.object
@@ -160,4 +181,28 @@ end
         cases["ecp-variable-change-monic-gf2"].ring.object;
         variable_order = (:x, :z),
     )
+end
+
+@testset "monicity replay rejects malformed stage metadata" begin
+    cases = ECPColumnFixtureCatalog.cases_by_id()
+    entry = cases["ecp-variable-change-monic-gf2"]
+    column = _search_column(entry)
+    cert = Suslin.ecp_column_reduction_certificate(column, entry.ring.object)
+    stage = _search_monicity_stage(cert)
+
+    bad_certs = (
+        _search_tamper_stage_field(cert, :source_variable_index, length(gens(cert.ring)) + 1),
+        _search_tamper_stage_field(cert, :target_variable_index, 0),
+        _search_tamper_stage_field(cert, :source_variable, gens(cert.ring)[end]),
+        _search_tamper_stage_field(cert, :target_variable, gens(cert.ring)[1]),
+        _search_tamper_stage_field(cert, :shift_power, -1),
+        _search_tamper_stage_field(cert, :variable_order, nothing),
+        _search_tamper_stage_field(cert, :variable_order, :x),
+        _search_tamper_stage_field(cert, :variable_order, (stage.variable_order[1], stage.variable_order[1])),
+    )
+
+    for bad_cert in bad_certs
+        @test Suslin._ecp_replay_stages(bad_cert).ok == false
+        @test Suslin.verify_ecp_column_reduction(bad_cert) == false
+    end
 end

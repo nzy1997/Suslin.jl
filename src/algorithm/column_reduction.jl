@@ -692,12 +692,67 @@ function _ecp_replay_stage(stage, input_column, R)
             stage.output_column == expected_output
         return (; ok, factors = expected_factors, output_column = expected_output)
     elseif stage.kind == :monicity_normalization
+        invalid_replay = (; ok = false, factors = Any[], output_column = matrix(R, length(input_column), 1, collect(input_column)))
+        required_keys = (
+            :kind,
+            :input_column,
+            :variable_order,
+            :variable_index,
+            :source_variable_index,
+            :source_variable,
+            :last_variable_index,
+            :target_variable_index,
+            :target_variable,
+            :shift_power,
+            :shift_sign,
+            :shift_polynomial,
+            :forward_values,
+            :inverse_values,
+            :forward_substitution,
+            :inverse_substitution,
+            :transformed_column,
+            :selected_monic_index,
+            :selected_monic_entry,
+            :first_coordinate_strategy,
+            :first_coordinate_move_factors,
+            :first_coordinate_column,
+            :transformed_stage,
+            :transformed_factors,
+            :inverse_substituted_factors,
+            :factors,
+            :output_column,
+            :variable_change_verification,
+        )
+        _ecp_stage_keys_ok(stage, required_keys) || return invalid_replay
+
         ring_gens = collect(gens(R))
-        variable_order = collect(stage.variable_order)
-        target_variable = stage.target_variable
-        target_variable_index = stage.target_variable_index
         source_variable_index = stage.source_variable_index
+        target_variable_index = stage.target_variable_index
+        source_index_ok = source_variable_index isa Integer && 1 <= source_variable_index <= length(ring_gens)
+        target_index_ok = target_variable_index isa Integer && 1 <= target_variable_index <= length(ring_gens)
+        source_index_ok && target_index_ok || return invalid_replay
+
+        variable_order = try
+            collect(stage.variable_order)
+        catch err
+            err isa InterruptException && rethrow()
+            return invalid_replay
+        end
+        isempty(variable_order) && return invalid_replay
+        normalized_variable_order = try
+            _ecp_normalize_variable_order(R, variable_order)
+        catch err
+            err isa ArgumentError || rethrow()
+            nothing
+        end
+        normalized_variable_order === nothing && return invalid_replay
+
         source_variable = stage.source_variable
+        target_variable = stage.target_variable
+        source_variable == ring_gens[source_variable_index] || return invalid_replay
+        target_variable == ring_gens[target_variable_index] || return invalid_replay
+        stage.shift_power isa Integer && stage.shift_power >= 0 || return invalid_replay
+
         forward_values = copy(ring_gens)
         forward_values[source_variable_index] = source_variable + stage.shift_sign * target_variable^stage.shift_power
         substituted_column = [
@@ -731,14 +786,9 @@ function _ecp_replay_stage(stage, input_column, R)
             transformed_reduction_ok = transformed_output == target,
             original_reduction_ok = expected_output == target,
         )
-        normalized_variable_order = _ecp_normalize_variable_order(R, variable_order)
         source_order_index = findfirst(variable -> variable == source_variable, variable_order)
         target_order_index = findfirst(variable -> variable == target_variable, variable_order)
-        ok = _ecp_stage_keys_ok(
-                stage,
-                (:kind, :input_column, :variable_order, :variable_index, :source_variable_index, :source_variable, :last_variable_index, :target_variable_index, :target_variable, :shift_power, :shift_sign, :shift_polynomial, :forward_values, :inverse_values, :forward_substitution, :inverse_substitution, :transformed_column, :selected_monic_index, :selected_monic_entry, :first_coordinate_strategy, :first_coordinate_move_factors, :first_coordinate_column, :transformed_stage, :transformed_factors, :inverse_substituted_factors, :factors, :output_column, :variable_change_verification),
-            ) &&
-            stage.input_column == _ecp_column_tuple(input_column) &&
+        ok = stage.input_column == _ecp_column_tuple(input_column) &&
             stage.variable_order == tuple(normalized_variable_order...) &&
             stage.source_variable_index == stage.variable_index &&
             stage.source_variable == ring_gens[stage.source_variable_index] &&
