@@ -2,6 +2,9 @@ using Suslin
 using Test
 using Oscar
 
+const PARK_WOODBURN_DRIVER_CATALOG_PATH =
+    joinpath(@__DIR__, "..", "fixtures", "park_woodburn_polynomial_cases.jl")
+
 function _captured_error(f)
     try
         f()
@@ -107,4 +110,24 @@ end
     @test occursin("outside the staged SL_n factorization path", sprint(showerror, non_normalizable_err))
     @test !occursin("SL_n reduction layer", sprint(showerror, non_normalizable_err))
     @test !occursin("currently supports only 3x3 matrices", sprint(showerror, non_normalizable_err))
+
+    if !isdefined(Main, :ParkWoodburnPolynomialFixtureCatalog)
+        include(PARK_WOODBURN_DRIVER_CATALOG_PATH)
+    end
+    entries = ParkWoodburnPolynomialFixtureCatalog.cases_by_id()
+    recursive_supported = entries["pw-poly-recursive-column-peel-sl3-qq"].matrix
+    recursive_factors = elementary_factorization(recursive_supported)
+    @test verify_factorization(recursive_supported, recursive_factors)
+    recursive_cert = Suslin._polynomial_factorization_route_certificate(recursive_supported)
+    @test recursive_cert.route == :polynomial_column_peel
+    @test recursive_factors == recursive_cert.factors
+    @test recursive_cert.evidence isa Suslin.PolynomialColumnPeelCertificate
+    @test Suslin._verify_polynomial_column_peel_certificate(recursive_cert.evidence)
+
+    recursive_unsupported = entries["pw-poly-recursive-column-peel-gf2"].matrix
+    recursive_unsupported_err =
+        _captured_error(() -> elementary_factorization(recursive_unsupported))
+    @test recursive_unsupported_err isa ArgumentError
+    @test occursin("polynomial column-peel", sprint(showerror, recursive_unsupported_err)) ||
+        occursin("SL_n reduction layer", sprint(showerror, recursive_unsupported_err))
 end

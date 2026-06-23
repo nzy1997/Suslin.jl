@@ -121,20 +121,30 @@ function _polynomial_column_peel_recursive(current; final_route=nothing)
 end
 
 function _polynomial_column_peel_try_final_route(current; final_route=nothing)
-    certificate = try
-        _polynomial_factorization_route_certificate(
-            current;
-            route=final_route,
-        )
-    catch err
-        err isa InterruptException && rethrow()
-        err isa ArgumentError || rethrow()
-        return nothing
-    end
+    candidate_routes =
+        final_route === nothing ?
+        (:fast_local_sl3, :disjoint_local_blocks) :
+        (final_route,)
 
-    if certificate.status == :supported &&
-            certificate.route in (:fast_local_sl3, :disjoint_local_blocks)
-        return certificate
+    for route in candidate_routes
+        certificate = try
+            _polynomial_factorization_route_certificate(
+                current;
+                route=route,
+                allow_recursive_column_peel=false,
+            )
+        catch err
+            err isa InterruptException && rethrow()
+            err isa ArgumentError || rethrow()
+            nothing
+        end
+
+        if certificate !== nothing &&
+                certificate.status == :supported &&
+                certificate.route in (:fast_local_sl3, :disjoint_local_blocks) &&
+                certificate.matrix != identity_matrix(base_ring(current), nrows(current))
+            return certificate
+        end
     end
 
     return nothing
