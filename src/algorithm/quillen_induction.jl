@@ -741,10 +741,12 @@ struct QuillenGlobalPatchAssemblyVerification
     cover_certificate_ok::Bool
     local_certificates_ok::Bool
     normalized_contributions_ok::Bool
+    local_count_ok::Bool
     local_alignment_ok::Bool
     cover_alignment_ok::Bool
     normalized_input_ok::Bool
     selected_variable_ok::Bool
+    denominator_data_ok::Bool
     coverage_sum
     coverage_ok::Bool
     global_elementary_factors::Vector
@@ -828,10 +830,12 @@ function _same_quillen_global_patch_verification(
     return left.cover_certificate_ok == right.cover_certificate_ok &&
            left.local_certificates_ok == right.local_certificates_ok &&
            left.normalized_contributions_ok == right.normalized_contributions_ok &&
+           left.local_count_ok == right.local_count_ok &&
            left.local_alignment_ok == right.local_alignment_ok &&
            left.cover_alignment_ok == right.cover_alignment_ok &&
            left.normalized_input_ok == right.normalized_input_ok &&
            left.selected_variable_ok == right.selected_variable_ok &&
+           left.denominator_data_ok == right.denominator_data_ok &&
            left.coverage_sum == right.coverage_sum &&
            left.coverage_ok == right.coverage_ok &&
            _same_quillen_factors(
@@ -885,9 +889,9 @@ function replay_deterministic_quillen_patch(patch::QuillenGlobalPatchAssembly)
     local_certificates_ok = all(verify_quillen_local_certificate, local_certificates)
     normalized_contributions_ok =
         all(verify_quillen_local_contribution_normalization, normalized)
-    count_ok = length(local_certificates) == length(normalized)
+    local_count_ok = length(local_certificates) == length(normalized)
 
-    local_alignment_ok = count_ok && all(eachindex(local_certificates)) do idx
+    local_alignment_ok = local_count_ok && all(eachindex(local_certificates)) do idx
         _same_quillen_local_certificate_data(
             normalized[idx].local_certificate,
             local_certificates[idx],
@@ -933,10 +937,12 @@ function replay_deterministic_quillen_patch(patch::QuillenGlobalPatchAssembly)
         cover_certificate_ok &&
         local_certificates_ok &&
         normalized_contributions_ok &&
+        local_count_ok &&
         local_alignment_ok &&
         cover_alignment_ok &&
         normalized_input_ok &&
         selected_variable_ok &&
+        denominator_data_ok &&
         coverage_ok &&
         global_elementary_factors_ok &&
         product_ok &&
@@ -947,10 +953,12 @@ function replay_deterministic_quillen_patch(patch::QuillenGlobalPatchAssembly)
         cover_certificate_ok,
         local_certificates_ok,
         normalized_contributions_ok,
+        local_count_ok,
         local_alignment_ok,
         cover_alignment_ok,
         normalized_input_ok,
         selected_variable_ok,
+        denominator_data_ok,
         coverage_sum,
         coverage_ok,
         global_elementary_factors,
@@ -1055,6 +1063,8 @@ function assemble_deterministic_quillen_patch(
         target_matrix,
         replay_metadata,
         QuillenGlobalPatchAssemblyVerification(
+            false,
+            false,
             false,
             false,
             false,
