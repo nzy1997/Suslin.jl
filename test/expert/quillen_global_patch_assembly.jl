@@ -210,4 +210,19 @@ end
     )
     tampered_cover_patch = rebuild_global_patch(patch; cover_certificate = bad_cover)
     @test !Suslin.verify_quillen_patch(tampered_cover_patch)
+
+    target_correction = global_patch_correction(entry.local_factors[1])
+    correction_target_patch = Suslin.assemble_deterministic_quillen_patch(
+        entry.target_matrix,
+        entry.substitution_variable,
+        local_certificates,
+        normalized,
+        cover;
+        target = target_correction,
+    )
+    @test Suslin.verify_quillen_patch(correction_target_patch)
+    @test correction_target_patch.target == entry.expected.global_correction
+
+    malformed_ring_patch = rebuild_global_patch(patch; ring = "not a polynomial ring")
+    @test !Suslin.verify_quillen_patch(malformed_ring_patch)
 end
