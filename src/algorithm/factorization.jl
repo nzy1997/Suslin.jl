@@ -174,8 +174,6 @@ function _polynomial_staged_failure_evidence(A)
             message = sprint(showerror, err),
         )
     end
-
-    return (; error_type = :none, message = "")
 end
 
 function _polynomial_route_certificate(A, route::Symbol, factors, product, evidence, status::Symbol)
