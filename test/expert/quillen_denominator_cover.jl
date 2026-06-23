@@ -71,6 +71,15 @@ end
     )
     @test !Suslin.verify_quillen_denominator_cover(tampered)
 
+    malformed_replay = Suslin.QuillenDenominatorCoverCertificate(
+        QQ,
+        certificate.denominators,
+        certificate.coverage_multipliers,
+        certificate.coverage_sum,
+        certificate.verification,
+    )
+    @test !Suslin.verify_quillen_denominator_cover(malformed_replay)
+
     R_exact, (_, r_exact) = Oscar.polynomial_ring(QQ, ["X", "r"])
     certificate_exact = Suslin.quillen_denominator_cover_certificate(
         R_exact,
