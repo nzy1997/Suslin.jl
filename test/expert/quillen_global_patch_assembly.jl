@@ -130,7 +130,7 @@ end
         )
 
         @test patch isa Suslin.QuillenGlobalPatchAssembly
-        @test verify_quillen_patch(patch)
+        @test Suslin.verify_quillen_patch(patch)
         @test patch.ring == entry.ring.object
         @test patch.size == entry.size
         @test patch.substitution_variable == entry.substitution_variable
@@ -190,7 +190,7 @@ end
         target = entry.expected.global_correction,
     )
     tampered_local_patch = rebuild_global_patch(patch; local_certificates = wrong_local_order)
-    @test !verify_quillen_patch(tampered_local_patch)
+    @test !Suslin.verify_quillen_patch(tampered_local_patch)
 
     bad_cover = Suslin.QuillenDenominatorCoverCertificate(
         cover.ring,
@@ -209,5 +209,5 @@ end
         target = entry.expected.global_correction,
     )
     tampered_cover_patch = rebuild_global_patch(patch; cover_certificate = bad_cover)
-    @test !verify_quillen_patch(tampered_cover_patch)
+    @test !Suslin.verify_quillen_patch(tampered_cover_patch)
 end
