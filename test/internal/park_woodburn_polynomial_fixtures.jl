@@ -24,6 +24,9 @@ const SUPPORTED_PARK_WOODBURN_ROUTES = Set([
 
 const STAGED_PARK_WOODBURN_ROUTES = Set([
     :recursive_column_peel,
+])
+
+const QUILLEN_PARK_WOODBURN_ROUTES = Set([
     :quillen_patch,
     :quillen_patched_substitution,
 ])
@@ -47,6 +50,7 @@ function _pw_assert_metadata(entry)
         :role,
         :route,
         :status,
+        :provenance,
         :ring_constructor,
         :ring,
         :matrix,
@@ -74,11 +78,17 @@ function _pw_assert_metadata(entry)
         status in (:supported, :staged, :blocked) &&
             status != :supported ||
             throw(ArgumentError("fixture $(entry.id) with route $(route) must not have status :supported"))
-        if route in (:quillen_patch, :quillen_patched_substitution)
-            consumer_issue_ids = _pw_field(entry, :consumer_issue_ids)
-            "#105" in consumer_issue_ids ||
-                throw(ArgumentError("quillen route fixture $(entry.id) must include issue #105"))
+    elseif route in QUILLEN_PARK_WOODBURN_ROUTES
+        status == :blocked ||
+            throw(ArgumentError("quillen route fixture $(entry.id) must have status :blocked"))
+        consumer_issue_ids = _pw_field(entry, :consumer_issue_ids)
+        for issue_id in ("#99", "#105", "#115")
+            issue_id in consumer_issue_ids ||
+                throw(ArgumentError("quillen route fixture $(entry.id) must include issue $(issue_id)"))
         end
+        provenance = _pw_field(entry, :provenance)
+        _pw_field(provenance, :quillen_fixture_id) == entry.id ||
+            throw(ArgumentError("quillen route fixture $(entry.id) must reuse its own Quillen fixture id"))
     else
         throw(ArgumentError("fixture $(entry.id) uses unsupported route $(route)"))
     end
@@ -109,21 +119,19 @@ function _pw_assert_metadata(entry)
         throw(ArgumentError("fixture $(entry.id) ring generator parent mismatch"))
 
     matrix = _pw_field(entry, :matrix)
-    size = nrows(matrix)
     matrix isa AbstractAlgebra.MatElem ||
         throw(ArgumentError("fixture $(entry.id) matrix must be a matrix"))
+    size = nrows(matrix)
     size >= 3 || throw(ArgumentError("fixture $(entry.id) matrix size must be at least 3"))
     _pw_require_matrix_over(matrix, R, size, "matrix")
     all(idx -> matrix[idx, idx] isa Oscar.MPolyElem, 1:size) ||
         throw(ArgumentError("fixture $(entry.id) matrix entries must come from its ring"))
 
     determinant_expectation = _pw_field(entry, :determinant_expectation)
-    determinant_expectation in (:one, :not_one) ||
-        throw(ArgumentError("fixture $(entry.id) determinant expectation must be :one or :not_one"))
-    if determinant_expectation == :one
-        det(matrix) == one(R) ||
-            throw(ArgumentError("fixture $(entry.id) matrix determinant must be one"))
-    end
+    determinant_expectation == :one ||
+        throw(ArgumentError("fixture $(entry.id) determinant expectation must be :one"))
+    det(matrix) == one(R) ||
+        throw(ArgumentError("fixture $(entry.id) matrix determinant must be one"))
 
     entry.source_refs isa Tuple && !isempty(entry.source_refs) ||
         throw(ArgumentError("fixture $(entry.id) must include source refs"))
@@ -183,11 +191,15 @@ end
         @test_throws ArgumentError validate_park_woodburn_polynomial_fixture(entry)
     end
 
-    staged_entry = entries["quillen-patched-substitution-witness-qq"]
-    mutated_staged_route = merge(staged_entry, (; route = :fast_local_sl3))
+    quillen_entry = entries["quillen-patched-substitution-witness-qq"]
+    mutated_staged_route = merge(quillen_entry, (; route = :fast_local_sl3))
     @test_throws ArgumentError validate_park_woodburn_polynomial_fixture(mutated_staged_route)
+    mutated_staged_status = merge(quillen_entry, (; status = :staged))
+    @test_throws ArgumentError validate_park_woodburn_polynomial_fixture(mutated_staged_status)
 
     supported_entry = entries["pw-poly-univariate-sl3-fast-local-qq"]
     mutated_supported_status = merge(supported_entry, (; status = :staged))
     @test_throws ArgumentError validate_park_woodburn_polynomial_fixture(mutated_supported_status)
+    mutated_supported_determinant = merge(supported_entry, (; determinant_expectation = :not_one))
+    @test_throws ArgumentError validate_park_woodburn_polynomial_fixture(mutated_supported_determinant)
 end
