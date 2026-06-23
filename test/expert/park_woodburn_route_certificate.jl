@@ -237,10 +237,25 @@ end
     public_bad_factors[1] = identity_matrix(R, n)
     public_bad_cert = _pw_replace_certificate(fast_cert; factors = public_bad_factors)
     matrix_type = typeof(fast_cert.matrix)
+    injected_route_override_active = Ref(true)
     @eval Suslin function _polynomial_factorization_route_certificate(
             A::$matrix_type;
-            route = nothing)
-        return $public_bad_cert
+            route = nothing,
+            allow_recursive_column_peel::Bool = false)
+        if $injected_route_override_active[] &&
+                A == $fast_cert.matrix &&
+                route === nothing &&
+                !allow_recursive_column_peel
+            return $public_bad_cert
+        end
+
+        return invoke(
+            Suslin._polynomial_factorization_route_certificate,
+            Tuple{Any},
+            A;
+            route = route,
+            allow_recursive_column_peel = allow_recursive_column_peel,
+        )
     end
     injected_method = which(
         Suslin._polynomial_factorization_route_certificate,
@@ -254,6 +269,7 @@ end
             sprint(showerror, public_err),
         )
     finally
+        injected_route_override_active[] = false
         Base.delete_method(injected_method)
     end
 end
