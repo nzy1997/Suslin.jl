@@ -49,6 +49,7 @@ const TEST_GROUP_FILES = Dict(
         "expert/quillen_denominator_cover.jl",
         "expert/quillen_local_certificate.jl",
         "expert/quillen_contribution_normalization.jl",
+        "expert/quillen_global_patch_assembly.jl",
         "expert/unimodular_columns.jl",
         "expert/unimodular_reduction_exact.jl",
         "expert/ecp_column_certificate.jl",
