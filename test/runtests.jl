@@ -21,6 +21,7 @@ const TEST_GROUP_FILES = Dict(
         "internal/sl3_murthy_gupta_fixtures.jl",
         "internal/ecp_column_fixtures.jl",
         "internal/quillen_patch_fixtures.jl",
+        "internal/park_woodburn_polynomial_fixtures.jl",
     ],
     "expert" => [
         "expert/elementary_matrices.jl",
