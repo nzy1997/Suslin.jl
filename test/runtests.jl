@@ -5,6 +5,7 @@ const TEST_GROUP_FILES = Dict(
     "public" => [
         "public/api_surface.jl",
         "public/factorization_driver_shell.jl",
+        "public/park_woodburn_polynomial_factorization.jl",
         "public/laurent_large_acceptance.jl",
         "public/toricbuilder_factor_toric_block_acceptance.jl",
     ],
