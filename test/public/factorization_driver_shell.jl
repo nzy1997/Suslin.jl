@@ -21,11 +21,19 @@ end
     ])
     factors = elementary_factorization(supported)
     @test verify_factorization(supported, factors)
+    supported_cert = Suslin._polynomial_factorization_route_certificate(supported)
+    @test supported_cert.route == :fast_local_sl3
+    @test Suslin._verify_polynomial_factorization_route_certificate(supported_cert)
+    @test factors == supported_cert.factors
 
     larger_sl = identity_matrix(R, 4)
     larger_factors = elementary_factorization(larger_sl)
     @test isempty(larger_factors)
     @test verify_factorization(larger_sl, larger_factors)
+    larger_cert = Suslin._polynomial_factorization_route_certificate(larger_sl)
+    @test larger_cert.route == :disjoint_local_blocks
+    @test Suslin._verify_polynomial_factorization_route_certificate(larger_cert)
+    @test larger_factors == larger_cert.factors
 
     unsupported_larger = identity_matrix(R, 4)
     unsupported_larger[1, 4] = X

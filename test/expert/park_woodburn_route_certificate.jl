@@ -17,6 +17,15 @@ function _pw_route_product(factors, R, n::Int)
     return product
 end
 
+function _pw_captured_error(f)
+    try
+        f()
+        return nothing
+    catch err
+        return err
+    end
+end
+
 function _pw_replace_certificate(
         cert;
         matrix = cert.matrix,
@@ -201,4 +210,28 @@ end
     bad_block_evidence_cert = _pw_replace_certificate(block_cert; evidence = bad_block_evidence)
     @test Suslin.verify_factorization(bad_block_evidence_cert.matrix, bad_block_evidence_cert.factors)
     @test !Suslin._verify_polynomial_factorization_route_certificate(bad_block_evidence_cert)
+
+    public_bad_factors = copy(fast_cert.factors)
+    public_bad_factors[1] = identity_matrix(R, n)
+    public_bad_cert = _pw_replace_certificate(fast_cert; factors = public_bad_factors)
+    matrix_type = typeof(fast_cert.matrix)
+    @eval Suslin function _polynomial_factorization_route_certificate(
+            A::$matrix_type;
+            route = nothing)
+        return $public_bad_cert
+    end
+    injected_method = which(
+        Suslin._polynomial_factorization_route_certificate,
+        (matrix_type,),
+    )
+    try
+        public_err = _pw_captured_error(() -> elementary_factorization(fast_cert.matrix))
+        @test public_err isa ErrorException
+        @test occursin(
+            "internal polynomial factorization route certificate verification failed",
+            sprint(showerror, public_err),
+        )
+    finally
+        Base.delete_method(injected_method)
+    end
 end

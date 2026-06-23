@@ -143,8 +143,29 @@ function _polynomial_staged_failure_route_certificate(A)
 end
 
 function _polynomial_staged_failure_evidence(A)
+    R = base_ring(A)
+    ring_profile = _factorization_ring_profile(R)
+    X = _supported_local_sl3_generator(A, R, ring_profile)
+    if X !== nothing
+        return (; error_type = :none, message = "")
+    end
+
+    if nrows(A) > 3
+        try
+            reduce_sln_to_sl3(A)
+            return (; error_type = :none, message = "")
+        catch err
+            err isa InterruptException && rethrow()
+            err isa ArgumentError || rethrow()
+            return (;
+                error_type = Symbol(nameof(typeof(err))),
+                message = sprint(showerror, err),
+            )
+        end
+    end
+
     try
-        elementary_factorization(A)
+        _throw_staged_factorization_failure(A, :polynomial, nothing)
     catch err
         err isa InterruptException && rethrow()
         err isa ArgumentError || rethrow()
@@ -330,6 +351,36 @@ function _polynomial_route_evidence_ok(cert)::Bool
     return false
 end
 
+function _polynomial_verified_route_factors(A)
+    certificate = _polynomial_factorization_route_certificate(A)
+    return _polynomial_verified_certificate_factors(certificate)
+end
+
+function _polynomial_verified_certificate_factors(certificate)
+    if certificate.status == :supported
+        if _verify_polynomial_factorization_route_certificate(certificate) &&
+                verify_factorization(certificate.matrix, certificate.factors)
+            return certificate.factors
+        end
+        error("internal polynomial factorization route certificate verification failed")
+    elseif certificate.status == :staged
+        _throw_polynomial_staged_certificate_failure(certificate)
+    end
+
+    throw(ArgumentError("unsupported polynomial factorization route certificate status $(certificate.status)"))
+end
+
+function _throw_polynomial_staged_certificate_failure(certificate)
+    evidence = certificate.evidence
+    if hasproperty(evidence, :message) &&
+            evidence.message isa AbstractString &&
+            !isempty(evidence.message)
+        throw(ArgumentError(evidence.message))
+    end
+
+    _throw_staged_factorization_failure(certificate.matrix, :polynomial, nothing)
+end
+
 function _laurent_sl_fallback_factorization(A)
     try
         reduction = reduce_sln_to_sl3(A)
@@ -354,6 +405,7 @@ function elementary_factorization(A)
 
     if ring_profile == :polynomial
         _require_polynomial_sl_determinant(normalized_A)
+        return _polynomial_verified_route_factors(normalized_A)
     end
 
     X = _supported_local_sl3_generator(normalized_A, normalized_R, ring_profile)
