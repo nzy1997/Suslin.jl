@@ -120,7 +120,10 @@ function _polynomial_factorization_route_certificate(
             end
         end
 
-        return _polynomial_staged_failure_route_certificate(A)
+        return _polynomial_staged_failure_route_certificate(
+            A;
+            allow_recursive_column_peel = allow_recursive_column_peel,
+        )
     end
 
     route isa Symbol || throw(ArgumentError("polynomial route certificate route must be a Symbol"))
@@ -156,12 +159,18 @@ function _polynomial_disjoint_local_blocks_route_certificate(A)
     return _polynomial_route_certificate(A, :disjoint_local_blocks, factors, product, evidence, :supported)
 end
 
-function _polynomial_staged_failure_route_certificate(A)
+function _polynomial_staged_failure_route_certificate(
+    A;
+    allow_recursive_column_peel::Bool = true,
+)
     R = base_ring(A)
     n = nrows(A)
     product = identity_matrix(R, n)
     factors = typeof(product)[]
-    evidence = _polynomial_staged_failure_evidence(A)
+    evidence = _polynomial_staged_failure_evidence(
+        A;
+        allow_recursive_column_peel = allow_recursive_column_peel,
+    )
     return _polynomial_route_certificate(A, :staged_failure, factors, product, evidence, :staged)
 end
 
@@ -177,7 +186,7 @@ function _polynomial_recursive_column_peel_route_certificate(
     return _polynomial_route_certificate(A, route_tag, factors, product, evidence, :supported)
 end
 
-function _polynomial_staged_failure_evidence(A)
+function _polynomial_staged_failure_evidence(A; allow_recursive_column_peel::Bool = true)
     R = base_ring(A)
     ring_profile = _factorization_ring_profile(R)
     X = _supported_local_sl3_generator(A, R, ring_profile)
@@ -186,17 +195,33 @@ function _polynomial_staged_failure_evidence(A)
     end
 
     if nrows(A) > 3
+        staged_error = nothing
         try
             reduce_sln_to_sl3(A)
             return (; error_type = :none, message = "")
         catch err
             err isa InterruptException && rethrow()
             err isa ArgumentError || rethrow()
-            return (;
-                error_type = Symbol(nameof(typeof(err))),
-                message = sprint(showerror, err),
-            )
+            staged_error = err
         end
+
+        if allow_recursive_column_peel
+            try
+                _polynomial_recursive_column_peel_route_certificate(
+                    A;
+                    route_tag = :polynomial_column_peel,
+                )
+                return (; error_type = :none, message = "")
+            catch err
+                err isa InterruptException && rethrow()
+                err isa ArgumentError || rethrow()
+            end
+        end
+
+        return (;
+            error_type = Symbol(nameof(typeof(staged_error))),
+            message = sprint(showerror, staged_error),
+        )
     end
 
     try
