@@ -42,8 +42,8 @@ function _polynomial_column_peel_certificate(A; final_route=nothing)
         product,
         nothing,
     )
-    verification = _polynomial_column_peel_verification(certificate)
-    verification.overall_ok || error("internal polynomial column-peel verification failed")
+    verification = _polynomial_column_peel_core_verification(certificate)
+    verification.overall_core_ok || error("internal polynomial column-peel verification failed")
     return PolynomialColumnPeelCertificate(
         certificate.original_matrix,
         certificate.peel_steps,
@@ -63,6 +63,15 @@ function _verify_polynomial_column_peel_certificate(cert)::Bool
         err isa InterruptException && rethrow()
         return false
     end
+end
+
+function _polynomial_column_peel_verification(cert)
+    core = _polynomial_column_peel_core_verification(cert)
+    stored_verification_ok = cert.verification == core
+    return merge(core, (;
+        stored_verification_ok,
+        overall_ok = core.overall_core_ok && stored_verification_ok,
+    ))
 end
 
 function _validate_polynomial_column_peel_input(A)
@@ -231,7 +240,7 @@ function _replay_polynomial_column_peel_factors(peel_steps, final_factors, R)
     return replayed
 end
 
-function _polynomial_column_peel_verification(cert)
+function _polynomial_column_peel_core_verification(cert)
     preconditions_ok = _polynomial_column_peel_preconditions_ok(cert)
     step_chain_ok = _polynomial_column_peel_step_chain_ok(
         cert.peel_steps,
@@ -279,10 +288,10 @@ function _polynomial_column_peel_verification(cert)
         err isa InterruptException && rethrow()
         false
     end
-    overall_ok = preconditions_ok && step_chain_ok && steps_ok && final_certificate_ok &&
+    overall_core_ok = preconditions_ok && step_chain_ok && steps_ok && final_certificate_ok &&
         factor_sequence_ok && product_ok && factors_ok
     return (
-        overall_ok=overall_ok,
+        overall_core_ok=overall_core_ok,
         preconditions_ok=preconditions_ok,
         step_chain_ok=step_chain_ok,
         steps_ok=steps_ok,

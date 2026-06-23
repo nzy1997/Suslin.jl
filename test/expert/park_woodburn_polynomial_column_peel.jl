@@ -63,6 +63,26 @@ function _pw_poly_replace_certificate(
     )
 end
 
+function _pw_poly_replace_route_certificate(
+        cert;
+        matrix = cert.matrix,
+        route = cert.route,
+        factors = cert.factors,
+        product = cert.product,
+        evidence = cert.evidence,
+        status = cert.status,
+        verification = cert.verification)
+    return Suslin.PolynomialFactorizationRouteCertificate(
+        matrix,
+        route,
+        factors,
+        product,
+        evidence,
+        status,
+        verification,
+    )
+end
+
 function _pw_poly_assert_step(step)
     R = base_ring(step.input_matrix)
     left_product = _pw_poly_peel_product(step.left_factors, R, step.dimension)
@@ -153,6 +173,14 @@ end
     @test route_cert.route == :recursive_column_peel
     @test route_cert.evidence isa Suslin.PolynomialColumnPeelCertificate
     @test Suslin._verify_polynomial_factorization_route_certificate(route_cert)
+    bad_route_evidence = _pw_poly_corrupt_last_column(route_cert.evidence)
+    bad_route_cert = _pw_poly_replace_route_certificate(
+        route_cert;
+        evidence = bad_route_evidence,
+        product = route_cert.product,
+    )
+    @test verify_factorization(bad_route_cert.matrix, bad_route_cert.factors)
+    @test !Suslin._verify_polynomial_factorization_route_certificate(bad_route_cert)
 
     staged_entry = entries["pw-poly-recursive-column-peel-gf2"]
     @test_throws ArgumentError Suslin._polynomial_column_peel_certificate(staged_entry.matrix)
