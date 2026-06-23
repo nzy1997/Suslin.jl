@@ -185,6 +185,9 @@ end
     )
     @test !Suslin._verify_polynomial_quillen_patch_route_adapter(bad_adapter)
 
+    malformed_adapter = _pwq_replace_adapter(adapter; quillen_patch = nothing)
+    @test !Suslin._verify_polynomial_quillen_patch_route_adapter(malformed_adapter)
+
     bad_route_cert = _pwq_replace_route_certificate(
         cert;
         factors = bad_adapter_factors,
