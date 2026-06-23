@@ -8,9 +8,21 @@ struct PolynomialFactorizationRouteCertificate
     verification
 end
 
+struct PolynomialQuillenPatchRouteAdapter
+    target
+    route::Symbol
+    quillen_patch
+    global_elementary_factors::Vector
+    product
+    target_matrix
+    replay_metadata
+    verification
+end
+
 const _POLYNOMIAL_FACTORIZATION_ROUTE_TAGS = Set([
     :fast_local_sl3,
     :disjoint_local_blocks,
+    :quillen_patch,
     :recursive_column_peel,
     :staged_failure,
 ])
@@ -82,6 +94,7 @@ end
 function _polynomial_factorization_route_certificate(
     A;
     route=nothing,
+    quillen_patch=nothing,
     allow_recursive_column_peel::Bool=false,
 )
     n = _validate_factorization_matrix(A)
@@ -92,6 +105,9 @@ function _polynomial_factorization_route_certificate(
     _require_polynomial_sl_determinant(A)
 
     if route === nothing
+        quillen_patch === nothing ||
+            throw(ArgumentError("Quillen patch route certificates require route = :quillen_patch"))
+
         X = _supported_local_sl3_generator(A, R, ring_profile)
         X !== nothing && return _polynomial_fast_local_sl3_route_certificate(A, X)
 
@@ -126,6 +142,10 @@ function _polynomial_factorization_route_certificate(
         n > 3 ||
             throw(ArgumentError("disjoint local-block route requires a matrix of size greater than 3"))
         return _polynomial_disjoint_local_blocks_route_certificate(A)
+    elseif route == :quillen_patch
+        quillen_patch !== nothing ||
+            throw(ArgumentError("Quillen patch route requires a supplied verified patch"))
+        return _polynomial_quillen_patch_route_certificate(A, quillen_patch)
     elseif route == :recursive_column_peel
         return _polynomial_recursive_column_peel_route_certificate(A)
     elseif route == :staged_failure
@@ -163,6 +183,189 @@ function _polynomial_recursive_column_peel_route_certificate(A)
     factors = copy(evidence.factors)
     product = _polynomial_route_factor_product(factors, base_ring(A), nrows(A))
     return _polynomial_route_certificate(A, :recursive_column_peel, factors, product, evidence, :supported)
+end
+
+function _polynomial_quillen_patch_route_certificate(A, patch)
+    adapter = _polynomial_quillen_patch_route_adapter(A, patch)
+    factors = copy(adapter.global_elementary_factors)
+    return _polynomial_route_certificate(
+        adapter.target_matrix,
+        :quillen_patch,
+        factors,
+        adapter.product,
+        adapter,
+        :supported,
+    )
+end
+
+_polynomial_quillen_patch_factors(patch) =
+    hasproperty(patch, :global_elementary_factors) ? patch.global_elementary_factors :
+    hasproperty(patch, :factors) ? patch.factors :
+    throw(ArgumentError("Quillen patch has no global elementary factors"))
+
+_polynomial_quillen_patch_product(patch) =
+    hasproperty(patch, :patched_product) ? patch.patched_product :
+    hasproperty(patch, :product) ? patch.product :
+    throw(ArgumentError("Quillen patch has no patched product"))
+
+function _polynomial_quillen_route_target_matrix(target, patch)
+    R = _require_supported_quillen_ring(patch.ring)
+    _factorization_ring_profile(R) == :polynomial ||
+        throw(ArgumentError("Quillen patch route target must lie over an ordinary polynomial ring"))
+    n = patch.size
+    target_matrix = _quillen_global_target_matrix(
+        target;
+        ring = R,
+        size = n,
+        label = "Quillen patch route target",
+    )
+    _require_square_matrix(target_matrix, "Quillen patch route target") == n ||
+        throw(DimensionMismatch("Quillen patch route target size must match the patch size"))
+    _same_base_ring(base_ring(target_matrix), R) ||
+        throw(ArgumentError("Quillen patch route target must lie in the patch ring"))
+    _factorization_ring_profile(base_ring(target_matrix)) == :polynomial ||
+        throw(ArgumentError("Quillen patch route target must lie over an ordinary polynomial ring"))
+    _require_polynomial_sl_determinant(target_matrix)
+    return target_matrix
+end
+
+function _polynomial_quillen_patch_target_matrix(patch)
+    R = _require_supported_quillen_ring(patch.ring)
+    return _quillen_global_target_matrix(
+        patch.target;
+        ring = R,
+        size = patch.size,
+        label = "Quillen patch target",
+    )
+end
+
+function _polynomial_quillen_patch_route_metadata(patch)
+    return (;
+        patch_size = patch.size,
+        substitution_variable = patch.substitution_variable,
+        denominator_data = copy(collect(patch.denominator_data)),
+        local_certificate_count = hasproperty(patch, :local_certificates) ?
+            length(patch.local_certificates) :
+            length(patch.local_contributions),
+        normalized_contribution_count = hasproperty(patch, :normalized_local_contributions) ?
+            length(patch.normalized_local_contributions) :
+            0,
+        patch_replay_metadata = hasproperty(patch, :replay_metadata) ?
+            patch.replay_metadata :
+            nothing,
+    )
+end
+
+function _polynomial_quillen_patch_route_core_verification(adapter)
+    patch_verified_ok = verify_quillen_patch(adapter.quillen_patch)
+    route_tag_ok = adapter.route == :quillen_patch
+
+    recomputed_target_matrix = _polynomial_quillen_route_target_matrix(
+        adapter.target,
+        adapter.quillen_patch,
+    )
+    patch_target_matrix = _polynomial_quillen_patch_target_matrix(adapter.quillen_patch)
+    recomputed_factors = copy(collect(_polynomial_quillen_patch_factors(adapter.quillen_patch)))
+    recomputed_product = _polynomial_route_factor_product(
+        recomputed_factors,
+        base_ring(recomputed_target_matrix),
+        nrows(recomputed_target_matrix),
+    )
+    replay_metadata = _polynomial_quillen_patch_route_metadata(adapter.quillen_patch)
+
+    target_matrix_ok = recomputed_target_matrix == adapter.target_matrix
+    patch_target_ok = patch_target_matrix == adapter.target_matrix
+    factors_ok = _polynomial_route_factor_sequences_equal(
+        adapter.global_elementary_factors,
+        recomputed_factors,
+    )
+    product_ok =
+        recomputed_product == adapter.product &&
+        recomputed_product == adapter.target_matrix &&
+        _polynomial_quillen_patch_product(adapter.quillen_patch) == recomputed_product
+    replay_metadata_ok = replay_metadata == adapter.replay_metadata
+    overall_core_ok =
+        route_tag_ok &&
+        patch_verified_ok &&
+        target_matrix_ok &&
+        patch_target_ok &&
+        factors_ok &&
+        product_ok &&
+        replay_metadata_ok
+
+    return (;
+        route_tag_ok,
+        patch_verified_ok,
+        target_matrix_ok,
+        patch_target_ok,
+        factors_ok,
+        product_ok,
+        replay_metadata_ok,
+        overall_core_ok,
+    )
+end
+
+function _polynomial_quillen_patch_route_verification(adapter)
+    core = _polynomial_quillen_patch_route_core_verification(adapter)
+    stored_verification_ok = adapter.verification == core
+    return merge(core, (;
+        stored_verification_ok,
+        overall_ok = core.overall_core_ok && stored_verification_ok,
+    ))
+end
+
+function _verify_polynomial_quillen_patch_route_adapter(adapter)::Bool
+    try
+        verification = _polynomial_quillen_patch_route_verification(adapter)
+        return verification.overall_ok
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function _polynomial_quillen_patch_route_adapter(target, patch)
+    verify_quillen_patch(patch) ||
+        throw(ArgumentError("Quillen patch must verify before route adaptation"))
+    target_matrix = _polynomial_quillen_route_target_matrix(target, patch)
+    patch_target = _polynomial_quillen_patch_target_matrix(patch)
+    patch_target == target_matrix ||
+        throw(ArgumentError("Quillen patch target does not match route target"))
+    factors = copy(collect(_polynomial_quillen_patch_factors(patch)))
+    product = _polynomial_route_factor_product(
+        factors,
+        base_ring(target_matrix),
+        nrows(target_matrix),
+    )
+    product == target_matrix ||
+        throw(ArgumentError("Quillen patch route factors do not multiply to the target"))
+    _polynomial_quillen_patch_product(patch) == product ||
+        throw(ArgumentError("Quillen patch stored product does not match the adapted product"))
+    replay_metadata = _polynomial_quillen_patch_route_metadata(patch)
+    raw = PolynomialQuillenPatchRouteAdapter(
+        target,
+        :quillen_patch,
+        patch,
+        factors,
+        product,
+        target_matrix,
+        replay_metadata,
+        nothing,
+    )
+    verification = _polynomial_quillen_patch_route_core_verification(raw)
+    adapter = PolynomialQuillenPatchRouteAdapter(
+        target,
+        :quillen_patch,
+        patch,
+        factors,
+        product,
+        target_matrix,
+        replay_metadata,
+        verification,
+    )
+    _verify_polynomial_quillen_patch_route_adapter(adapter) ||
+        error("internal Quillen patch route adapter verification failed")
+    return adapter
 end
 
 function _polynomial_staged_failure_evidence(A)
@@ -259,7 +462,12 @@ function _polynomial_factorization_route_core_verification(cert)
         determinant_ok = ring_profile_ok && det(A) == one(R)
     end
 
-    successful_route = route in (:fast_local_sl3, :disjoint_local_blocks, :recursive_column_peel)
+    successful_route = route in (
+        :fast_local_sl3,
+        :disjoint_local_blocks,
+        :quillen_patch,
+        :recursive_column_peel,
+    )
     supported_status_ok = successful_route && cert.status == :supported
     staged_status_ok = route == :staged_failure && cert.status == :staged
     status_ok = supported_status_ok || staged_status_ok
@@ -358,6 +566,14 @@ function _polynomial_route_evidence_ok(cert)::Bool
                 cert.evidence.product == cert.matrix &&
                 _verify_polynomial_column_peel_certificate(cert.evidence) &&
                 _polynomial_route_factor_sequences_equal(cert.factors, cert.evidence.factors)
+        elseif cert.route == :quillen_patch
+            return cert.evidence isa PolynomialQuillenPatchRouteAdapter &&
+                cert.evidence.target_matrix == cert.matrix &&
+                _verify_polynomial_quillen_patch_route_adapter(cert.evidence) &&
+                _polynomial_route_factor_sequences_equal(
+                    cert.factors,
+                    cert.evidence.global_elementary_factors,
+                )
         elseif cert.route == :staged_failure
             hasproperty(cert.evidence, :error_type) &&
                 hasproperty(cert.evidence, :message) &&
