@@ -53,6 +53,7 @@ const TEST_GROUP_FILES = Dict(
         "expert/quillen_global_patch_assembly.jl",
         "expert/quillen_patch_verification_hardening.jl",
         "expert/quillen_induction_constructive.jl",
+        "expert/park_woodburn_quillen_route_adapter.jl",
         "expert/unimodular_columns.jl",
         "expert/unimodular_reduction_exact.jl",
         "expert/ecp_column_certificate.jl",
