@@ -19,16 +19,6 @@ function _pw_poly_peel_target_column(R, n::Int)
     return target
 end
 
-function _pw_poly_peel_wrap_final_block(final_block, tail_coeffs)
-    R = base_ring(final_block)
-    n = nrows(final_block) + 1
-    wrapped = block_embedding(final_block, n, collect(1:(n - 1)))
-    for row in 1:(n - 1)
-        wrapped[row, n] = tail_coeffs[row]
-    end
-    return wrapped
-end
-
 function _pw_poly_replace_step(
         step;
         dimension = step.dimension,
@@ -144,27 +134,28 @@ end
     end
     entries = ParkWoodburnPolynomialFixtureCatalog.cases_by_id()
 
-    recursive_entry = entries["pw-poly-recursive-column-peel-gf2"]
+    recursive_entry = entries["pw-poly-recursive-column-peel-sl3-qq"]
     recursive_cert = Suslin._polynomial_column_peel_certificate(recursive_entry.matrix)
+    @test recursive_cert.final_block == entries[recursive_entry.provenance.final_case_id].matrix
     @test recursive_cert.final_certificate.route == :fast_local_sl3
     _pw_poly_assert_real_peel_certificate(recursive_cert, recursive_entry.matrix)
 
-    fast_entry = entries["pw-poly-univariate-sl3-fast-local-qq"]
-    R = base_ring(fast_entry.matrix)
-    X = only(gens(R))
-    wrapped = _pw_poly_peel_wrap_final_block(fast_entry.matrix, [X, X + one(R), X^2 + X])
-    wrapped_cert = Suslin._polynomial_column_peel_certificate(wrapped)
-    @test wrapped_cert.final_block == fast_entry.matrix
-    @test wrapped_cert.final_certificate.route == :fast_local_sl3
-    _pw_poly_assert_real_peel_certificate(wrapped_cert, wrapped)
+    block_recursive_entry = entries["pw-poly-recursive-column-peel-sln-block-qq"]
+    block_recursive_cert = Suslin._polynomial_column_peel_certificate(block_recursive_entry.matrix)
+    @test block_recursive_cert.final_block == entries[block_recursive_entry.provenance.final_case_id].matrix
+    @test block_recursive_cert.final_certificate.route == :disjoint_local_blocks
+    _pw_poly_assert_real_peel_certificate(block_recursive_cert, block_recursive_entry.matrix)
 
     route_cert = Suslin._polynomial_factorization_route_certificate(
-        wrapped;
+        recursive_entry.matrix;
         route = :recursive_column_peel,
     )
     @test route_cert.route == :recursive_column_peel
     @test route_cert.evidence isa Suslin.PolynomialColumnPeelCertificate
     @test Suslin._verify_polynomial_factorization_route_certificate(route_cert)
+
+    staged_entry = entries["pw-poly-recursive-column-peel-gf2"]
+    @test_throws ArgumentError Suslin._polynomial_column_peel_certificate(staged_entry.matrix)
 
     bad_last_column = _pw_poly_corrupt_last_column(recursive_cert)
     @test !Suslin._verify_polynomial_column_peel_certificate(bad_last_column)
@@ -178,6 +169,7 @@ end
     bad_next_block = _pw_poly_corrupt_next_block(recursive_cert)
     @test !Suslin._verify_polynomial_column_peel_certificate(bad_next_block)
 
+    R = base_ring(recursive_entry.matrix)
     @test_throws ArgumentError Suslin._polynomial_column_peel_certificate(identity_matrix(R, 2))
-    @test_throws ArgumentError Suslin._polynomial_column_peel_certificate(first(recursive_cert.peel_steps).peeled_matrix)
+    @test_throws ArgumentError Suslin._polynomial_column_peel_certificate(last(recursive_cert.peel_steps).peeled_matrix)
 end

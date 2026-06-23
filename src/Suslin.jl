@@ -58,6 +58,7 @@ include("algorithm/laurent_column_peel.jl")
 include("algorithm/laurent_gl_certificate.jl")
 include("algorithm/factorization.jl")
 include("algorithm/sln_to_sl3_reduction.jl")
+include("algorithm/polynomial_column_peel.jl")
 include("algorithm/quillen_induction.jl")
 
 function _coerce_into_ring(R, value, label::AbstractString)

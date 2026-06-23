@@ -63,6 +63,17 @@ function _product(factors, R, n::Int)
     return product
 end
 
+function _wrap_column_peel_matrix(final_block, tail_entries)
+    R = base_ring(final_block)
+    n = nrows(final_block) + 1
+    length(tail_entries) == n - 1 || throw(ArgumentError("tail_entries must match final block size"))
+    wrapped = block_embedding(final_block, n, collect(1:(n - 1)))
+    for row in 1:(n - 1)
+        wrapped[row, n] = tail_entries[row]
+    end
+    return wrapped
+end
+
 function catalog()
     RQ, (X,) = Oscar.polynomial_ring(QQ, ["X"])
     R2, (x, y) = Oscar.polynomial_ring(GF(2), ["x", "y"])
@@ -123,6 +134,50 @@ function catalog()
         determinant_expectation = :one,
         source_refs = ("test/expert/sln_to_sl3_reduction.jl local block product",),
         consumer_issue_ids = ("#64", "#109", "#110"),
+    )
+
+    recursive_sl3_matrix = _wrap_column_peel_matrix(
+        fast_local_matrix,
+        [X, X + one(RQ), X^2 + X],
+    )
+    recursive_sl3_case = _case(
+        id = "pw-poly-recursive-column-peel-sl3-qq",
+        role = :recursive_column_peel_supported,
+        route = :recursive_column_peel,
+        status = :supported,
+        provenance = (;
+            source = "Park-Woodburn issue 112 recursive peel to fast local SL3",
+            final_route = :fast_local_sl3,
+            final_case_id = "pw-poly-univariate-sl3-fast-local-qq",
+        ),
+        ring_constructor = qq_ring_constructor,
+        ring = qq_ring,
+        matrix = recursive_sl3_matrix,
+        determinant_expectation = :one,
+        source_refs = ("Park-Woodburn issue 112 recursive peel supported SL_3 witness",),
+        consumer_issue_ids = ("#64", "#109", "#112"),
+    )
+
+    recursive_disjoint_blocks_matrix = _wrap_column_peel_matrix(
+        disjoint_blocks_matrix,
+        [X, X + one(RQ), X^2 + X, X^2 + one(RQ), X^3 + X, X^3 + one(RQ)],
+    )
+    recursive_disjoint_blocks_case = _case(
+        id = "pw-poly-recursive-column-peel-sln-block-qq",
+        role = :recursive_column_peel_supported,
+        route = :recursive_column_peel,
+        status = :supported,
+        provenance = (;
+            source = "Park-Woodburn issue 112 recursive peel to disjoint local blocks",
+            final_route = :disjoint_local_blocks,
+            final_case_id = "pw-poly-univariate-sln-disjoint-blocks-qq",
+        ),
+        ring_constructor = qq_ring_constructor,
+        ring = qq_ring,
+        matrix = recursive_disjoint_blocks_matrix,
+        determinant_expectation = :one,
+        source_refs = ("Park-Woodburn issue 112 recursive peel supported SL_n block witness",),
+        consumer_issue_ids = ("#64", "#109", "#112"),
     )
 
     recursive_factors = (
@@ -208,6 +263,8 @@ function catalog()
         cases = [
             fast_local_case,
             disjoint_blocks_case,
+            recursive_sl3_case,
+            recursive_disjoint_blocks_case,
             recursive_case,
             quillen_case,
         ],
