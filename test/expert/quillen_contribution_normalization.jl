@@ -215,6 +215,24 @@ end
         ),
     )
 
+    tampered_correction = Suslin.QuillenElementaryCorrection(
+        base.local_contribution.correction.row,
+        base.local_contribution.correction.col,
+        base.local_contribution.correction.entry + one(R),
+    )
+    tampered_local_contribution = Suslin.QuillenLocalContribution(
+        base.local_contribution.certificate,
+        base.local_contribution.denominator,
+        base.local_contribution.coverage_multiplier,
+        tampered_correction,
+    )
+    @test !Suslin.verify_quillen_local_contribution_normalization(
+        rebuild_normalized_contribution(
+            base;
+            local_contribution = tampered_local_contribution,
+        ),
+    )
+
     tampered_factor = base.weighted_global_elementary_factors[1] *
         elementary_matrix(base.local_certificate.size, 2, 3, one(R), R)
     @test !Suslin.verify_quillen_local_contribution_normalization(

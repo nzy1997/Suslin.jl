@@ -131,6 +131,7 @@ struct QuillenLocalContributionNormalizationVerification
     local_product_ok::Bool
     local_correction
     local_correction_ok::Bool
+    local_contribution_ok::Bool
     weighted_global_elementary_factors::Vector
     weighted_global_elementary_factors_ok::Bool
     replay_metadata
@@ -154,6 +155,17 @@ struct QuillenLocalContributionNormalization
     weighted_global_elementary_factors::Vector
     replay_metadata
     verification::QuillenLocalContributionNormalizationVerification
+end
+
+function _same_quillen_local_contribution(
+    left::QuillenLocalContribution,
+    right::QuillenLocalContribution,
+)::Bool
+    return left.certificate.indices == right.certificate.indices &&
+           left.certificate.denominators == right.certificate.denominators &&
+           left.denominator == right.denominator &&
+           left.coverage_multiplier == right.coverage_multiplier &&
+           left.correction == right.correction
 end
 
 function _quillen_cover_pair_index(
@@ -202,6 +214,7 @@ function _same_quillen_normalization_verification(
            left.local_product_ok == right.local_product_ok &&
            left.local_correction == right.local_correction &&
            left.local_correction_ok == right.local_correction_ok &&
+           left.local_contribution_ok == right.local_contribution_ok &&
            _same_quillen_factors(
                left.weighted_global_elementary_factors,
                right.weighted_global_elementary_factors,
@@ -533,6 +546,10 @@ function replay_quillen_local_contribution_normalization(
         R,
         n,
     )
+    local_contribution_ok = _same_quillen_local_contribution(
+        normalized.local_contribution,
+        replayed_contribution,
+    )
     weighted_global_elementary_factors = _quillen_factors(R, n, [replayed_contribution])
     weighted_global_elementary_factors_ok = _same_quillen_factors(
         normalized.weighted_global_elementary_factors,
@@ -556,6 +573,7 @@ function replay_quillen_local_contribution_normalization(
         patched_substitution_ok &&
         local_product_ok &&
         local_correction_ok &&
+        local_contribution_ok &&
         weighted_global_elementary_factors_ok &&
         replay_metadata_ok
 
@@ -574,6 +592,7 @@ function replay_quillen_local_contribution_normalization(
         local_product_ok,
         local_replay.local_correction,
         local_correction_ok,
+        local_contribution_ok,
         weighted_global_elementary_factors,
         weighted_global_elementary_factors_ok,
         replay_metadata,
@@ -659,6 +678,7 @@ function normalize_quillen_local_contribution(
             certificate.local_product,
             false,
             certificate.local_correction,
+            false,
             false,
             Any[],
             false,
