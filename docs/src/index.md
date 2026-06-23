@@ -4,7 +4,7 @@ CurrentModule = Suslin
 
 # Suslin
 
-Constructive elementary-matrix factorizations for small supported `SL_3` slices over polynomial rings.
+Constructive elementary-matrix factorizations for staged supported slices over polynomial and Laurent polynomial rings.
 
 ## Example
 
@@ -24,12 +24,20 @@ verify_factorization(A, factors)
 
 ## Scope
 
-- `elementary_factorization(A)` currently supports only a narrow 3x3 univariate `SL_3` slice.
+- `elementary_factorization(A)` is staged. It supports univariate local `SL_3`
+  ordinary-polynomial matrices, selected `n > 3` ordinary-polynomial matrices
+  through block-local reduction and recursive polynomial column peel,
+  deterministic multivariate Quillen/local-to-global fixture-backed matrices,
+  and determinant-one Laurent inputs through the existing Laurent `SL` path.
 - `verify_factorization(A, factors)` checks exact multiplication against `A`.
-- `laurent_gl_factorization_certificate(A)` records a Laurent determinant correction
-  plus elementary factors for a determinant-one core; the core factors are not a
-  pure elementary factorization of the original `GL_n` input.
-- The implementation is staged and does not yet cover the full theorem.
+- `laurent_gl_factorization_certificate(A)` records Laurent normalization and
+  determinant-one core factorization data. General Laurent `GL_n` determinant
+  correction is still a staged boundary.
+- The implementation is not yet the full Park-Woodburn algorithm for arbitrary
+  `SL_n(k[x_1, ..., x_m])`, `n >= 3`. General Quillen local realizability,
+  coefficient-ring support beyond exact field-backed ordinary polynomial
+  rings, Laurent `GL_n` determinant correction, and factor-count optimization
+  remain staged boundaries.
 
 See [ToricBuilder Integration Contract](@ref) for the first recorded
 consumer-boundary fixture contract.

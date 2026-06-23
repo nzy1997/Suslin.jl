@@ -24,16 +24,20 @@ verify_factorization(A, factors)
 
 ## Current scope
 
-- `elementary_factorization(A)` is staged. It supports the local embedded
-  `SL_3` families used by the current tests, block-local reductions for
-  selected `SL_n` inputs, and determinant-one Laurent inputs handled by the
-  recursive Laurent column-peel path.
+- `elementary_factorization(A)` is staged. It supports univariate local `SL_3`
+  ordinary-polynomial matrices, selected `n > 3` ordinary-polynomial matrices
+  through block-local reduction and recursive polynomial column peel,
+  deterministic multivariate Quillen/local-to-global fixture-backed matrices,
+  and determinant-one Laurent inputs through the existing Laurent `SL` path.
 - `verify_factorization(A, factors)` checks exact multiplication against `A`.
 - `laurent_gl_factorization_certificate(A)` records Laurent normalization and
   determinant-one core factorization data. General Laurent `GL_n` determinant
   correction is still a staged boundary.
 - The implementation is not yet the full Park-Woodburn algorithm for arbitrary
-  `SL_n(k[x_1, ..., x_m])`, `n >= 3`.
+  `SL_n(k[x_1, ..., x_m])`, `n >= 3`. General Quillen local realizability,
+  coefficient-ring support beyond exact field-backed ordinary polynomial
+  rings, Laurent `GL_n` determinant correction, and factor-count optimization
+  remain staged boundaries.
 
 ## Testing
 
