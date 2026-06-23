@@ -122,9 +122,10 @@ function _quillen_local_certificate_replay_summary(
     n >= 2 || throw(ArgumentError("certificate size must be at least 2"))
     selected_variable = _require_substitution_generator(R, certificate.selected_variable)
 
-    if certificate.original_input isa QuillenElementaryCorrection
+    original_input = if certificate.original_input isa QuillenElementaryCorrection
         certificate.original_input == certificate.correction ||
             throw(ArgumentError("original elementary correction must match recorded correction"))
+        certificate.original_input
     else
         _quillen_local_require_factor_matrix(certificate.original_input, R, n, "original input")
     end
@@ -164,6 +165,7 @@ function _quillen_local_certificate_replay_summary(
     overall_ok =
         denominator_ok && correction_ok && factors_ok && stored_product_ok && witness.ok
     return (;
+        original_input = original_input,
         selected_variable = selected_variable,
         denominator = normalized.denominator,
         coverage_multiplier = normalized.coverage_multiplier,

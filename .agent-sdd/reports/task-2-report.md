@@ -70,3 +70,54 @@ Observed result:
 ## Concerns
 
 - `QuillenLocalRealizationCertificate` is not exported from `src/Suslin.jl`. The current expert test uses `Suslin.QuillenLocalRealizationCertificate`, so this task is green without export changes. If a later public API surface test requires direct unqualified access, that would be a separate change outside this task’s write scope.
+
+## Review Finding Fix: original_input binding
+
+Reviewer finding:
+
+- Matrix-backed certificates were not bound to the claimed `original_input`.
+- Replay only validated ring and dimensions, so swapping in another same-size matrix over the same ring left `certificate.verification == replay`.
+
+### RED Evidence
+
+Command:
+
+```bash
+julia --project=. -e 'include("test/expert/quillen_local_certificate.jl")'
+```
+
+Observed output:
+
+```text
+Quillen local realization certificates: Test Failed at test/expert/quillen_local_certificate.jl:134
+  Expression: !(Suslin.verify_quillen_local_certificate(rebuild_local_certificate(base_cert; original_input = identity_matrix(R, base_cert.size))))
+Test Summary:                          | Pass  Fail  Total  Time
+Quillen local realization certificates |   38     1     39  3.2s
+ERROR: LoadError: Some tests did not pass: 38 passed, 1 failed, 0 errored, 0 broken.
+```
+
+Interpretation:
+
+- The new tampering regression test failed for the expected reason: verification still accepted a certificate rebuilt with a different same-size matrix.
+
+### Fix
+
+- Added a normalized `original_input` field to `_quillen_local_certificate_replay_summary(...)`.
+- For `QuillenElementaryCorrection` inputs, replay still requires the original correction to match `certificate.correction` and now records that value in the replay summary.
+- For matrix inputs, replay now records the validated matrix returned by `_quillen_local_require_factor_matrix(...)`.
+- This keeps the existing fixture behavior intact: replay binds the claimed original input without requiring `original_input == local_correction`.
+
+### GREEN Evidence
+
+Command:
+
+```bash
+julia --project=. -e 'include("test/expert/quillen_local_certificate.jl")'
+```
+
+Observed output:
+
+```text
+Test Summary:                          | Pass  Total  Time
+Quillen local realization certificates |   39     39  2.6s
+```

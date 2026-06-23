@@ -133,6 +133,11 @@ end
 
     @test !Suslin.verify_quillen_local_certificate(rebuild_local_certificate(
         base_cert;
+        original_input = identity_matrix(R, base_cert.size),
+    ))
+
+    @test !Suslin.verify_quillen_local_certificate(rebuild_local_certificate(
+        base_cert;
         denominator = base_cert.denominator + one(R),
     ))
 
