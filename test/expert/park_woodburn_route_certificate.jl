@@ -17,6 +17,15 @@ function _pw_route_product(factors, R, n::Int)
     return product
 end
 
+function _pw_captured_error(f)
+    try
+        f()
+        return nothing
+    catch err
+        return err
+    end
+end
+
 function _pw_replace_certificate(
         cert;
         matrix = cert.matrix,
@@ -107,6 +116,7 @@ end
     auto_block_cert = Suslin._polynomial_factorization_route_certificate(block_entry.matrix)
     @test auto_block_cert.route == :disjoint_local_blocks
     @test Suslin._verify_polynomial_factorization_route_certificate(auto_block_cert)
+    @test Suslin._polynomial_staged_failure_evidence(block_entry.matrix).error_type == :none
 
     recursive_entry = entries["pw-poly-recursive-column-peel-gf2"]
     staged_cert = Suslin._polynomial_factorization_route_certificate(
@@ -194,6 +204,18 @@ end
     )
     @test !Suslin._verify_polynomial_factorization_route_certificate(bad_staged_evidence_cert)
 
+    staged_empty_message_cert = _pw_replace_certificate(
+        staged_cert;
+        evidence = (; error_type = :ArgumentError, message = ""),
+    )
+    staged_empty_message_err =
+        _pw_captured_error(() -> Suslin._polynomial_verified_certificate_factors(staged_empty_message_cert))
+    @test staged_empty_message_err isa ArgumentError
+    @test occursin(
+        "SL_n reduction layer for n > 3",
+        sprint(showerror, staged_empty_message_err),
+    )
+
     bad_block_evidence = _pw_replace_reduction(
         block_cert.evidence;
         obligations = Suslin.SL3LocalObligation[],
@@ -201,4 +223,37 @@ end
     bad_block_evidence_cert = _pw_replace_certificate(block_cert; evidence = bad_block_evidence)
     @test Suslin.verify_factorization(bad_block_evidence_cert.matrix, bad_block_evidence_cert.factors)
     @test !Suslin._verify_polynomial_factorization_route_certificate(bad_block_evidence_cert)
+
+    unsupported_status_cert = _pw_replace_certificate(fast_cert; status = :unknown)
+    unsupported_status_err =
+        _pw_captured_error(() -> Suslin._polynomial_verified_certificate_factors(unsupported_status_cert))
+    @test unsupported_status_err isa ArgumentError
+    @test occursin(
+        "unsupported polynomial factorization route certificate status unknown",
+        sprint(showerror, unsupported_status_err),
+    )
+
+    public_bad_factors = copy(fast_cert.factors)
+    public_bad_factors[1] = identity_matrix(R, n)
+    public_bad_cert = _pw_replace_certificate(fast_cert; factors = public_bad_factors)
+    matrix_type = typeof(fast_cert.matrix)
+    @eval Suslin function _polynomial_factorization_route_certificate(
+            A::$matrix_type;
+            route = nothing)
+        return $public_bad_cert
+    end
+    injected_method = which(
+        Suslin._polynomial_factorization_route_certificate,
+        (matrix_type,),
+    )
+    try
+        public_err = _pw_captured_error(() -> elementary_factorization(fast_cert.matrix))
+        @test public_err isa ErrorException
+        @test occursin(
+            "internal polynomial factorization route certificate verification failed",
+            sprint(showerror, public_err),
+        )
+    finally
+        Base.delete_method(injected_method)
+    end
 end
