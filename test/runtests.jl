@@ -46,6 +46,7 @@ const TEST_GROUP_FILES = Dict(
         "expert/quillen_induction.jl",
         "expert/quillen_patching_exact.jl",
         "expert/quillen_denominator_cover.jl",
+        "expert/quillen_local_certificate.jl",
         "expert/unimodular_columns.jl",
         "expert/unimodular_reduction_exact.jl",
         "expert/ecp_column_certificate.jl",
