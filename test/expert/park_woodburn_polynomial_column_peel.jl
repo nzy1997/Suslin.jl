@@ -148,6 +148,13 @@ function _pw_poly_corrupt_next_block(cert)
     return _pw_poly_replace_certificate(cert; peel_steps = corrupted, product = cert.product)
 end
 
+struct _PWPolyBadFactorList
+end
+
+Base.iterate(::_PWPolyBadFactorList, state = 1) = state == 1 ? ((;), 2) : nothing
+Base.:(==)(::_PWPolyBadFactorList, other) = true
+Base.:(==)(other, ::_PWPolyBadFactorList) = true
+
 @testset "Park-Woodburn ordinary polynomial column-peel certificates" begin
     if !isdefined(Main, :ParkWoodburnPolynomialFixtureCatalog)
         include(PARK_WOODBURN_POLY_PEEL_CATALOG_PATH)
@@ -156,6 +163,11 @@ end
 
     recursive_entry = entries["pw-poly-recursive-column-peel-sl3-qq"]
     recursive_cert = Suslin._polynomial_column_peel_certificate(recursive_entry.matrix)
+    explicit_recursive_cert = Suslin._polynomial_column_peel_certificate(
+        recursive_entry.matrix;
+        final_route = :fast_local_sl3,
+    )
+    @test explicit_recursive_cert.final_certificate.route == :fast_local_sl3
     @test recursive_cert.final_block == entries[recursive_entry.provenance.final_case_id].matrix
     @test recursive_cert.final_certificate.route == :fast_local_sl3
     _pw_poly_assert_real_peel_certificate(recursive_cert, recursive_entry.matrix)
@@ -200,4 +212,57 @@ end
     R = base_ring(recursive_entry.matrix)
     @test_throws ArgumentError Suslin._polynomial_column_peel_certificate(identity_matrix(R, 2))
     @test_throws ArgumentError Suslin._polynomial_column_peel_certificate(last(recursive_cert.peel_steps).peeled_matrix)
+    @test_throws ArgumentError Suslin._polynomial_column_peel_certificate(
+        recursive_entry.matrix;
+        final_route = "fast_local_sl3",
+    )
+    @test_throws ArgumentError Suslin._polynomial_column_peel_certificate(
+        recursive_entry.matrix;
+        final_route = :staged_failure,
+    )
+    @test Suslin._polynomial_column_peel_try_final_route(identity_matrix(R, 2)) === nothing
+    @test !Suslin._verify_polynomial_column_peel_certificate((;))
+
+    first_step = first(recursive_cert.peel_steps)
+    @test !Suslin._is_valid_polynomial_column_peel_step_data(
+        first_step.dimension,
+        first_step.input_matrix,
+        first_step.last_column,
+        Any[(;)],
+        first_step.after_left_matrix,
+        first_step.right_factors,
+        first_step.peeled_matrix,
+        first_step.next_block,
+    )
+    @test !Suslin._is_valid_polynomial_column_peel_step_data(
+        first_step.dimension,
+        first_step.input_matrix,
+        first_step.last_column,
+        first_step.left_factors,
+        first_step.after_left_matrix,
+        _PWPolyBadFactorList(),
+        first_step.peeled_matrix,
+        first_step.next_block,
+    )
+    malformed_step = (;
+        input_matrix = recursive_entry.matrix,
+        dimension = nrows(recursive_entry.matrix),
+        next_block = recursive_cert.final_block,
+    )
+    malformed_cert = (;
+        original_matrix = recursive_entry.matrix,
+        peel_steps = Any[malformed_step],
+        final_block = recursive_cert.final_block,
+        final_certificate = recursive_cert.final_certificate,
+        final_factors = recursive_cert.final_factors,
+        factors = Any[(;)],
+        product = recursive_cert.product,
+    )
+    malformed_verification = Suslin._polynomial_column_peel_core_verification(malformed_cert)
+    @test !malformed_verification.steps_ok
+    @test !malformed_verification.factor_sequence_ok
+    @test !malformed_verification.product_ok
+    @test !malformed_verification.factors_ok
+    @test !Suslin._polynomial_column_peel_preconditions_ok((; original_matrix = 1, peel_steps = []))
+    @test !Suslin._polynomial_column_peel_final_certificate_ok((;))
 end
