@@ -82,7 +82,7 @@ end
 function _polynomial_factorization_route_certificate(
     A;
     route=nothing,
-    allow_recursive_column_peel::Bool=true,
+    allow_recursive_column_peel::Bool=false,
 )
     n = _validate_factorization_matrix(A)
     R = base_ring(A)
@@ -127,8 +127,6 @@ function _polynomial_factorization_route_certificate(
             throw(ArgumentError("disjoint local-block route requires a matrix of size greater than 3"))
         return _polynomial_disjoint_local_blocks_route_certificate(A)
     elseif route == :recursive_column_peel
-        allow_recursive_column_peel ||
-            throw(ArgumentError("recursive column-peel route is disabled for this route-certificate request"))
         return _polynomial_recursive_column_peel_route_certificate(A)
     elseif route == :staged_failure
         return _polynomial_staged_failure_route_certificate(A)

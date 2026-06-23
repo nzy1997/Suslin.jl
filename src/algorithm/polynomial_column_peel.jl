@@ -125,7 +125,6 @@ function _polynomial_column_peel_try_final_route(current; final_route=nothing)
         _polynomial_factorization_route_certificate(
             current;
             route=final_route,
-            allow_recursive_column_peel=false,
         )
     catch err
         err isa InterruptException && rethrow()
