@@ -241,4 +241,6 @@ end
             weighted_global_elementary_factors = [tampered_factor],
         ),
     )
+
+    @test !Suslin.verify_quillen_local_contribution_normalization((; malformed = true))
 end
