@@ -46,6 +46,28 @@ function _pw_replace_certificate(
     )
 end
 
+function _pw_replace_quillen_adapter(
+        adapter;
+        target = adapter.target,
+        route = adapter.route,
+        quillen_patch = adapter.quillen_patch,
+        global_elementary_factors = adapter.global_elementary_factors,
+        product = adapter.product,
+        target_matrix = adapter.target_matrix,
+        replay_metadata = adapter.replay_metadata,
+        verification = adapter.verification)
+    return Suslin.PolynomialQuillenPatchRouteAdapter(
+        target,
+        route,
+        quillen_patch,
+        global_elementary_factors,
+        product,
+        target_matrix,
+        replay_metadata,
+        verification,
+    )
+end
+
 function _pw_corrupt_route_peel_evidence(cert)
     evidence = cert.evidence
     first_step = first(evidence.peel_steps)
@@ -189,6 +211,38 @@ end
     @test verify_factorization(bad_peel_route_cert.matrix, bad_peel_route_cert.factors)
     @test !Suslin._verify_polynomial_factorization_route_certificate(bad_peel_route_cert)
 
+    quillen_entry = entries["quillen-patched-substitution-witness-qq"]
+    quillen_cert = Suslin._polynomial_factorization_route_certificate(quillen_entry.matrix)
+    @test quillen_cert.route == :quillen_patch
+    @test quillen_cert.status == :supported
+    @test quillen_cert.evidence isa Suslin.PolynomialQuillenPatchRouteAdapter
+    @test Suslin._verify_polynomial_quillen_patch_route_adapter(quillen_cert.evidence)
+    @test verify_factorization(quillen_entry.matrix, quillen_cert.factors)
+    @test Suslin._verify_polynomial_factorization_route_certificate(quillen_cert)
+    quillen_staged_evidence = Suslin._polynomial_staged_failure_evidence(quillen_entry.matrix)
+    @test quillen_staged_evidence.error_type == :none
+    @test isempty(quillen_staged_evidence.message)
+
+    if quillen_cert.evidence isa Suslin.PolynomialQuillenPatchRouteAdapter
+        bad_quillen_factors = copy(quillen_cert.evidence.global_elementary_factors)
+        bad_quillen_factors[1] =
+            bad_quillen_factors[1] *
+            elementary_matrix(
+                nrows(quillen_entry.matrix),
+                1,
+                3,
+                one(base_ring(quillen_entry.matrix)),
+                base_ring(quillen_entry.matrix),
+            )
+        bad_quillen_evidence = _pw_replace_quillen_adapter(
+            quillen_cert.evidence;
+            global_elementary_factors = bad_quillen_factors,
+        )
+        bad_quillen_cert = _pw_replace_certificate(quillen_cert; evidence = bad_quillen_evidence)
+        @test verify_factorization(bad_quillen_cert.matrix, bad_quillen_cert.factors)
+        @test !Suslin._verify_polynomial_factorization_route_certificate(bad_quillen_cert)
+    end
+
     R = base_ring(fast_cert.matrix)
     n = nrows(fast_cert.matrix)
 
@@ -266,7 +320,7 @@ end
         _pw_captured_error(() -> Suslin._polynomial_verified_certificate_factors(staged_empty_message_cert))
     @test staged_empty_message_err isa ArgumentError
     @test occursin(
-        "SL_n reduction layer for n > 3",
+        "missing Quillen/local realizability witness",
         sprint(showerror, staged_empty_message_err),
     )
 

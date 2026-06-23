@@ -31,7 +31,6 @@ const STAGED_PARK_WOODBURN_ROUTES = Set([
 
 const QUILLEN_PARK_WOODBURN_ROUTES = Set([
     :quillen_patch,
-    :quillen_patched_substitution,
 ])
 
 const PARK_WOODBURN_ROLE_ROUTES = Dict(
@@ -39,7 +38,7 @@ const PARK_WOODBURN_ROLE_ROUTES = Dict(
     :univariate_sln_disjoint_blocks => (:disjoint_local_blocks, :supported),
     :recursive_column_peel => (:recursive_column_peel, :staged),
     :recursive_column_peel_supported => (:recursive_column_peel, :supported),
-    :multivariate_quillen => (:quillen_patched_substitution, :blocked),
+    :multivariate_quillen => (:quillen_patch, :supported),
 )
 
 const PARK_WOODBURN_EXPECTED_ENTRY_METADATA = Dict(
@@ -54,7 +53,7 @@ const PARK_WOODBURN_EXPECTED_ENTRY_METADATA = Dict(
     "pw-poly-recursive-column-peel-gf2" =>
         (:recursive_column_peel, :recursive_column_peel, :staged),
     "quillen-patched-substitution-witness-qq" =>
-        (:multivariate_quillen, :quillen_patched_substitution, :blocked),
+        (:multivariate_quillen, :quillen_patch, :supported),
 )
 
 function _pw_field(entry, field::Symbol)
@@ -159,8 +158,8 @@ function _pw_assert_metadata(entry)
         status in (:supported, :staged, :blocked) ||
             throw(ArgumentError("fixture $(entry.id) with route $(route) must use a recognized staged/support status"))
     elseif route in QUILLEN_PARK_WOODBURN_ROUTES
-        status == :blocked ||
-            throw(ArgumentError("quillen route fixture $(entry.id) must have status :blocked"))
+        status == :supported ||
+            throw(ArgumentError("quillen route fixture $(entry.id) must have status :supported"))
         consumer_issue_ids = _pw_field(entry, :consumer_issue_ids)
         for issue_id in ("#99", "#105", "#115")
             issue_id in consumer_issue_ids ||

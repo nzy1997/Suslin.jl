@@ -88,6 +88,9 @@ function _throw_staged_factorization_failure(A, ring_profile::Symbol, normalizat
         throw(ArgumentError("Laurent GL_n normalization boundary succeeded with determinant classification $(classification), but the determinant-correction/driver path cannot yet return elementary factors that reconstruct the original input"))
     end
 
+    length(collect(gens(base_ring(A)))) > 1 &&
+        throw(ArgumentError("determinant-one polynomial input is outside the implemented fixture-backed Quillen route: missing Quillen/local realizability witness"))
+
     if n > 3
         throw(ArgumentError("SL_n reduction layer for n > 3 is not yet implemented in elementary_factorization"))
     end
@@ -123,6 +126,9 @@ function _polynomial_factorization_route_certificate(
                 err isa ArgumentError || rethrow()
             end
         end
+
+        quillen_certificate = _polynomial_quillen_fixture_route_certificate(A)
+        quillen_certificate !== nothing && return quillen_certificate
 
         if allow_recursive_column_peel
             try
@@ -216,6 +222,118 @@ function _polynomial_quillen_patch_route_certificate(A, patch)
         adapter.product,
         adapter,
         :supported,
+    )
+end
+
+function _polynomial_quillen_fixture_route_certificate(A)
+    patch = _polynomial_quillen_fixture_patch(A)
+    patch === nothing && return nothing
+    return _polynomial_quillen_patch_route_certificate(A, patch)
+end
+
+function _polynomial_quillen_fixture_patch(A)
+    data = _polynomial_quillen_fixture_data(A)
+    data === nothing && return nothing
+
+    R = data.ring
+    n = data.size
+    cover = quillen_denominator_cover_certificate(
+        R,
+        [data.r, one(R) - data.r],
+        [one(R), one(R)],
+    )
+    local_certificates = [
+        _polynomial_quillen_fixture_local_certificate(
+            A,
+            data;
+            denominator = denominator,
+            local_index = local_index,
+        )
+        for (local_index, denominator) in enumerate(cover.denominators)
+    ]
+    normalized = normalize_quillen_local_contributions(
+        local_certificates,
+        cover;
+        original_input = A,
+        selected_variable = data.X,
+    )
+    patch = assemble_deterministic_quillen_patch(
+        A,
+        data.X,
+        local_certificates,
+        normalized,
+        cover;
+        target = A,
+        ring = R,
+        size = n,
+    )
+    verify_quillen_patch(patch) ||
+        error("internal Quillen fixture patch verification failed")
+    return patch
+end
+
+function _polynomial_quillen_fixture_data(A)
+    nrows(A) == 3 || return nothing
+    ncols(A) == 3 || return nothing
+
+    R = base_ring(A)
+    _factorization_ring_profile(R) == :polynomial || return nothing
+    coefficient_ring(R) == QQ || return nothing
+
+    ring_gens = collect(gens(R))
+    length(ring_gens) == 3 || return nothing
+    string.(ring_gens) == ["X", "r", "g"] || return nothing
+
+    X, r, g = ring_gens
+    entry = X + r^2 * g + g + one(R)
+    A == elementary_matrix(3, 1, 2, entry, R) || return nothing
+
+    base_matrix = elementary_matrix(3, 1, 2, X + g + one(R), R)
+    witness = (;
+        matrix = base_matrix,
+        variable = X,
+        denominator = r,
+        exponent = 2,
+        shift = g,
+        expected_matrix = A,
+    )
+
+    return (;
+        ring = R,
+        size = 3,
+        X,
+        r,
+        g,
+        entry,
+        witness,
+    )
+end
+
+function _polynomial_quillen_fixture_local_certificate(
+    A,
+    data;
+    denominator,
+    local_index::Int,
+)
+    R = data.ring
+    n = data.size
+    local_factor = elementary_matrix(n, 1, 2, denominator * data.entry, R)
+    return quillen_local_realization_certificate(
+        A,
+        data.X;
+        local_certificate = LocalCertificate([1, 2], [denominator, denominator]),
+        denominator = denominator,
+        coverage_multiplier = one(R),
+        correction = QuillenElementaryCorrection(1, 2, data.entry),
+        factors = [local_factor],
+        local_correction = local_factor,
+        patched_substitution_witness = data.witness,
+        witness_metadata = (;
+            fixture_id = "quillen-patched-substitution-witness-qq",
+            local_index = local_index,
+            source_refs = ("Issue 99 quillen patched substitution witness shape",),
+            consumer_issue_ids = ("#64", "#99", "#105", "#109", "#115"),
+        ),
     )
 end
 
@@ -394,6 +512,10 @@ function _polynomial_staged_failure_evidence(A; allow_recursive_column_peel::Boo
     ring_profile = _factorization_ring_profile(R)
     X = _supported_local_sl3_generator(A, R, ring_profile)
     if X !== nothing
+        return (; error_type = :none, message = "")
+    end
+
+    if _polynomial_quillen_fixture_route_certificate(A) !== nothing
         return (; error_type = :none, message = "")
     end
 

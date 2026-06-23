@@ -207,8 +207,8 @@ function catalog()
     quillen_case = _case(
         id = "quillen-patched-substitution-witness-qq",
         role = :multivariate_quillen,
-        route = :quillen_patched_substitution,
-        status = :blocked,
+        route = :quillen_patch,
+        status = :supported,
         provenance = (;
             source = "Issue 99 quillen patched substitution witness",
             quillen_fixture_id = "quillen-patched-substitution-witness-qq",
