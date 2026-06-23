@@ -241,10 +241,12 @@ end
     @eval Suslin function _polynomial_factorization_route_certificate(
             A::$matrix_type;
             route = nothing,
+            quillen_patch = nothing,
             allow_recursive_column_peel::Bool = false)
         if $injected_route_override_active[] &&
                 A == $fast_cert.matrix &&
                 route === nothing &&
+                quillen_patch === nothing &&
                 !allow_recursive_column_peel
             return $public_bad_cert
         end
@@ -254,6 +256,7 @@ end
             Tuple{Any},
             A;
             route = route,
+            quillen_patch = quillen_patch,
             allow_recursive_column_peel = allow_recursive_column_peel,
         )
     end
