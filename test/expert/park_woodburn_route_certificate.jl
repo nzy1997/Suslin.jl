@@ -219,6 +219,9 @@ end
     @test Suslin._verify_polynomial_quillen_patch_route_adapter(quillen_cert.evidence)
     @test verify_factorization(quillen_entry.matrix, quillen_cert.factors)
     @test Suslin._verify_polynomial_factorization_route_certificate(quillen_cert)
+    quillen_staged_evidence = Suslin._polynomial_staged_failure_evidence(quillen_entry.matrix)
+    @test quillen_staged_evidence.error_type == :none
+    @test isempty(quillen_staged_evidence.message)
 
     if quillen_cert.evidence isa Suslin.PolynomialQuillenPatchRouteAdapter
         bad_quillen_factors = copy(quillen_cert.evidence.global_elementary_factors)
