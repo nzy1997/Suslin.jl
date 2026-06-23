@@ -46,6 +46,34 @@ function _pw_replace_certificate(
     )
 end
 
+function _pw_corrupt_route_peel_evidence(cert)
+    evidence = cert.evidence
+    first_step = first(evidence.peel_steps)
+    bad_last_column = copy(first_step.last_column)
+    bad_last_column[1] += one(base_ring(evidence.original_matrix))
+    bad_step = Suslin.PolynomialColumnPeelStep(
+        first_step.dimension,
+        first_step.input_matrix,
+        bad_last_column,
+        first_step.left_factors,
+        first_step.after_left_matrix,
+        first_step.right_factors,
+        first_step.peeled_matrix,
+        first_step.next_block,
+    )
+    bad_evidence = Suslin.PolynomialColumnPeelCertificate(
+        evidence.original_matrix,
+        Suslin.PolynomialColumnPeelStep[bad_step; evidence.peel_steps[2:end]],
+        evidence.final_block,
+        evidence.final_certificate,
+        evidence.final_factors,
+        evidence.factors,
+        evidence.product,
+        evidence.verification,
+    )
+    return _pw_replace_certificate(cert; evidence = bad_evidence)
+end
+
 function _pw_replace_reduction(
         reduction;
         ring = reduction.ring,
@@ -134,6 +162,32 @@ end
     @test auto_staged_cert.route == :staged_failure
     @test Suslin._verify_polynomial_factorization_route_certificate(auto_staged_cert)
     @test Suslin._polynomial_staged_failure_evidence(fast_entry.matrix).error_type == :none
+
+    recursive_supported_entry = entries["pw-poly-recursive-column-peel-sl3-qq"]
+    auto_peel_cert = Suslin._polynomial_factorization_route_certificate(
+        recursive_supported_entry.matrix,
+    )
+    @test auto_peel_cert.route == :polynomial_column_peel
+    @test auto_peel_cert.status == :supported
+    @test auto_peel_cert.evidence isa Suslin.PolynomialColumnPeelCertificate
+    @test Suslin._verify_polynomial_factorization_route_certificate(auto_peel_cert)
+    @test verify_factorization(auto_peel_cert.matrix, auto_peel_cert.factors)
+
+    alias_peel_cert = Suslin._polynomial_factorization_route_certificate(
+        recursive_supported_entry.matrix;
+        route = :recursive_column_peel,
+    )
+    @test alias_peel_cert.route == :recursive_column_peel
+    @test Suslin._verify_polynomial_factorization_route_certificate(alias_peel_cert)
+    @test Suslin._polynomial_staged_failure_evidence(recursive_supported_entry.matrix).error_type == :none
+    @test_throws ErrorException Suslin._polynomial_factorization_route_certificate(
+        recursive_supported_entry.matrix;
+        route = :staged_failure,
+    )
+
+    bad_peel_route_cert = _pw_corrupt_route_peel_evidence(auto_peel_cert)
+    @test verify_factorization(bad_peel_route_cert.matrix, bad_peel_route_cert.factors)
+    @test !Suslin._verify_polynomial_factorization_route_certificate(bad_peel_route_cert)
 
     R = base_ring(fast_cert.matrix)
     n = nrows(fast_cert.matrix)
