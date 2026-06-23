@@ -117,7 +117,10 @@ end
     @test Suslin._verify_polynomial_quillen_patch_route_adapter(adapter)
 
     auto_cert = Suslin._polynomial_factorization_route_certificate(route_entry.matrix)
-    @test auto_cert.route == :staged_failure
+    @test auto_cert.route == :quillen_patch
+    @test auto_cert.status == :supported
+    @test auto_cert.evidence isa Suslin.PolynomialQuillenPatchRouteAdapter
+    @test verify_factorization(route_entry.matrix, auto_cert.factors)
     @test Suslin._verify_polynomial_factorization_route_certificate(auto_cert)
 
     cert = Suslin._polynomial_factorization_route_certificate(

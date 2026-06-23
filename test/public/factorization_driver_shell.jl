@@ -77,7 +77,7 @@ end
     multivariate_sl3 = identity_matrix(S, 3)
     multivariate_err = _captured_error(() -> elementary_factorization(multivariate_sl3))
     @test multivariate_err isa ArgumentError
-    @test occursin("staged reduction to the supported univariate local SL_3 slice", sprint(showerror, multivariate_err))
+    @test occursin("missing Quillen/local realizability witness", sprint(showerror, multivariate_err))
 
     nonlocal_sl3 = matrix(R, [
         one(R)  zero(R) X;
@@ -124,10 +124,42 @@ end
     @test recursive_cert.evidence isa Suslin.PolynomialColumnPeelCertificate
     @test Suslin._verify_polynomial_column_peel_certificate(recursive_cert.evidence)
 
+    quillen_supported = entries["quillen-patched-substitution-witness-qq"].matrix
+    quillen_factors = nothing
+    quillen_supported_err = _captured_error(() -> begin
+        quillen_factors = elementary_factorization(quillen_supported)
+        nothing
+    end)
+    @test quillen_supported_err === nothing
+    if quillen_supported_err === nothing
+        @test verify_factorization(quillen_supported, quillen_factors)
+        quillen_cert = Suslin._polynomial_factorization_route_certificate(quillen_supported)
+        @test quillen_cert.route == :quillen_patch
+        @test quillen_factors == quillen_cert.factors
+        @test quillen_cert.evidence isa Suslin.PolynomialQuillenPatchRouteAdapter
+        @test Suslin._verify_polynomial_quillen_patch_route_adapter(quillen_cert.evidence)
+    end
+
+    S = base_ring(quillen_supported)
+    SX, Sr, Sg = collect(gens(S))
+    quillen_unsupported = elementary_matrix(
+        3,
+        1,
+        2,
+        SX + Sr^2 * Sg + Sg + Sr + one(S),
+        S,
+    )
+    quillen_unsupported_err =
+        _captured_error(() -> elementary_factorization(quillen_unsupported))
+    @test quillen_unsupported_err isa ArgumentError
+    @test occursin("missing Quillen/local realizability witness", sprint(showerror, quillen_unsupported_err))
+
     recursive_unsupported = entries["pw-poly-recursive-column-peel-gf2"].matrix
     recursive_unsupported_err =
         _captured_error(() -> elementary_factorization(recursive_unsupported))
     @test recursive_unsupported_err isa ArgumentError
-    @test occursin("polynomial column-peel", sprint(showerror, recursive_unsupported_err)) ||
-        occursin("SL_n reduction layer", sprint(showerror, recursive_unsupported_err))
+    @test occursin(
+        "missing Quillen/local realizability witness",
+        sprint(showerror, recursive_unsupported_err),
+    )
 end
