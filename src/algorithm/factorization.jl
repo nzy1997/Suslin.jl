@@ -11,9 +11,13 @@ end
 const _POLYNOMIAL_FACTORIZATION_ROUTE_TAGS = Set([
     :fast_local_sl3,
     :disjoint_local_blocks,
+    :polynomial_column_peel,
     :recursive_column_peel,
     :staged_failure,
 ])
+
+_is_polynomial_column_peel_route(route::Symbol) =
+    route in (:polynomial_column_peel, :recursive_column_peel)
 
 function _validate_factorization_matrix(A)
     nrows(A) == ncols(A) || throw(ArgumentError("A must be square"))
@@ -82,7 +86,7 @@ end
 function _polynomial_factorization_route_certificate(
     A;
     route=nothing,
-    allow_recursive_column_peel::Bool=false,
+    allow_recursive_column_peel::Bool=true,
 )
     n = _validate_factorization_matrix(A)
     R = base_ring(A)
@@ -106,7 +110,10 @@ function _polynomial_factorization_route_certificate(
 
         if allow_recursive_column_peel
             try
-                return _polynomial_recursive_column_peel_route_certificate(A)
+                return _polynomial_recursive_column_peel_route_certificate(
+                    A;
+                    route_tag = :polynomial_column_peel,
+                )
             catch err
                 err isa InterruptException && rethrow()
                 err isa ArgumentError || rethrow()
@@ -126,8 +133,8 @@ function _polynomial_factorization_route_certificate(
         n > 3 ||
             throw(ArgumentError("disjoint local-block route requires a matrix of size greater than 3"))
         return _polynomial_disjoint_local_blocks_route_certificate(A)
-    elseif route == :recursive_column_peel
-        return _polynomial_recursive_column_peel_route_certificate(A)
+    elseif _is_polynomial_column_peel_route(route)
+        return _polynomial_recursive_column_peel_route_certificate(A; route_tag = route)
     elseif route == :staged_failure
         return _polynomial_staged_failure_route_certificate(A)
     end
@@ -158,11 +165,16 @@ function _polynomial_staged_failure_route_certificate(A)
     return _polynomial_route_certificate(A, :staged_failure, factors, product, evidence, :staged)
 end
 
-function _polynomial_recursive_column_peel_route_certificate(A)
+function _polynomial_recursive_column_peel_route_certificate(
+    A;
+    route_tag::Symbol = :polynomial_column_peel,
+)
+    _is_polynomial_column_peel_route(route_tag) ||
+        throw(ArgumentError("unsupported polynomial column-peel route tag $(route_tag)"))
     evidence = _polynomial_column_peel_certificate(A)
     factors = copy(evidence.factors)
     product = _polynomial_route_factor_product(factors, base_ring(A), nrows(A))
-    return _polynomial_route_certificate(A, :recursive_column_peel, factors, product, evidence, :supported)
+    return _polynomial_route_certificate(A, route_tag, factors, product, evidence, :supported)
 end
 
 function _polynomial_staged_failure_evidence(A)
@@ -259,7 +271,8 @@ function _polynomial_factorization_route_core_verification(cert)
         determinant_ok = ring_profile_ok && det(A) == one(R)
     end
 
-    successful_route = route in (:fast_local_sl3, :disjoint_local_blocks, :recursive_column_peel)
+    successful_route = route in (:fast_local_sl3, :disjoint_local_blocks) ||
+        _is_polynomial_column_peel_route(route)
     supported_status_ok = successful_route && cert.status == :supported
     staged_status_ok = route == :staged_failure && cert.status == :staged
     status_ok = supported_status_ok || staged_status_ok
@@ -352,7 +365,7 @@ function _polynomial_route_evidence_ok(cert)::Bool
                 cert.evidence.product == cert.matrix &&
                 verify_sln_to_sl3_reduction(cert.evidence) &&
                 _polynomial_route_factor_sequences_equal(cert.factors, cert.evidence.factors)
-        elseif cert.route == :recursive_column_peel
+        elseif _is_polynomial_column_peel_route(cert.route)
             return cert.evidence isa PolynomialColumnPeelCertificate &&
                 cert.evidence.original_matrix == cert.matrix &&
                 cert.evidence.product == cert.matrix &&
@@ -402,6 +415,9 @@ function _throw_polynomial_staged_certificate_failure(certificate)
     if hasproperty(evidence, :message) &&
             evidence.message isa AbstractString &&
             !isempty(evidence.message)
+        if occursin("ordinary polynomial reduction currently requires a univariate base ring", evidence.message)
+            _throw_staged_factorization_failure(certificate.matrix, :polynomial, nothing)
+        end
         throw(ArgumentError(evidence.message))
     end
 
