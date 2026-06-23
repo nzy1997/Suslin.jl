@@ -399,31 +399,14 @@ function elementary_factorization(A)
     R = base_ring(A)
     ring_profile = _factorization_ring_profile(R)
     normalized_A, normalization = _normalize_factorization_input(A, ring_profile)
-    normalized_R = base_ring(normalized_A)
 
     if ring_profile == :polynomial
         _require_polynomial_sl_determinant(normalized_A)
         return _polynomial_verified_route_factors(normalized_A)
     end
 
-    X = _supported_local_sl3_generator(normalized_A, normalized_R, ring_profile)
-    if X !== nothing
-        return realize_sl3_local(
-            normalized_A[1, 1],
-            normalized_A[1, 2],
-            normalized_A[2, 1],
-            normalized_A[2, 2],
-            X,
-        )
-    end
-
-    if (ring_profile == :polynomial && nrows(normalized_A) > 3) ||
-            (ring_profile == :laurent && normalization.determinant_classification == :one)
-        if ring_profile == :laurent
-            return _laurent_sl_fallback_factorization(A)
-        end
-        reduction = reduce_sln_to_sl3(A)
-        verify_factorization(A, reduction.factors) && return reduction.factors
+    if normalization.determinant_classification == :one
+        return _laurent_sl_fallback_factorization(A)
     end
 
     _throw_staged_factorization_failure(normalized_A, ring_profile, normalization)
