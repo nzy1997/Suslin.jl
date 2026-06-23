@@ -124,7 +124,7 @@ function _pw_assert_metadata(entry)
     size = nrows(matrix)
     size >= 3 || throw(ArgumentError("fixture $(entry.id) matrix size must be at least 3"))
     _pw_require_matrix_over(matrix, R, size, "matrix")
-    all(idx -> matrix[idx, idx] isa Oscar.MPolyElem, 1:size) ||
+    all(idx -> parent(matrix[idx, idx]) == R, 1:size) ||
         throw(ArgumentError("fixture $(entry.id) matrix entries must come from its ring"))
 
     determinant_expectation = _pw_field(entry, :determinant_expectation)

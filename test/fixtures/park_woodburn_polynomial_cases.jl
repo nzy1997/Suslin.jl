@@ -3,9 +3,6 @@ module ParkWoodburnPolynomialFixtureCatalog
 using Oscar
 using Suslin
 
-# Compatibility for the validator's `isa Oscar.MPolyElem` check on this Oscar build.
-@eval Oscar global MPolyElem = Oscar.MPolyRingElem
-
 function _ring_metadata(description, R, generator_names, generators)
     return (;
         description = description,
