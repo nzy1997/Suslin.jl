@@ -107,14 +107,8 @@ function catalog()
         X one(RQ) + X + X^2 zero(RQ);
         zero(RQ) zero(RQ) one(RQ)
     ])
-    disjoint_blocks_matrix = matrix(RQ, [
-        one(RQ) + X one(RQ) zero(RQ) zero(RQ) zero(RQ) zero(RQ);
-        X one(RQ) zero(RQ) zero(RQ) zero(RQ) zero(RQ);
-        zero(RQ) zero(RQ) one(RQ) zero(RQ) zero(RQ) zero(RQ);
-        zero(RQ) zero(RQ) zero(RQ) one(RQ) one(RQ) + X zero(RQ);
-        zero(RQ) zero(RQ) zero(RQ) X one(RQ) + X + X^2 zero(RQ);
-        zero(RQ) zero(RQ) zero(RQ) zero(RQ) zero(RQ) one(RQ)
-    ])
+    disjoint_blocks_matrix =
+        block_embedding(block_a, 6, [1, 2, 3]) * block_embedding(block_b, 6, [4, 5, 6])
     disjoint_blocks_case = _case(
         id = "pw-poly-univariate-sln-disjoint-blocks-qq",
         role = :univariate_sln_disjoint_blocks,
@@ -153,14 +147,8 @@ function catalog()
         consumer_issue_ids = ("#64", "#109", "#113"),
     )
 
-    quillen_matrix = _product(
-        (
-            elementary_matrix(3, 1, 2, PX + Pr + Pg, RR),
-            elementary_matrix(3, 2, 3, Pr * Pg + PX, RR),
-        ),
-        RR,
-        3,
-    )
+    quillen_shifted_X = PX + Pr^2 * Pg
+    quillen_matrix = elementary_matrix(3, 1, 2, quillen_shifted_X + Pg + one(RR), RR)
     quillen_case = _case(
         id = "quillen-patched-substitution-witness-qq",
         role = :multivariate_quillen,
@@ -192,15 +180,16 @@ function catalog()
         )),
     )
 
+    outside_witness_matrix = identity_matrix(RQ, 3)
+    outside_witness_matrix[1, 3] = X
     outside_witness_control = _negative_control(
         "pw-poly-det-one-outside-witness-control",
         "pw-poly-univariate-sl3-fast-local-qq",
-        "determinant-one matrix claims an unsupported route",
+        "determinant-one matrix is outside the fast-local witness shape",
         merge(fast_local_case, (;
-            route = :unsupported_route_family,
-            status = :supported,
+            matrix = outside_witness_matrix,
             provenance = (;
-                source = "negative control for unsupported route metadata",
+                source = "negative control for determinant-one matrix outside implemented witness families",
             ),
         )),
     )
