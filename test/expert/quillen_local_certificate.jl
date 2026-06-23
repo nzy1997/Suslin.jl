@@ -48,6 +48,27 @@ function realization_certificate_from_fixture(entry; local_index::Int = 1)
     )
 end
 
+function correction_realization_certificate_from_fixture(entry; local_index::Int = 1)
+    local_factor = entry.local_factors[local_index]
+    correction = local_correction_from_fixture(local_factor)
+    return Suslin.quillen_local_realization_certificate(
+        correction,
+        entry.substitution_variable;
+        local_certificate = local_certificate_from_fixture(local_factor),
+        denominator = local_factor.denominator,
+        coverage_multiplier = local_factor.coverage_multiplier,
+        correction = correction,
+        local_correction = local_factor.factor,
+        ring = entry.ring.object,
+        size = entry.size,
+        witness_metadata = (;
+            fixture_id = entry.id,
+            local_index = local_index,
+            input_kind = :elementary_correction,
+        ),
+    )
+end
+
 function rebuild_local_certificate(cert; kwargs...)
     fields = merge((
         original_input = cert.original_input,
@@ -125,6 +146,56 @@ end
         witness.shift,
     ) == witness.expected_matrix
 
+    correction_cert = correction_realization_certificate_from_fixture(entries[fixture_ids[1]])
+    @test Suslin.verify_quillen_local_certificate(correction_cert)
+    @test correction_cert.original_input == correction_cert.correction
+    @test correction_cert.factors == [correction_cert.local_correction]
+    @test correction_cert.local_product == correction_cert.local_correction
+    @test correction_cert.verification.original_input == correction_cert.correction
+    @test correction_cert.verification.witness_metadata.input_kind == :elementary_correction
+
+    local_factor = entries[fixture_ids[1]].local_factors[1]
+    correction_input = local_correction_from_fixture(local_factor)
+    @test_throws ArgumentError Suslin.quillen_local_realization_certificate(
+        correction_input,
+        entries[fixture_ids[1]].substitution_variable;
+        local_certificate = local_certificate_from_fixture(local_factor),
+        denominator = local_factor.denominator,
+        coverage_multiplier = local_factor.coverage_multiplier,
+        correction = correction_input,
+        local_correction = local_factor.factor,
+        size = entries[fixture_ids[1]].size,
+    )
+    @test_throws ArgumentError Suslin.quillen_local_realization_certificate(
+        correction_input,
+        entries[fixture_ids[1]].substitution_variable;
+        local_certificate = local_certificate_from_fixture(local_factor),
+        denominator = local_factor.denominator,
+        coverage_multiplier = local_factor.coverage_multiplier,
+        correction = correction_input,
+        local_correction = local_factor.factor,
+        ring = entries[fixture_ids[1]].ring.object,
+    )
+    @test_throws ArgumentError Suslin.quillen_local_realization_certificate(
+        correction_input,
+        entries[fixture_ids[1]].substitution_variable;
+        local_certificate = local_certificate_from_fixture(local_factor),
+        denominator = local_factor.denominator,
+        coverage_multiplier = local_factor.coverage_multiplier,
+        correction = correction_input,
+        local_correction = local_factor.factor,
+        ring = entries[fixture_ids[1]].ring.object,
+        size = 1,
+    )
+    @test_throws ArgumentError Suslin.quillen_local_realization_certificate(
+        entries[fixture_ids[1]].target_matrix,
+        entries[fixture_ids[1]].substitution_variable;
+        local_certificate = local_certificate_from_fixture(local_factor),
+        denominator = local_factor.denominator,
+        coverage_multiplier = local_factor.coverage_multiplier,
+        correction = correction_input,
+    )
+
     base_cert = certs[1]
     R = base_cert.ring
     bad_factor = base_cert.factors[1] *
@@ -158,5 +229,10 @@ end
     @test !Suslin.verify_quillen_local_certificate(rebuild_local_certificate(
         patched_cert;
         patched_substitution_witness = bad_witness,
+    ))
+
+    @test !Suslin.verify_quillen_local_certificate(rebuild_local_certificate(
+        base_cert;
+        witness_metadata = merge(base_cert.witness_metadata, (; local_index = 99)),
     ))
 end
