@@ -3,6 +3,7 @@ using Oscar
 using Suslin
 
 const PARK_WOODBURN_POLYNOMIAL_CATALOG_PATH = joinpath(@__DIR__, "..", "fixtures", "park_woodburn_polynomial_cases.jl")
+const PARK_WOODBURN_QUILLEN_CATALOG_PATH = joinpath(@__DIR__, "..", "fixtures", "quillen_patch_cases.jl")
 
 const REQUIRED_PARK_WOODBURN_POLYNOMIAL_IDS = Set([
     "pw-poly-univariate-sl3-fast-local-qq",
@@ -30,6 +31,24 @@ const QUILLEN_PARK_WOODBURN_ROUTES = Set([
     :quillen_patch,
     :quillen_patched_substitution,
 ])
+
+const PARK_WOODBURN_ROLE_ROUTES = Dict(
+    :univariate_sl3_fast_local => (:fast_local_sl3, :supported),
+    :univariate_sln_disjoint_blocks => (:disjoint_local_blocks, :supported),
+    :recursive_column_peel => (:recursive_column_peel, :staged),
+    :multivariate_quillen => (:quillen_patched_substitution, :blocked),
+)
+
+const PARK_WOODBURN_EXPECTED_ENTRY_METADATA = Dict(
+    "pw-poly-univariate-sl3-fast-local-qq" =>
+        (:univariate_sl3_fast_local, :fast_local_sl3, :supported),
+    "pw-poly-univariate-sln-disjoint-blocks-qq" =>
+        (:univariate_sln_disjoint_blocks, :disjoint_local_blocks, :supported),
+    "pw-poly-recursive-column-peel-gf2" =>
+        (:recursive_column_peel, :recursive_column_peel, :staged),
+    "quillen-patched-substitution-witness-qq" =>
+        (:multivariate_quillen, :quillen_patched_substitution, :blocked),
+)
 
 function _pw_field(entry, field::Symbol)
     hasproperty(entry, field) || throw(ArgumentError("fixture entry missing field $(field)"))
@@ -70,6 +89,23 @@ function _pw_assert_metadata(entry)
     status = _pw_field(entry, :status)
     route isa Symbol || throw(ArgumentError("fixture $(entry.id) route must be a symbol"))
     status isa Symbol || throw(ArgumentError("fixture $(entry.id) status must be a symbol"))
+    haskey(PARK_WOODBURN_ROLE_ROUTES, entry.role) ||
+        throw(ArgumentError("fixture $(entry.id) has unsupported role $(entry.role)"))
+    expected_route, expected_status = PARK_WOODBURN_ROLE_ROUTES[entry.role]
+    route == expected_route ||
+        throw(ArgumentError("fixture $(entry.id) role $(entry.role) must use route $(expected_route)"))
+    status == expected_status ||
+        throw(ArgumentError("fixture $(entry.id) role $(entry.role) must have status $(expected_status)"))
+
+    if haskey(PARK_WOODBURN_EXPECTED_ENTRY_METADATA, entry.id)
+        expected_role, required_route, required_status = PARK_WOODBURN_EXPECTED_ENTRY_METADATA[entry.id]
+        entry.role == expected_role ||
+            throw(ArgumentError("fixture $(entry.id) must keep role $(expected_role)"))
+        route == required_route ||
+            throw(ArgumentError("fixture $(entry.id) must keep route $(required_route)"))
+        status == required_status ||
+            throw(ArgumentError("fixture $(entry.id) must keep status $(required_status)"))
+    end
 
     if route in SUPPORTED_PARK_WOODBURN_ROUTES
         status == :supported ||
@@ -109,6 +145,8 @@ function _pw_assert_metadata(entry)
         throw(ArgumentError("fixture $(entry.id) must use an ordinary polynomial matrix ring"))
     Oscar.is_exact_type(typeof(zero(coefficient_ring(R)))) ||
         throw(ArgumentError("fixture $(entry.id) must use an exact coefficient ring"))
+    coefficient_ring(R) isa Field ||
+        throw(ArgumentError("fixture $(entry.id) must use a field-backed coefficient ring"))
     generator_names = _pw_field(ring, :generator_names)
     generators = _pw_field(ring, :generators)
     generator_names isa Tuple && generators isa Tuple && length(generator_names) == length(generators) ||
@@ -192,14 +230,38 @@ end
     end
 
     quillen_entry = entries["quillen-patched-substitution-witness-qq"]
+    if !isdefined(Main, :QuillenPatchFixtureCatalog)
+        include(PARK_WOODBURN_QUILLEN_CATALOG_PATH)
+    end
+    quillen_patch_entries = Main.QuillenPatchFixtureCatalog.cases_by_id()
+    @test haskey(quillen_patch_entries, quillen_entry.provenance.quillen_fixture_id)
+
     mutated_staged_route = merge(quillen_entry, (; route = :fast_local_sl3))
     @test_throws ArgumentError validate_park_woodburn_polynomial_fixture(mutated_staged_route)
     mutated_staged_status = merge(quillen_entry, (; status = :staged))
     @test_throws ArgumentError validate_park_woodburn_polynomial_fixture(mutated_staged_status)
 
     supported_entry = entries["pw-poly-univariate-sl3-fast-local-qq"]
+    mutated_wrong_supported_route = merge(supported_entry, (; route = :disjoint_local_blocks))
+    @test_throws ArgumentError validate_park_woodburn_polynomial_fixture(mutated_wrong_supported_route)
     mutated_supported_status = merge(supported_entry, (; status = :staged))
     @test_throws ArgumentError validate_park_woodburn_polynomial_fixture(mutated_supported_status)
     mutated_supported_determinant = merge(supported_entry, (; determinant_expectation = :not_one))
     @test_throws ArgumentError validate_park_woodburn_polynomial_fixture(mutated_supported_determinant)
+
+    R_bad, (z_bad,) = Oscar.polynomial_ring(ZZ, ["z"])
+    mutated_nonfield_ring = merge(supported_entry, (;
+        ring_constructor = merge(supported_entry.ring_constructor, (;
+            coefficient = "ZZ",
+            variables = ("z",),
+        )),
+        ring = (;
+            description = "ZZ[z]",
+            object = R_bad,
+            generator_names = ("z",),
+            generators = (z_bad,),
+        ),
+        matrix = identity_matrix(R_bad, 3),
+    ))
+    @test_throws ArgumentError validate_park_woodburn_polynomial_fixture(mutated_nonfield_ring)
 end

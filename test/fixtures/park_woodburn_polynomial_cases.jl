@@ -186,10 +186,9 @@ function catalog()
     det_not_one_control = _negative_control(
         "pw-poly-det-not-one-control",
         "pw-poly-univariate-sl3-fast-local-qq",
-        "determinant expectation and determinant are both wrong",
+        "matrix determinant is not one despite determinant-one metadata",
         merge(fast_local_case, (;
             matrix = det_not_one_matrix,
-            determinant_expectation = :not_one,
         )),
     )
 
@@ -209,9 +208,9 @@ function catalog()
     wrong_route_control = _negative_control(
         "pw-poly-wrong-route-control",
         "pw-poly-univariate-sl3-fast-local-qq",
-        "fast-local matrix is mislabeled as recursive peel",
+        "fast-local matrix is mislabeled as another currently supported route",
         merge(fast_local_case, (;
-            route = :recursive_column_peel,
+            route = :disjoint_local_blocks,
             status = :supported,
         )),
     )
