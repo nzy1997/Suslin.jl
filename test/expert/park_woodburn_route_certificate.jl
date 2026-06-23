@@ -128,6 +128,15 @@ end
     R = base_ring(fast_cert.matrix)
     n = nrows(fast_cert.matrix)
 
+    staged_n_gt_3_err = try
+        Suslin._throw_staged_factorization_failure(identity_matrix(R, 4), :polynomial, nothing)
+        nothing
+    catch err
+        err
+    end
+    @test staged_n_gt_3_err isa ArgumentError
+    @test occursin("SL_n reduction layer for n > 3", sprint(showerror, staged_n_gt_3_err))
+
     @test_throws ArgumentError Suslin._polynomial_factorization_route_certificate(
         fast_entry.matrix;
         route = "fast_local_sl3",
