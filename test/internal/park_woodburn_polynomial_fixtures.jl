@@ -8,6 +8,8 @@ const PARK_WOODBURN_QUILLEN_CATALOG_PATH = joinpath(@__DIR__, "..", "fixtures", 
 const REQUIRED_PARK_WOODBURN_POLYNOMIAL_IDS = Set([
     "pw-poly-univariate-sl3-fast-local-qq",
     "pw-poly-univariate-sln-disjoint-blocks-qq",
+    "pw-poly-recursive-column-peel-sl3-qq",
+    "pw-poly-recursive-column-peel-sln-block-qq",
     "pw-poly-recursive-column-peel-gf2",
     "quillen-patched-substitution-witness-qq",
 ])
@@ -36,6 +38,7 @@ const PARK_WOODBURN_ROLE_ROUTES = Dict(
     :univariate_sl3_fast_local => (:fast_local_sl3, :supported),
     :univariate_sln_disjoint_blocks => (:disjoint_local_blocks, :supported),
     :recursive_column_peel => (:recursive_column_peel, :staged),
+    :recursive_column_peel_supported => (:recursive_column_peel, :supported),
     :multivariate_quillen => (:quillen_patched_substitution, :blocked),
 )
 
@@ -44,6 +47,10 @@ const PARK_WOODBURN_EXPECTED_ENTRY_METADATA = Dict(
         (:univariate_sl3_fast_local, :fast_local_sl3, :supported),
     "pw-poly-univariate-sln-disjoint-blocks-qq" =>
         (:univariate_sln_disjoint_blocks, :disjoint_local_blocks, :supported),
+    "pw-poly-recursive-column-peel-sl3-qq" =>
+        (:recursive_column_peel_supported, :recursive_column_peel, :supported),
+    "pw-poly-recursive-column-peel-sln-block-qq" =>
+        (:recursive_column_peel_supported, :recursive_column_peel, :supported),
     "pw-poly-recursive-column-peel-gf2" =>
         (:recursive_column_peel, :recursive_column_peel, :staged),
     "quillen-patched-substitution-witness-qq" =>
@@ -89,11 +96,11 @@ function _pw_assert_route_shape(entry, matrix, R)
             throw(ArgumentError("fixture $(entry.id) disjoint local-block route must have n > 3"))
         length(collect(gens(R))) == 1 ||
             throw(ArgumentError("fixture $(entry.id) disjoint local-block route must be univariate"))
-    elseif entry.role == :recursive_column_peel
+    elseif entry.role in (:recursive_column_peel, :recursive_column_peel_supported)
         nrows(matrix) > 3 ||
             throw(ArgumentError("fixture $(entry.id) recursive column-peel route must have n > 3"))
-        length(collect(gens(R))) >= 2 ||
-            throw(ArgumentError("fixture $(entry.id) recursive column-peel route must exercise an ordinary polynomial ring beyond the current univariate local route"))
+        entry.status == :supported || length(collect(gens(R))) >= 2 ||
+            throw(ArgumentError("fixture $(entry.id) staged recursive column-peel route must exercise an ordinary polynomial ring beyond the current univariate local route"))
     elseif entry.role == :multivariate_quillen
         length(collect(gens(R))) >= 2 ||
             throw(ArgumentError("fixture $(entry.id) Quillen route must be multivariate"))
@@ -149,9 +156,8 @@ function _pw_assert_metadata(entry)
         status == :supported ||
             throw(ArgumentError("fixture $(entry.id) with supported route $(route) must have status :supported"))
     elseif route in STAGED_PARK_WOODBURN_ROUTES
-        status in (:supported, :staged, :blocked) &&
-            status != :supported ||
-            throw(ArgumentError("fixture $(entry.id) with route $(route) must not have status :supported"))
+        status in (:supported, :staged, :blocked) ||
+            throw(ArgumentError("fixture $(entry.id) with route $(route) must use a recognized staged/support status"))
     elseif route in QUILLEN_PARK_WOODBURN_ROUTES
         status == :blocked ||
             throw(ArgumentError("quillen route fixture $(entry.id) must have status :blocked"))
