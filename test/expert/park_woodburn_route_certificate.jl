@@ -5,6 +5,10 @@ using Oscar
 const PARK_WOODBURN_ROUTE_CATALOG_PATH =
     joinpath(@__DIR__, "..", "fixtures", "park_woodburn_polynomial_cases.jl")
 
+struct PWRouteExplodingEq end
+
+Base.:(==)(::PWRouteExplodingEq, _) = throw(ArgumentError("route evidence equality sentinel"))
+
 function _pw_route_product(factors, R, n::Int)
     product = identity_matrix(R, n)
     for factor in factors
@@ -84,6 +88,10 @@ end
     @test fast_cert.factors == fast_cert.evidence.factors
     _pw_route_assert_success(fast_cert, fast_entry.matrix)
 
+    auto_fast_cert = Suslin._polynomial_factorization_route_certificate(fast_entry.matrix)
+    @test auto_fast_cert.route == :fast_local_sl3
+    @test Suslin._verify_polynomial_factorization_route_certificate(auto_fast_cert)
+
     block_entry = entries["pw-poly-univariate-sln-disjoint-blocks-qq"]
     block_cert = Suslin._polynomial_factorization_route_certificate(
         block_entry.matrix;
@@ -95,6 +103,10 @@ end
     @test block_cert.evidence.original_matrix == block_entry.matrix
     @test block_cert.factors == block_cert.evidence.factors
     _pw_route_assert_success(block_cert, block_entry.matrix)
+
+    auto_block_cert = Suslin._polynomial_factorization_route_certificate(block_entry.matrix)
+    @test auto_block_cert.route == :disjoint_local_blocks
+    @test Suslin._verify_polynomial_factorization_route_certificate(auto_block_cert)
 
     recursive_entry = entries["pw-poly-recursive-column-peel-gf2"]
     staged_cert = Suslin._polynomial_factorization_route_certificate(
@@ -108,8 +120,22 @@ end
     @test !isempty(staged_cert.evidence.message)
     @test Suslin._verify_polynomial_factorization_route_certificate(staged_cert)
 
+    auto_staged_cert = Suslin._polynomial_factorization_route_certificate(recursive_entry.matrix)
+    @test auto_staged_cert.route == :staged_failure
+    @test Suslin._verify_polynomial_factorization_route_certificate(auto_staged_cert)
+    @test Suslin._polynomial_staged_failure_evidence(fast_entry.matrix).error_type == :none
+
     R = base_ring(fast_cert.matrix)
     n = nrows(fast_cert.matrix)
+
+    @test_throws ArgumentError Suslin._polynomial_factorization_route_certificate(
+        fast_entry.matrix;
+        route = "fast_local_sl3",
+    )
+    @test_throws ArgumentError Suslin._polynomial_factorization_route_certificate(
+        fast_entry.matrix;
+        route = :quillen_patched_substitution,
+    )
 
     bad_route = _pw_replace_certificate(fast_cert; route = :quillen_patched_substitution)
     @test !Suslin._verify_polynomial_factorization_route_certificate(bad_route)
@@ -118,6 +144,11 @@ end
     bad_factors[1] = identity_matrix(R, n)
     bad_factor_cert = _pw_replace_certificate(fast_cert; factors = bad_factors)
     @test !Suslin._verify_polynomial_factorization_route_certificate(bad_factor_cert)
+
+    wrong_size_factors = copy(fast_cert.factors)
+    wrong_size_factors[1] = identity_matrix(R, 2)
+    wrong_size_factor_cert = _pw_replace_certificate(fast_cert; factors = wrong_size_factors)
+    @test !Suslin._verify_polynomial_factorization_route_certificate(wrong_size_factor_cert)
 
     bad_product = identity_matrix(R, n)
     bad_product_cert = _pw_replace_certificate(fast_cert; product = bad_product)
@@ -133,6 +164,16 @@ end
     bad_evidence_cert = _pw_replace_certificate(fast_cert; evidence = bad_evidence)
     @test Suslin.verify_factorization(bad_evidence_cert.matrix, bad_evidence_cert.factors)
     @test !Suslin._verify_polynomial_factorization_route_certificate(bad_evidence_cert)
+
+    exploding_evidence = Suslin.SL3LocalRealizationCertificate(
+        PWRouteExplodingEq(),
+        fast_cert.evidence.branch,
+        fast_cert.evidence.factors,
+        fast_cert.evidence.selected_variable,
+        fast_cert.evidence.witness,
+    )
+    exploding_evidence_cert = _pw_replace_certificate(fast_cert; evidence = exploding_evidence)
+    @test !Suslin._verify_polynomial_factorization_route_certificate(exploding_evidence_cert)
 
     fake_staged_evidence = (;
         error_type = :ArgumentError,
