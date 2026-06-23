@@ -70,4 +70,19 @@ end
         certificate.verification,
     )
     @test !Suslin.verify_quillen_denominator_cover(tampered)
+
+    R_exact, (_, r_exact) = Oscar.polynomial_ring(QQ, ["X", "r"])
+    certificate_exact = Suslin.quillen_denominator_cover_certificate(
+        R_exact,
+        [r_exact, one(R_exact) - r_exact],
+        [one(R_exact), one(R_exact)],
+    )
+    tampered_exact = Suslin.QuillenDenominatorCoverCertificate(
+        certificate_exact.ring,
+        [2 * r_exact, one(R_exact) - r_exact],
+        [R_exact(1//2), one(R_exact)],
+        certificate_exact.coverage_sum,
+        certificate_exact.verification,
+    )
+    @test !Suslin.verify_quillen_denominator_cover(tampered_exact)
 end

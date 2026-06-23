@@ -20,6 +20,8 @@ end
 struct QuillenDenominatorCoverVerification
     denominator_count::Int
     multiplier_count::Int
+    denominators::Vector
+    coverage_multipliers::Vector
     parent_ring_ok::Bool
     exact_ring_ok::Bool
     coverage_terms::Vector
@@ -52,6 +54,8 @@ end
 function _quillen_denominator_cover_verification(R, denominators, coverage_multipliers)
     denominator_count = length(denominators)
     multiplier_count = length(coverage_multipliers)
+    denominator_snapshot = copy(denominators)
+    multiplier_snapshot = copy(coverage_multipliers)
     exact_ring_ok = Oscar.is_exact_type(typeof(zero(coefficient_ring(R))))
     parent_ring_ok =
         denominator_count == multiplier_count &&
@@ -65,6 +69,8 @@ function _quillen_denominator_cover_verification(R, denominators, coverage_multi
     return QuillenDenominatorCoverVerification(
         denominator_count,
         multiplier_count,
+        denominator_snapshot,
+        multiplier_snapshot,
         parent_ring_ok,
         exact_ring_ok,
         coverage_terms,
@@ -108,6 +114,8 @@ function _same_quillen_denominator_cover_verification(
 )::Bool
     return left.denominator_count == right.denominator_count &&
            left.multiplier_count == right.multiplier_count &&
+           left.denominators == right.denominators &&
+           left.coverage_multipliers == right.coverage_multipliers &&
            left.parent_ring_ok == right.parent_ring_ok &&
            left.exact_ring_ok == right.exact_ring_ok &&
            left.coverage_terms == right.coverage_terms &&
