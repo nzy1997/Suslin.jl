@@ -736,3 +736,361 @@ function verify_quillen_local_contribution_normalization(normalized)::Bool
         return false
     end
 end
+
+struct QuillenGlobalPatchAssemblyVerification
+    cover_certificate_ok::Bool
+    local_certificates_ok::Bool
+    normalized_contributions_ok::Bool
+    local_alignment_ok::Bool
+    cover_alignment_ok::Bool
+    normalized_input_ok::Bool
+    selected_variable_ok::Bool
+    coverage_sum
+    coverage_ok::Bool
+    global_elementary_factors::Vector
+    global_elementary_factors_ok::Bool
+    product
+    product_ok::Bool
+    target
+    target_ok::Bool
+    replay_metadata
+    replay_metadata_ok::Bool
+    overall_ok::Bool
+end
+
+struct QuillenGlobalPatchAssembly
+    ring
+    size::Int
+    substitution_variable
+    original_input
+    cover_certificate::QuillenDenominatorCoverCertificate
+    denominator_data::Vector{QuillenDenominatorData}
+    local_certificates::Vector{QuillenLocalRealizationCertificate}
+    normalized_local_contributions::Vector{QuillenLocalContributionNormalization}
+    global_elementary_factors::Vector
+    patched_product
+    target
+    replay_metadata
+    verification::QuillenGlobalPatchAssemblyVerification
+end
+
+function _same_quillen_local_certificate_data(
+    left::QuillenLocalRealizationCertificate,
+    right::QuillenLocalRealizationCertificate,
+)::Bool
+    return left.original_input == right.original_input &&
+           left.ring == right.ring &&
+           left.size == right.size &&
+           left.selected_variable == right.selected_variable &&
+           left.local_certificate.indices == right.local_certificate.indices &&
+           left.local_certificate.denominators == right.local_certificate.denominators &&
+           left.denominator == right.denominator &&
+           left.coverage_multiplier == right.coverage_multiplier &&
+           left.correction == right.correction &&
+           _same_quillen_factors(left.factors, right.factors) &&
+           left.local_product == right.local_product &&
+           left.local_correction == right.local_correction &&
+           left.patched_substitution_witness == right.patched_substitution_witness &&
+           left.witness_metadata == right.witness_metadata &&
+           left.verification == right.verification
+end
+
+function _same_quillen_cover_certificate_data(
+    left::QuillenDenominatorCoverCertificate,
+    right::QuillenDenominatorCoverCertificate,
+)::Bool
+    return left.ring == right.ring &&
+           left.denominators == right.denominators &&
+           left.coverage_multipliers == right.coverage_multipliers &&
+           left.coverage_sum == right.coverage_sum &&
+           _same_quillen_denominator_cover_verification(left.verification, right.verification)
+end
+
+function _quillen_global_patch_replay_metadata(
+    cover::QuillenDenominatorCoverCertificate,
+    local_certificates,
+    normalized_contributions,
+)
+    return (;
+        fixture_count = length(local_certificates),
+        normalized_count = length(normalized_contributions),
+        cover_denominator_count = length(cover.denominators),
+        cover_coverage_sum = cover.coverage_sum,
+        local_witness_metadata = [certificate.witness_metadata for certificate in local_certificates],
+        normalized_cover_indices = [normalized.cover_index for normalized in normalized_contributions],
+    )
+end
+
+function _same_quillen_global_patch_verification(
+    left::QuillenGlobalPatchAssemblyVerification,
+    right::QuillenGlobalPatchAssemblyVerification,
+)::Bool
+    return left.cover_certificate_ok == right.cover_certificate_ok &&
+           left.local_certificates_ok == right.local_certificates_ok &&
+           left.normalized_contributions_ok == right.normalized_contributions_ok &&
+           left.local_alignment_ok == right.local_alignment_ok &&
+           left.cover_alignment_ok == right.cover_alignment_ok &&
+           left.normalized_input_ok == right.normalized_input_ok &&
+           left.selected_variable_ok == right.selected_variable_ok &&
+           left.coverage_sum == right.coverage_sum &&
+           left.coverage_ok == right.coverage_ok &&
+           _same_quillen_factors(
+               left.global_elementary_factors,
+               right.global_elementary_factors,
+           ) &&
+           left.global_elementary_factors_ok == right.global_elementary_factors_ok &&
+           left.product == right.product &&
+           left.product_ok == right.product_ok &&
+           left.target == right.target &&
+           left.target_ok == right.target_ok &&
+           left.replay_metadata == right.replay_metadata &&
+           left.replay_metadata_ok == right.replay_metadata_ok &&
+           left.overall_ok == right.overall_ok
+end
+
+function _quillen_global_target_matrix(target; ring, size::Int, label::AbstractString)
+    if target isa QuillenElementaryCorrection
+        correction = _normalize_quillen_contribution(
+            QuillenLocalContribution(
+                LocalCertificate([target.row, target.col], [one(ring), one(ring)]),
+                one(ring),
+                one(ring),
+                target,
+            ),
+            ring,
+            size,
+        ).correction
+        return elementary_matrix(size, correction.row, correction.col, correction.entry, ring)
+    end
+    _quillen_local_require_factor_matrix(target, ring, size, label)
+    return target
+end
+
+function replay_deterministic_quillen_patch(patch::QuillenGlobalPatchAssembly)
+    R = _require_supported_quillen_ring(patch.ring)
+    n = patch.size
+    n >= 2 || throw(ArgumentError("patch size must be at least 2"))
+    selected = _require_substitution_generator(R, patch.substitution_variable)
+    target = _quillen_global_target_matrix(
+        patch.target;
+        ring = R,
+        size = n,
+        label = "target",
+    )
+
+    cover = patch.cover_certificate
+    local_certificates = patch.local_certificates
+    normalized = patch.normalized_local_contributions
+    cover_certificate_ok = verify_quillen_denominator_cover(cover)
+    local_certificates_ok = all(verify_quillen_local_certificate, local_certificates)
+    normalized_contributions_ok =
+        all(verify_quillen_local_contribution_normalization, normalized)
+    count_ok = length(local_certificates) == length(normalized)
+
+    local_alignment_ok = count_ok && all(eachindex(local_certificates)) do idx
+        _same_quillen_local_certificate_data(
+            normalized[idx].local_certificate,
+            local_certificates[idx],
+        )
+    end
+    cover_alignment_ok =
+        _same_quillen_cover_certificate_data(cover, patch.cover_certificate) &&
+        all(normalized) do item
+            _same_quillen_cover_certificate_data(item.cover_certificate, cover)
+        end
+    normalized_input_ok = all(normalized) do item
+        item.original_input == patch.original_input &&
+            item.local_certificate.original_input == patch.original_input
+    end
+    selected_variable_ok =
+        all(normalized) do item
+            item.selected_variable == selected &&
+                item.local_certificate.selected_variable == selected
+        end
+
+    expected_denominator_data = _quillen_denominator_data([
+        item.local_contribution for item in normalized
+    ])
+    denominator_data_ok =
+        _same_quillen_denominator_data(patch.denominator_data, expected_denominator_data)
+    coverage_sum = _quillen_coverage_sum(R, patch.denominator_data)
+    coverage_ok =
+        denominator_data_ok && cover_certificate_ok && coverage_sum == one(R) &&
+        coverage_sum == cover.coverage_sum
+    global_elementary_factors =
+        reduce(vcat, [item.weighted_global_elementary_factors for item in normalized]; init = Any[])
+    global_elementary_factors_ok = _same_quillen_factors(
+        patch.global_elementary_factors,
+        global_elementary_factors,
+    )
+    product = _quillen_product(R, n, patch.global_elementary_factors)
+    product_ok = global_elementary_factors_ok && patch.patched_product == product
+    target_ok = product == target
+    replay_metadata =
+        _quillen_global_patch_replay_metadata(cover, local_certificates, normalized)
+    replay_metadata_ok = patch.replay_metadata == replay_metadata
+    overall_ok =
+        cover_certificate_ok &&
+        local_certificates_ok &&
+        normalized_contributions_ok &&
+        local_alignment_ok &&
+        cover_alignment_ok &&
+        normalized_input_ok &&
+        selected_variable_ok &&
+        coverage_ok &&
+        global_elementary_factors_ok &&
+        product_ok &&
+        target_ok &&
+        replay_metadata_ok
+
+    return QuillenGlobalPatchAssemblyVerification(
+        cover_certificate_ok,
+        local_certificates_ok,
+        normalized_contributions_ok,
+        local_alignment_ok,
+        cover_alignment_ok,
+        normalized_input_ok,
+        selected_variable_ok,
+        coverage_sum,
+        coverage_ok,
+        global_elementary_factors,
+        global_elementary_factors_ok,
+        product,
+        product_ok,
+        target,
+        target_ok,
+        replay_metadata,
+        replay_metadata_ok,
+        overall_ok,
+    )
+end
+
+function verify_quillen_patch(patch::QuillenGlobalPatchAssembly)::Bool
+    try
+        replay = replay_deterministic_quillen_patch(patch)
+        return replay.overall_ok &&
+               _same_quillen_global_patch_verification(patch.verification, replay)
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function assemble_deterministic_quillen_patch(
+    original_input,
+    selected_variable,
+    local_certificates,
+    normalized_local_contributions,
+    cover::QuillenDenominatorCoverCertificate;
+    target = original_input,
+    ring = nothing,
+    size = nothing,
+)
+    certificates = collect(local_certificates)
+    normalized = collect(normalized_local_contributions)
+    isempty(certificates) &&
+        throw(ArgumentError("deterministic Quillen patch assembly requires at least one local certificate"))
+    length(certificates) == length(normalized) ||
+        throw(ArgumentError("deterministic Quillen patch assembly requires matching local certificate and normalized contribution counts"))
+    verify_quillen_denominator_cover(cover) ||
+        throw(ArgumentError("Quillen denominator cover certificate does not replay"))
+    all(verify_quillen_local_certificate, certificates) ||
+        throw(ArgumentError("Quillen local realization certificate does not replay"))
+    all(verify_quillen_local_contribution_normalization, normalized) ||
+        throw(ArgumentError("Quillen local contribution normalization does not replay"))
+
+    R, n = _quillen_local_input_ring_size(original_input; ring, size)
+    cover.ring == R ||
+        throw(ArgumentError("deterministic Quillen patch assembly requires cover and target rings to match"))
+    selected = _require_substitution_generator(R, selected_variable)
+    target_matrix = _quillen_global_target_matrix(target; ring = R, size = n, label = "target")
+
+    all(certificate -> certificate.ring == R && certificate.size == n, certificates) ||
+        throw(ArgumentError("deterministic Quillen patch assembly requires local certificate rings and sizes to match the target"))
+    all(certificate -> certificate.selected_variable == selected, certificates) ||
+        throw(ArgumentError("deterministic Quillen patch assembly requires local certificate variables to match"))
+    all(certificate -> certificate.original_input == original_input, certificates) ||
+        throw(ArgumentError("deterministic Quillen patch assembly requires local certificate original inputs to match"))
+
+    for idx in eachindex(certificates)
+        _same_quillen_local_certificate_data(normalized[idx].local_certificate, certificates[idx]) ||
+            throw(ArgumentError("deterministic Quillen patch assembly requires normalized contribution local certificates to match input order"))
+        _same_quillen_cover_certificate_data(normalized[idx].cover_certificate, cover) ||
+            throw(ArgumentError("deterministic Quillen patch assembly requires normalized contribution cover certificates to match"))
+        normalized[idx].original_input == original_input ||
+            throw(ArgumentError("deterministic Quillen patch assembly requires normalized contribution original inputs to match"))
+        normalized[idx].selected_variable == selected ||
+            throw(ArgumentError("deterministic Quillen patch assembly requires normalized contribution selected variables to match"))
+    end
+
+    denominator_data = _quillen_denominator_data([
+        item.local_contribution for item in normalized
+    ])
+    coverage_sum = _quillen_coverage_sum(R, denominator_data)
+    coverage_sum == one(R) ||
+        throw(ArgumentError("deterministic Quillen patch assembly denominator coverage must sum to one"))
+
+    factor_type = typeof(identity_matrix(R, n))
+    global_elementary_factors = factor_type[]
+    for item in normalized
+        append!(global_elementary_factors, item.weighted_global_elementary_factors)
+    end
+    patched_product = _quillen_product(R, n, global_elementary_factors)
+    patched_product == target_matrix ||
+        throw(ArgumentError("deterministic Quillen patch assembly product does not equal the target"))
+
+    replay_metadata =
+        _quillen_global_patch_replay_metadata(cover, certificates, normalized)
+    provisional = QuillenGlobalPatchAssembly(
+        R,
+        n,
+        selected,
+        original_input,
+        cover,
+        denominator_data,
+        certificates,
+        normalized,
+        global_elementary_factors,
+        patched_product,
+        target_matrix,
+        replay_metadata,
+        QuillenGlobalPatchAssemblyVerification(
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            zero(R),
+            false,
+            Any[],
+            false,
+            identity_matrix(R, n),
+            false,
+            target_matrix,
+            false,
+            replay_metadata,
+            false,
+            false,
+        ),
+    )
+    verification = replay_deterministic_quillen_patch(provisional)
+    verification.overall_ok ||
+        throw(ArgumentError("deterministic Quillen patch assembly data does not replay"))
+    return QuillenGlobalPatchAssembly(
+        provisional.ring,
+        provisional.size,
+        provisional.substitution_variable,
+        provisional.original_input,
+        provisional.cover_certificate,
+        provisional.denominator_data,
+        provisional.local_certificates,
+        provisional.normalized_local_contributions,
+        provisional.global_elementary_factors,
+        provisional.patched_product,
+        provisional.target,
+        provisional.replay_metadata,
+        verification,
+    )
+end
