@@ -18,6 +18,8 @@ const TEST_GROUP_FILES = Dict(
         "internal/gl_laurent_normalization.jl",
         "internal/toricbuilder_contract.jl",
         "internal/toricbuilder_issue38_fixture.jl",
+        "internal/toricbuilder_cache_q_blocks.jl",
+        "internal/toricbuilder_cache_status_report.jl",
         "internal/toricbuilder_problem_catalog.jl",
         "internal/sl3_murthy_gupta_fixtures.jl",
         "internal/ecp_column_fixtures.jl",
