@@ -14,7 +14,7 @@
 - Do not update the `case_010` report status.
 - Do not claim support for arbitrary Laurent unimodular columns.
 - Do not export new public APIs.
-- Keep the new algorithm in `src/algorithm/column_reduction.jl`.
+- Keep the new algorithm in the existing column-reduction include chain.
 - The new stage must record enough metadata for `verify_ecp_column_reduction` replay to reject tampering.
 - The issue verification command must be `julia --project=. -e 'include("test/expert/case010_laurent_column_reduction.jl")'`.
 - The full verification command must be `julia --project=. -e 'using Pkg; Pkg.test()'`.
@@ -23,7 +23,8 @@
 
 ## File Structure
 
-- Modify `src/algorithm/column_reduction.jl`: add the Laurent one-step unit-creation stage, hook it into Laurent reduction and diagnostics, and add exact replay support for the new stage kind.
+- Create `src/algorithm/column_reduction_case010.jl`: add the Laurent one-step unit-creation stage, hook it into Laurent reduction and diagnostics via more-specific internal methods, and add exact replay support for the new stage kind.
+- Modify `src/Suslin.jl`: include the focused case_010 column-reduction extension immediately after `src/algorithm/column_reduction.jl`.
 - Modify `test/fixtures/toricbuilder_case010_column_boundary.jl`: stop treating the former unsupported reducer error as part of fixture validity, because this issue makes the boundary reducible.
 - Modify `test/internal/toricbuilder_case010_column_boundary.jl`: update the boundary fixture test to assert the diagnostic is now supported by the new stage.
 - Modify `test/expert/laurent_column_reduction_diagnostics.jl`: keep unsupported Laurent diagnostics covered with a separate unsupported column, and assert `case_010` is supported through `:laurent_unit_creation`.
@@ -35,7 +36,8 @@
 ### Task 1: Certified Case 010 Laurent Unit-Creation Reduction
 
 **Files:**
-- Modify: `src/algorithm/column_reduction.jl`
+- Modify: `src/Suslin.jl`
+- Create: `src/algorithm/column_reduction_case010.jl`
 - Modify: `test/fixtures/toricbuilder_case010_column_boundary.jl`
 - Modify: `test/internal/toricbuilder_case010_column_boundary.jl`
 - Modify: `test/expert/laurent_column_reduction_diagnostics.jl`
@@ -131,7 +133,7 @@ Expected: FAIL before implementation. The failure should be the current unsuppor
 
 - [ ] **Step 3: Add the Laurent unit-creation stage implementation**
 
-In `src/algorithm/column_reduction.jl`, insert these helpers after `_witness_unit_reduction_certificate_stage`:
+Create `src/algorithm/column_reduction_case010.jl` with the following helpers and more-specific methods, and include it from `src/Suslin.jl` immediately after `include("algorithm/column_reduction.jl")`:
 
 ```julia
 function _try_laurent_divexact(numerator, denominator)
@@ -147,6 +149,7 @@ end
 
 function _laurent_unit_creation_candidate(column::AbstractVector, R)
     _is_laurent_polynomial_ring(R) || return nothing
+    length(column) == 5 || return nothing
     target_unit = one(R)
 
     for pivot_idx in eachindex(column), source_idx in eachindex(column)
@@ -221,10 +224,10 @@ function _laurent_unit_creation_certificate_stage(
 end
 ```
 
-Then modify `_reduce_laurent_unimodular_column_certificate(column, R)` so the beginning becomes:
+Add this more-specific method for `Vector` Laurent columns:
 
 ```julia
-function _reduce_laurent_unimodular_column_certificate(column::AbstractVector, R)
+function _reduce_laurent_unimodular_column_certificate(column::Vector, R)
     unit_idx = findfirst(is_unit, column)
     unit_idx !== nothing && return _unit_entry_reduction_certificate_stage(column, unit_idx, R)
 
@@ -234,10 +237,10 @@ function _reduce_laurent_unimodular_column_certificate(column::AbstractVector, R
     normalization = normalize_laurent_object(column)
 ```
 
-Modify `_diagnose_laurent_unimodular_column_reduction(column, R, attempted)` so it records and checks the new stage before Laurent normalization:
+Add this more-specific diagnostics method for `Vector` Laurent columns so it records and checks the new stage before Laurent normalization:
 
 ```julia
-function _diagnose_laurent_unimodular_column_reduction(column::AbstractVector, R, attempted::Vector{Symbol})
+function _diagnose_laurent_unimodular_column_reduction(column::Vector, R, attempted::Vector{Symbol})
     push!(attempted, :unit_entry)
     unit_idx = findfirst(is_unit, column)
     unit_idx !== nothing && return (; supported = true, stage = :unit_entry)
@@ -254,10 +257,29 @@ function _diagnose_laurent_unimodular_column_reduction(column::AbstractVector, R
 end
 ```
 
-Finally, add this branch to `_ecp_replay_stage(stage, input_column, R)` after the `:witness_unit` branch and before `:monicity_normalization`:
+Finally, add this more-specific replay method for the new stage named tuple:
 
 ```julia
-    elseif stage.kind == :laurent_unit_creation
+function _ecp_replay_stage(
+    stage::NamedTuple{
+        (
+            :kind,
+            :input_column,
+            :pivot_index,
+            :source_index,
+            :target_unit,
+            :creation_coefficient,
+            :creation_factors,
+            :created_column,
+            :unit_stage,
+            :factors,
+            :output_column,
+        ),
+        T,
+    },
+    input_column,
+    R,
+) where {T}
         invalid_replay = (; ok = false, factors = Any[], output_column = matrix(R, length(input_column), 1, collect(input_column)))
         required_keys = (
             :kind,
@@ -272,6 +294,7 @@ Finally, add this branch to `_ecp_replay_stage(stage, input_column, R)` after th
             :factors,
             :output_column,
         )
+        stage.kind == :laurent_unit_creation || return invalid_replay
         _ecp_stage_keys_ok(stage, required_keys) || return invalid_replay
         _is_laurent_polynomial_ring(R) || return invalid_replay
 
@@ -299,6 +322,7 @@ Finally, add this branch to `_ecp_replay_stage(stage, input_column, R)` after th
             _ecp_factor_sequences_equal(stage.factors, expected_factors) &&
             stage.output_column == expected_output
         return (; ok, factors = expected_factors, output_column = expected_output)
+end
 ```
 
 - [ ] **Step 4: Update the boundary fixture validation**
@@ -439,7 +463,7 @@ Expected: PASS for the package test entry point.
 Run:
 
 ```bash
-git add src/algorithm/column_reduction.jl test/fixtures/toricbuilder_case010_column_boundary.jl test/internal/toricbuilder_case010_column_boundary.jl test/expert/laurent_column_reduction_diagnostics.jl test/expert/case010_laurent_column_reduction.jl test/runtests.jl docs/superpowers/plans/2026-06-25-issue-134-case010-laurent-column-reduction.md
+git add src/Suslin.jl src/algorithm/column_reduction_case010.jl test/fixtures/toricbuilder_case010_column_boundary.jl test/internal/toricbuilder_case010_column_boundary.jl test/expert/laurent_column_reduction_diagnostics.jl test/expert/case010_laurent_column_reduction.jl test/runtests.jl docs/superpowers/plans/2026-06-25-issue-134-case010-laurent-column-reduction.md
 git commit -m "feat: reduce case010 Laurent column"
 ```
 

@@ -52,14 +52,16 @@ more coverage before claiming support.
 
 ## Chosen Design
 
-Add `_reduce_via_laurent_unit_creation_certificate(column, R)` in
-`src/algorithm/column_reduction.jl`, called from
-`_reduce_laurent_unimodular_column_certificate` after the direct unit-entry
-fast path and before Laurent normalization.
+Add `_reduce_via_laurent_unit_creation_certificate(column, R)` in a focused
+column-reduction extension included immediately after
+`src/algorithm/column_reduction.jl`. It specializes the existing Laurent
+certificate and replay hooks after the direct unit-entry fast path and before
+Laurent normalization.
 
 The stage is deliberately narrow:
 
 - It only runs for Laurent polynomial rings.
+- It only runs for length-5 columns, matching the extracted boundary target.
 - It only targets creation of the literal unit `one(R)`.
 - It only accepts exact division from `divexact(one(R) - column[pivot],
   column[source])`.
