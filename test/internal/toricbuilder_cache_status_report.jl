@@ -70,6 +70,22 @@ const TORICBUILDER_CACHE_STATUS_REPORT_PATH =
     @test occursin(r"\| case_006 \| 18x18 \| 99 \| default_contract \| gl_certificate_pass \| staged_boundary \| laurent_monomial_unit \| 212 \| [0-9]+\.[0-9]{3} \|", markdown)
     @test occursin(r"\| case_010 \| 6x6 \| 34 \| default_contract \| gl_certificate_pass \| staged_boundary \| laurent_monomial_unit \| [1-9][0-9]* \| [0-9]+\.[0-9]{3} \|", markdown)
     @test occursin("| case_011 | 288x288 | 14713 | optional_slow | not_exercised_in_default_report | not_run | not_run | not_run | not_run |", markdown)
+    @test hasproperty(by_id["case_001"], :stage_timings)
+    @test by_id["case_001"].stage_timings.determinant_classification.status == :pass
+    @test by_id["case_001"].stage_timings.normalization.status == :pass
+    @test by_id["case_001"].stage_timings.certificate_construction.status == :pass
+    @test by_id["case_001"].stage_timings.verification.status == :pass
+    @test by_id["case_001"].stage_timings.determinant_classification.elapsed_seconds >= 0
+
+    @test hasproperty(by_id["case_007"], :stage_timings)
+    @test by_id["case_007"].stage_timings.determinant_classification.status == :not_run
+    @test by_id["case_007"].stage_timings.normalization.status == :not_run
+    @test by_id["case_007"].stage_timings.certificate_construction.status == :not_run
+    @test by_id["case_007"].stage_timings.verification.status == :not_run
+
+    @test occursin("## Stage Timing Details", markdown)
+    @test occursin("Determinant classification", markdown)
+    @test occursin("Certificate construction", markdown)
     @test !occursin("## Route Error Details", markdown)
     @test !occursin("unsupported exact unimodular column reduction", markdown)
     @test occursin("julia --project=. scripts/report_toricbuilder_cache_q_blocks.jl", markdown)

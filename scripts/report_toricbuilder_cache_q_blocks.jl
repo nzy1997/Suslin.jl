@@ -1,6 +1,7 @@
 module ToricBuilderCacheQBlockStatusReport
 
 using Dates
+using Serialization
 using Oscar
 using Printf
 using Suslin
@@ -29,6 +30,82 @@ end
 
 function _elapsed_seconds(start_ns::UInt64)
     return round((time_ns() - start_ns) / 1.0e9; digits = 3)
+end
+
+const STAGE_NAMES = (
+    :determinant_classification,
+    :normalization,
+    :certificate_construction,
+    :verification,
+)
+
+function _stage_timing(status::Symbol; elapsed_seconds = :not_run, error_details = "none")
+    return (; status, elapsed_seconds, error_details)
+end
+
+function _not_run_stage_timings()
+    return (;
+        determinant_classification = _stage_timing(:not_run; error_details = "not_run"),
+        normalization = _stage_timing(:not_run; error_details = "not_run"),
+        certificate_construction = _stage_timing(:not_run; error_details = "not_run"),
+        verification = _stage_timing(:not_run; error_details = "not_run"),
+    )
+end
+
+function _stage_timings_from_dict(timings::Dict{Symbol, Any})
+    return (;
+        determinant_classification = get(
+            timings,
+            :determinant_classification,
+            _stage_timing(:not_run; error_details = "not_run"),
+        ),
+        normalization = get(timings, :normalization, _stage_timing(:not_run; error_details = "not_run")),
+        certificate_construction = get(
+            timings,
+            :certificate_construction,
+            _stage_timing(:not_run; error_details = "not_run"),
+        ),
+        verification = get(timings, :verification, _stage_timing(:not_run; error_details = "not_run")),
+    )
+end
+
+function _record_stage!(timings::Dict{Symbol, Any}, stage::Symbol, f)
+    start_ns = time_ns()
+    try
+        value = f()
+        timings[stage] = _stage_timing(:pass; elapsed_seconds = _elapsed_seconds(start_ns))
+        return (; status = :pass, value)
+    catch err
+        err isa InterruptException && rethrow()
+        error_details = sprint(showerror, err)
+        status = _staged_argument_error(err) ? :certified_algorithm_boundary : :route_error
+        timings[stage] = _stage_timing(status; elapsed_seconds = _elapsed_seconds(start_ns), error_details)
+        return (; status, error = err, error_details)
+    end
+end
+
+function _stage_timing_text(timing)
+    status = _symbol_text(timing.status)
+    timing.elapsed_seconds isa Number && return string(status, " (", _runtime_text(timing.elapsed_seconds), "s)")
+    return status
+end
+
+function _print_stage_timing_details(io, rows)
+    println(io, "## Stage Timing Details")
+    println(io)
+    println(io, "| Case | Determinant classification | Normalization | Certificate construction | Verification |")
+    println(io, "| --- | --- | --- | --- | --- |")
+    for row in rows
+        timings = row.stage_timings
+        println(
+            io,
+            "| $(row.case_id) | $(_stage_timing_text(timings.determinant_classification)) | " *
+            "$(_stage_timing_text(timings.normalization)) | " *
+            "$(_stage_timing_text(timings.certificate_construction)) | " *
+            "$(_stage_timing_text(timings.verification)) |",
+        )
+    end
+    println(io)
 end
 
 function _parse_timeout_seconds(raw::AbstractString)
@@ -79,19 +156,75 @@ function _pending_row(entry)
         runtime_seconds = :not_run,
         error_details = "not_run",
         evidence = "Fixture recorded; full Suslin route audit not exercised in the default report run.",
+        stage_timings = _not_run_stage_timings(),
+    )
+end
+
+function _stage_failure_row(
+    entry,
+    timings,
+    result,
+    start_ns::UInt64;
+    public_status = :not_run,
+    profile = nothing,
+)
+    determinant_class = profile === nothing ? result.status : profile.classification
+    determinant = profile === nothing ? string(result.status) : string(profile.determinant)
+    return (;
+        case_id = entry.id,
+        matrix_size = entry.dimensions.matrix,
+        sparse_entry_count = entry.sparse_entry_count,
+        expected_test_level = entry.expected_test_level,
+        route_status = result.status,
+        public_elementary_status = public_status,
+        determinant_class,
+        determinant,
+        normalization_status = get(timings, :normalization, _stage_timing(:not_run)).status,
+        gl_certificate_status = get(timings, :certificate_construction, _stage_timing(:not_run)).status,
+        verified = false,
+        factor_count = 0,
+        decomposed_base_matrix_count = 0,
+        runtime_seconds = _elapsed_seconds(start_ns),
+        error_details = result.error_details,
+        evidence = "Bounded certificate route stopped at $(result.status); see Route Error Details.",
+        stage_timings = _stage_timings_from_dict(timings),
     )
 end
 
 function _exercised_row(entry)
     start_ns = time_ns()
     A = ToricBuilderCacheQBlocks.materialize_matrix(entry)
-    profile = classify_laurent_determinant(A)
     public_status = _public_elementary_status(A)
+    stage_timings = Dict{Symbol, Any}()
+
+    profile_result = _record_stage!(stage_timings, :determinant_classification, () -> classify_laurent_determinant(A))
+    profile_result.status == :pass || return _stage_failure_row(entry, stage_timings, profile_result, start_ns)
+    profile = profile_result.value
 
     try
-        normalization = normalize_laurent_gl_matrix(A)
-        certificate = laurent_gl_factorization_certificate(A)
-        verified = verify_laurent_gl_factorization_certificate(certificate)
+        normalization_result =
+            _record_stage!(stage_timings, :normalization, () -> normalize_laurent_gl_matrix(A))
+        normalization_result.status == :pass ||
+            return _stage_failure_row(entry, stage_timings, normalization_result, start_ns; profile = profile)
+        normalization = normalization_result.value
+
+        certificate_result = _record_stage!(
+            stage_timings,
+            :certificate_construction,
+            () -> laurent_gl_factorization_certificate(A),
+        )
+        certificate_result.status == :pass ||
+            return _stage_failure_row(entry, stage_timings, certificate_result, start_ns; profile = profile)
+        certificate = certificate_result.value
+
+        verification_result = _record_stage!(
+            stage_timings,
+            :verification,
+            () -> verify_laurent_gl_factorization_certificate(certificate),
+        )
+        verification_result.status == :pass ||
+            return _stage_failure_row(entry, stage_timings, verification_result, start_ns; profile = profile)
+        verified = verification_result.value
         return (;
             case_id = entry.id,
             matrix_size = entry.dimensions.matrix,
@@ -109,6 +242,7 @@ function _exercised_row(entry)
             runtime_seconds = _elapsed_seconds(start_ns),
             error_details = "none",
             evidence = "normalize_laurent_gl_matrix and laurent_gl_factorization_certificate exercised; normalized determinant is $(det(normalization.normalized_matrix)).",
+            stage_timings = _stage_timings_from_dict(stage_timings),
         )
     catch err
         err isa InterruptException && rethrow()
@@ -130,6 +264,7 @@ function _exercised_row(entry)
             runtime_seconds = _elapsed_seconds(start_ns),
             error_details,
             evidence = "Route probe failed; see Route Error Details.",
+            stage_timings = _stage_timings_from_dict(stage_timings),
         )
     end
 end
@@ -215,6 +350,7 @@ function render_markdown(report)
         println(io, "- `$(row.case_id)`: determinant `$(row.determinant)`, route `$(row.route_status)`, public `$(row.public_elementary_status)`, decomposed base matrices `$(row.decomposed_base_matrix_count)`, verified `$(row.verified)`. $(row.evidence)")
     end
     println(io)
+    _print_stage_timing_details(io, report.rows)
     error_rows = filter(row -> row.error_details != "none" && row.error_details != "not_run", report.rows)
     if !isempty(error_rows)
         println(io, "## Route Error Details")
