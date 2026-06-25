@@ -403,16 +403,25 @@ function _validate_exercised_case_ids!(exercised::Set{String}, catalog)
     return exercised
 end
 
-function _timed_out_row(entry, timeout_seconds, runtime_seconds, progress)
+function _timed_out_row(entry, timeout_seconds, runtime_seconds, progress; cleanup_details = nothing)
     timings = copy(progress.timings)
     current_stage = progress.current_stage
     stage_elapsed =
-        hasproperty(progress, :stage_started_at) ? round(time() - progress.stage_started_at; digits = 3) :
+        hasproperty(progress, :stage_started_at) ? max(round(time() - progress.stage_started_at; digits = 3), 0.0) :
         runtime_seconds
+    stage_error_details = "timed out after $(_runtime_text(timeout_seconds)) seconds"
+    if cleanup_details !== nothing
+        stage_error_details = string(stage_error_details, "; ", cleanup_details)
+    end
+    row_error_details = string(stage_error_details, " while running ", current_stage)
+    evidence = "Bounded worker exceeded the configured process-level budget."
+    if cleanup_details !== nothing
+        evidence = string(evidence, " Cleanup warning: ", cleanup_details)
+    end
     timings[current_stage] = _stage_timing(
         :timed_out;
-        elapsed_seconds = max(stage_elapsed, timeout_seconds),
-        error_details = "timed out after $(_runtime_text(timeout_seconds)) seconds",
+        elapsed_seconds = stage_elapsed,
+        error_details = stage_error_details,
     )
     return (;
         case_id = entry.id,
@@ -433,8 +442,8 @@ function _timed_out_row(entry, timeout_seconds, runtime_seconds, progress)
         factor_count = 0,
         decomposed_base_matrix_count = 0,
         runtime_seconds,
-        error_details = "timed out after $(_runtime_text(timeout_seconds)) seconds while running $(current_stage)",
-        evidence = "Bounded worker exceeded the configured process-level budget.",
+        error_details = row_error_details,
+        evidence,
         stage_timings = _stage_timings_from_dict(timings),
     )
 end
@@ -481,6 +490,12 @@ function _wait_for_exit_after_kill(proc; grace_seconds = 1.0, poll_seconds = 0.0
     return !process_running(proc)
 end
 
+function _deserialize_worker_row(stdout_path)
+    row = open(deserialize, stdout_path)
+    hasproperty(row, :route_status) && hasproperty(row, :stage_timings) && return row
+    throw(ArgumentError("bounded worker produced invalid stdout payload of type $(typeof(row))"))
+end
+
 function _bounded_exercised_row(entry, timeout_seconds::Float64)
     stdout_path = tempname()
     stderr_path = tempname()
@@ -499,9 +514,16 @@ function _bounded_exercised_row(entry, timeout_seconds::Float64)
                     kill(proc)
                 catch
                 end
-                _wait_for_exit_after_kill(proc)
+                exited_after_kill = _wait_for_exit_after_kill(proc)
                 progress = _read_worker_progress(progress_path)
-                return _timed_out_row(entry, timeout_seconds, runtime_seconds, progress)
+                cleanup_details = exited_after_kill ? nothing : "worker did not exit after kill grace period"
+                return _timed_out_row(
+                    entry,
+                    timeout_seconds,
+                    runtime_seconds,
+                    progress;
+                    cleanup_details,
+                )
             end
             sleep(0.05)
         end
@@ -509,7 +531,16 @@ function _bounded_exercised_row(entry, timeout_seconds::Float64)
         wait(proc)
         runtime_seconds = round(time() - start_time; digits = 3)
         if success(proc)
-            return open(deserialize, stdout_path)
+            try
+                return _deserialize_worker_row(stdout_path)
+            catch err
+                err isa InterruptException && rethrow()
+                stderr_text = isfile(stderr_path) ? read(stderr_path, String) : ""
+                deserialize_error = "deserialize failed: $(sprint(showerror, err))"
+                combined_details =
+                    isempty(stderr_text) ? deserialize_error : string(stderr_text, "\n", deserialize_error)
+                return _worker_route_error_row(entry, runtime_seconds, combined_details)
+            end
         end
         stderr_text = isfile(stderr_path) ? read(stderr_path, String) : ""
         return _worker_route_error_row(entry, runtime_seconds, stderr_text)
