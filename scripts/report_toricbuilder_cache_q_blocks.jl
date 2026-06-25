@@ -178,6 +178,7 @@ function _staged_argument_error(err)
     message = sprint(showerror, err)
     return occursin("staged", message) ||
         occursin("unsupported Laurent GL_n determinant", message) ||
+        occursin("unsupported exact unimodular column reduction", message) ||
         occursin("normalization boundary", message)
 end
 
@@ -213,6 +214,14 @@ function _pending_row(entry)
     )
 end
 
+function _stage_failure_stage(timings::Dict{Symbol, Any}, status::Symbol)
+    for stage in STAGE_NAMES
+        timing = get(timings, stage, nothing)
+        timing !== nothing && timing.status == status && return stage
+    end
+    return :unknown_stage
+end
+
 function _stage_failure_row(
     entry,
     timings,
@@ -239,7 +248,7 @@ function _stage_failure_row(
         decomposed_base_matrix_count = 0,
         runtime_seconds = _elapsed_seconds(start_ns),
         error_details = result.error_details,
-        evidence = "Bounded certificate route stopped at $(result.status); see Route Error Details.",
+        evidence = "Bounded certificate route stopped at $(result.status) during $(_stage_failure_stage(timings, result.status)); see Route Error Details.",
         stage_timings = _stage_timings_from_dict(timings),
     )
 end
@@ -381,9 +390,15 @@ function _worker_exercised_row(case_id::AbstractString, progress_path)
     )
 end
 
-function _worker_main(case_id::AbstractString, progress_path)
+function _worker_main(case_id::AbstractString, progress_path, result_path)
     row = _worker_exercised_row(case_id, progress_path)
-    serialize(stdout, row)
+    if result_path === nothing
+        serialize(stdout, row)
+    else
+        open(result_path, "w") do io
+            serialize(io, row)
+        end
+    end
     return nothing
 end
 
@@ -448,9 +463,9 @@ function _timed_out_row(entry, timeout_seconds, runtime_seconds, progress; clean
     )
 end
 
-function _worker_command(entry, progress_path)
+function _worker_command(entry, progress_path, result_path)
     project_path = dirname(Base.active_project())
-    return `$(Base.julia_cmd()) --project=$(project_path) $(abspath(@__FILE__)) --bounded-worker=$(entry.id) --worker-progress=$(progress_path)`
+    return `$(Base.julia_cmd()) --project=$(project_path) $(abspath(@__FILE__)) --bounded-worker=$(entry.id) --worker-progress=$(progress_path) --worker-result=$(result_path)`
 end
 
 function _worker_route_error_row(entry, runtime_seconds, stderr_text)
@@ -500,9 +515,10 @@ function _bounded_exercised_row(entry, timeout_seconds::Float64)
     stdout_path = tempname()
     stderr_path = tempname()
     progress_path = tempname()
+    result_path = tempname()
     start_time = time()
     proc = run(
-        pipeline(_worker_command(entry, progress_path); stdout = stdout_path, stderr = stderr_path),
+        pipeline(_worker_command(entry, progress_path, result_path); stdout = stdout_path, stderr = stderr_path),
         wait = false,
     )
 
@@ -532,7 +548,7 @@ function _bounded_exercised_row(entry, timeout_seconds::Float64)
         runtime_seconds = round(time() - start_time; digits = 3)
         if success(proc)
             try
-                return _deserialize_worker_row(stdout_path)
+                return _deserialize_worker_row(result_path)
             catch err
                 err isa InterruptException && rethrow()
                 stderr_text = isfile(stderr_path) ? read(stderr_path, String) : ""
@@ -545,7 +561,7 @@ function _bounded_exercised_row(entry, timeout_seconds::Float64)
         stderr_text = isfile(stderr_path) ? read(stderr_path, String) : ""
         return _worker_route_error_row(entry, runtime_seconds, stderr_text)
     finally
-        for path in (stdout_path, stderr_path, progress_path, string(progress_path, ".tmp"))
+        for path in (stdout_path, stderr_path, progress_path, string(progress_path, ".tmp"), result_path)
             isfile(path) && rm(path; force = true)
         end
     end
@@ -680,7 +696,8 @@ function main(args = ARGS)
     worker_case = _worker_arg_value(args, "--bounded-worker=")
     if worker_case !== nothing
         progress_path = _worker_arg_value(args, "--worker-progress=")
-        _worker_main(worker_case, progress_path)
+        result_path = _worker_arg_value(args, "--worker-result=")
+        _worker_main(worker_case, progress_path, result_path)
         return nothing
     end
 
