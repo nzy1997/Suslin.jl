@@ -113,6 +113,169 @@ function ecp_column_reduction_certificate(v::AbstractVector, R)
     return _ecp_column_reduction_certificate_validated(column, R)
 end
 
+function diagnose_unimodular_column_reduction(v::AbstractVector, R)
+    ring_profile = _column_reduction_ring_profile(R)
+    column_length = length(v)
+    validation = _diagnose_unimodular_column_preconditions(v, R, ring_profile, column_length)
+    validation.status == :ok || return validation.diagnostic
+    return _diagnose_unimodular_column_reduction_validated(
+        validation.column,
+        R,
+        ring_profile,
+        column_length,
+    )
+end
+
+function _column_reduction_diagnostic(
+    status::Symbol,
+    failure_code,
+    ring_profile,
+    column_length::Int,
+    attempted_stages,
+    message::AbstractString,
+)
+    return (;
+        status,
+        failure_code,
+        ring_profile,
+        column_length,
+        attempted_stages = tuple(attempted_stages...),
+        message = String(message),
+    )
+end
+
+function _column_reduction_ring_profile(R)
+    kind = try
+        _is_laurent_polynomial_ring(R) ? :laurent_polynomial : :polynomial
+    catch err
+        err isa InterruptException && rethrow()
+        :unknown
+    end
+    coefficient_ring = try
+        string(base_ring(R))
+    catch err
+        err isa InterruptException && rethrow()
+        ""
+    end
+    generator_names = try
+        tuple(string.(gens(R))...)
+    catch err
+        err isa InterruptException && rethrow()
+        ()
+    end
+    return (; kind, coefficient_ring, generators = generator_names)
+end
+
+function _diagnose_unimodular_column_preconditions(v::AbstractVector, R, ring_profile, column_length::Int)
+    try
+        Base.require_one_based_indexing(v)
+    catch err
+        err isa InterruptException && rethrow()
+        return (;
+            status = :precondition_failed,
+            diagnostic = _column_reduction_diagnostic(
+                :precondition_failed,
+                :unsupported_indexing,
+                ring_profile,
+                column_length,
+                Symbol[],
+                "v must use one-based indexing",
+            ),
+        )
+    end
+
+    if column_length < 3
+        return (;
+            status = :precondition_failed,
+            diagnostic = _column_reduction_diagnostic(
+                :precondition_failed,
+                :column_too_short,
+                ring_profile,
+                column_length,
+                Symbol[],
+                "v must have length at least 3",
+            ),
+        )
+    end
+
+    column = try
+        [_coerce_into_ring(R, v[idx], "v[$idx]") for idx in 1:column_length]
+    catch err
+        err isa InterruptException && rethrow()
+        return (;
+            status = :precondition_failed,
+            diagnostic = _column_reduction_diagnostic(
+                :precondition_failed,
+                :column_not_over_ring,
+                ring_profile,
+                column_length,
+                Symbol[],
+                _column_reduction_error_message(err),
+            ),
+        )
+    end
+
+    is_unimodular = try
+        is_unimodular_column(column, R)
+    catch err
+        err isa InterruptException && rethrow()
+        return (;
+            status = :precondition_failed,
+            diagnostic = _column_reduction_diagnostic(
+                :precondition_failed,
+                :unimodularity_check_failed,
+                ring_profile,
+                column_length,
+                Symbol[],
+                _column_reduction_error_message(err),
+            ),
+        )
+    end
+
+    is_unimodular || return (;
+        status = :precondition_failed,
+        diagnostic = _column_reduction_diagnostic(
+            :precondition_failed,
+            :not_unimodular,
+            ring_profile,
+            column_length,
+            Symbol[],
+            "v must be a unimodular column",
+        ),
+    )
+    return (; status = :ok, column)
+end
+
+function _diagnose_unimodular_column_reduction_validated(column::AbstractVector, R, ring_profile, column_length::Int)
+    attempted = Symbol[]
+    result = _is_laurent_polynomial_ring(R) ?
+        _diagnose_laurent_unimodular_column_reduction(column, R, attempted) :
+        _diagnose_polynomial_unimodular_column_reduction(column, R, attempted)
+
+    if result.supported
+        return _column_reduction_diagnostic(
+            :supported,
+            nothing,
+            ring_profile,
+            column_length,
+            attempted,
+            "exact unimodular column reduction is supported by $(result.stage)",
+        )
+    end
+
+    failure_code = _is_laurent_polynomial_ring(R) ?
+        :unsupported_laurent_column_family :
+        :unsupported_polynomial_column_family
+    return _column_reduction_diagnostic(
+        :unsupported,
+        failure_code,
+        ring_profile,
+        column_length,
+        attempted,
+        _unsupported_unimodular_column_reduction_message(column, R),
+    )
+end
+
 function _ecp_column_reduction_certificate_validated(column::AbstractVector, R)
     result = _is_laurent_polynomial_ring(R) ?
         _reduce_laurent_unimodular_column_certificate(column, R) :
@@ -2304,6 +2467,72 @@ function _ecp_public_staged_reduction_certificate(
     )
 end
 
+function _diagnose_laurent_unimodular_column_reduction(column::AbstractVector, R, attempted::Vector{Symbol})
+    push!(attempted, :unit_entry)
+    unit_idx = findfirst(is_unit, column)
+    unit_idx !== nothing && return (; supported = true, stage = :unit_entry)
+
+    push!(attempted, :laurent_normalization)
+    normalization = normalize_laurent_object(column)
+    poly_column = normalization.normalized_object
+    P = normalization.metadata.polynomial_ring
+    return _diagnose_polynomial_unimodular_column_reduction(poly_column, P, attempted)
+end
+
+function _diagnose_polynomial_unimodular_column_reduction(column::AbstractVector, R, attempted::Vector{Symbol})
+    small = _diagnose_exact_small_column_reduction(column, R, attempted)
+    small.supported && return small
+
+    if length(column) > 3
+        push!(attempted, :three_entry_block)
+        block = _reduce_via_supported_three_block_certificate(column, R)
+        block !== nothing && return (; supported = true, stage = :three_entry_block)
+    end
+
+    return (; supported = false, stage = nothing)
+end
+
+function _diagnose_exact_small_column_reduction(column::AbstractVector, R, attempted::Vector{Symbol})
+    supported = _diagnose_supported_unimodular_column_reduction(column, R, attempted)
+    supported.supported && return supported
+
+    if _has_at_least_two_generators(R)
+        push!(attempted, :monicity_normalization)
+        normalized = try
+            _reduce_after_monicity_normalization_certificate(column, R)
+        catch err
+            err isa InterruptException && rethrow()
+            nothing
+        end
+        normalized !== nothing && return (; supported = true, stage = :monicity_normalization)
+    end
+
+    return (; supported = false, stage = nothing)
+end
+
+function _diagnose_supported_unimodular_column_reduction(column::AbstractVector, R, attempted::Vector{Symbol})
+    push!(attempted, :unit_entry)
+    unit_idx = findfirst(is_unit, column)
+    unit_idx !== nothing && return (; supported = true, stage = :unit_entry)
+
+    push!(attempted, :witness_unit)
+    witness = try
+        _unimodular_witness(column, R)
+    catch err
+        err isa InterruptException && rethrow()
+        nothing
+    end
+    witness === nothing && return (; supported = false, stage = nothing)
+    witness_unit_idx = findfirst(is_unit, witness)
+    witness_unit_idx !== nothing && return (; supported = true, stage = :witness_unit)
+
+    return (; supported = false, stage = nothing)
+end
+
+function _column_reduction_error_message(err)
+    return sprint(showerror, err)
+end
+
 function _ecp_first_monic_entry_index(column, R)
     return _ecp_first_monic_entry_index(column, R, ngens(R))
 end
@@ -2390,8 +2619,12 @@ function _unit_normalization_factors(n::Int, u, uinv, R)
     return factors
 end
 
-function _throw_unsupported_unimodular_column_reduction(column::AbstractVector, R)
-    n = length(column)
+function _unsupported_unimodular_column_reduction_message(column::AbstractVector, R)
     profile = _is_laurent_polynomial_ring(R) ? "Laurent-normalized" : "ordinary polynomial"
-    throw(ArgumentError("unsupported exact unimodular column reduction for $(profile) column of length $(n): no supported unit, witness-unit, monicity-normalized, or 3-entry block reduction stage applies"))
+    n = length(column)
+    return "unsupported exact unimodular column reduction for $(profile) column of length $(n): no supported unit, witness-unit, monicity-normalized, or 3-entry block reduction stage applies"
+end
+
+function _throw_unsupported_unimodular_column_reduction(column::AbstractVector, R)
+    throw(ArgumentError(_unsupported_unimodular_column_reduction_message(column, R)))
 end
