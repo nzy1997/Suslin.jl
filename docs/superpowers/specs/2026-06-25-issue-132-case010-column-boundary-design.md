@@ -32,7 +32,7 @@ The fixture module will expose:
   `expected_diagnostic`.
 - `validate_boundary_fixture(fixture)`: returns `:ok` only when the fixture is
   the expected `case_010` boundary, and returns `:not_unimodular` before
-  accepting a perturbed non-unimodular column.
+  accepting a non-unimodular column.
 
 Validation will check that the failing column has length `5`, lives over a
 Laurent ring with variables `u` and `v`, is unimodular, and still makes
@@ -55,8 +55,10 @@ The internal test will include the fixture module and assert:
 - the failing peel dimension is `5`;
 - the failing column is over `GF(2)[u^+/-1, v^+/-1]`;
 - `validate_boundary_fixture(boundary_fixture()) == :ok`;
-- perturbing one failing-column entry makes the validator return
-  `:not_unimodular`.
+- multiplying the extracted failing column by the nonunit `v + 1` makes the
+  validator return `:not_unimodular`;
+- zeroing any single extracted entry is recorded as still unimodular, so the
+  issue's requested one-entry negative control is not used as false evidence.
 
 The verification command for the issue is:
 
