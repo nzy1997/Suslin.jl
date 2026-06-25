@@ -214,6 +214,14 @@ function _pending_row(entry)
     )
 end
 
+function _stage_failure_stage(timings::Dict{Symbol, Any}, status::Symbol)
+    for stage in STAGE_NAMES
+        timing = get(timings, stage, nothing)
+        timing !== nothing && timing.status == status && return stage
+    end
+    return :unknown_stage
+end
+
 function _stage_failure_row(
     entry,
     timings,
@@ -240,7 +248,7 @@ function _stage_failure_row(
         decomposed_base_matrix_count = 0,
         runtime_seconds = _elapsed_seconds(start_ns),
         error_details = result.error_details,
-        evidence = "Bounded certificate route stopped at $(result.status); see Route Error Details.",
+        evidence = "Bounded certificate route stopped at $(result.status) during $(_stage_failure_stage(timings, result.status)); see Route Error Details.",
         stage_timings = _stage_timings_from_dict(timings),
     )
 end

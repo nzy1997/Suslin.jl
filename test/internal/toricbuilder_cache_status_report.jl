@@ -482,6 +482,7 @@ end
         @test boundary_row.route_status == :certified_algorithm_boundary
         @test boundary_row.stage_timings.determinant_classification.status ==
               :certified_algorithm_boundary
+        @test occursin("determinant_classification", boundary_row.evidence)
 
         exact_boundary_timings = Dict{Symbol, Any}()
         exact_boundary_result = ToricBuilderCacheQBlockStatusReport._record_stage!(
