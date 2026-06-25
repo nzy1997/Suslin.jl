@@ -31,7 +31,7 @@ const FORCE_WAIT_FOR_EXIT_FAILURE = Ref(false)
     @eval ToricBuilderCacheQBlockStatusReport begin
         const _TEST_FORCE_WAIT_FOR_EXIT_FAILURE = Main.FORCE_WAIT_FOR_EXIT_FAILURE
 
-        function _worker_command(entry::Main.FakeBoundedEntry, progress_path)
+        function _worker_command(entry::Main.FakeBoundedEntry, progress_path, result_path = nothing)
             project_path = dirname(Base.active_project())
             script = if entry.mode == :invalid_stdout
                 """
@@ -47,6 +47,15 @@ const FORCE_WAIT_FOR_EXIT_FAILURE = Ref(false)
                 sleep(10)
                 """
             elseif entry.mode == :serialized_success
+                result_writer = result_path === nothing ?
+                    """
+                    serialize(stdout, row)
+                    """ :
+                    """
+                    open($(repr(result_path)), "w") do io
+                        serialize(io, row)
+                    end
+                    """
                 """
                 using Serialization
                 row = (
@@ -73,7 +82,46 @@ const FORCE_WAIT_FOR_EXIT_FAILURE = Ref(false)
                         verification = (status = :pass, elapsed_seconds = 0.004, error_details = "none"),
                     ),
                 )
-                serialize(stdout, row)
+                $result_writer
+                """
+            elseif entry.mode == :noisy_serialized_success
+                result_writer = result_path === nothing ?
+                    """
+                    serialize(stdout, row)
+                    """ :
+                    """
+                    open($(repr(result_path)), "w") do io
+                        serialize(io, row)
+                    end
+                    """
+                """
+                using Serialization
+                write(stdout, "diagnostic stdout before serialized worker row")
+                row = (
+                    case_id = $(repr(entry.id)),
+                    matrix_size = (5, 5),
+                    sparse_entry_count = 25,
+                    expected_test_level = :default_contract,
+                    route_status = :gl_certificate_pass,
+                    public_elementary_status = :not_run,
+                    determinant_class = :laurent_monomial_unit,
+                    determinant = "1",
+                    normalization_status = :pass,
+                    gl_certificate_status = :pass,
+                    verified = true,
+                    factor_count = 3,
+                    decomposed_base_matrix_count = 3,
+                    runtime_seconds = 0.01,
+                    error_details = "none",
+                    evidence = "fake noisy bounded worker success",
+                    stage_timings = (
+                        determinant_classification = (status = :pass, elapsed_seconds = 0.001, error_details = "none"),
+                        normalization = (status = :pass, elapsed_seconds = 0.002, error_details = "none"),
+                        certificate_construction = (status = :pass, elapsed_seconds = 0.003, error_details = "none"),
+                        verification = (status = :pass, elapsed_seconds = 0.004, error_details = "none"),
+                    ),
+                )
+                $result_writer
                 """
             else
                 error("unsupported fake bounded worker mode $(entry.mode)")
@@ -333,6 +381,14 @@ const FORCE_WAIT_FOR_EXIT_FAILURE = Ref(false)
         @test bounded_worker_row.case_id == "case_success"
         @test bounded_worker_row.route_status == :gl_certificate_pass
         @test bounded_worker_row.error_details == "none"
+
+        noisy_worker_row = ToricBuilderCacheQBlockStatusReport._bounded_exercised_row(
+            FakeBoundedEntry("case_noisy_success"; mode = :noisy_serialized_success),
+            5.0,
+        )
+        @test noisy_worker_row.case_id == "case_noisy_success"
+        @test noisy_worker_row.route_status == :gl_certificate_pass
+        @test noisy_worker_row.error_details == "none"
     end
 
     @testset "_record_stage! failure paths" begin
@@ -360,6 +416,16 @@ const FORCE_WAIT_FOR_EXIT_FAILURE = Ref(false)
         @test boundary_row.route_status == :certified_algorithm_boundary
         @test boundary_row.stage_timings.determinant_classification.status ==
               :certified_algorithm_boundary
+
+        exact_boundary_timings = Dict{Symbol, Any}()
+        exact_boundary_result = ToricBuilderCacheQBlockStatusReport._record_stage!(
+            exact_boundary_timings,
+            :certificate_construction,
+            () -> throw(ArgumentError(
+                "unsupported exact unimodular column reduction for Laurent-normalized column of length 21: no supported unit, witness-unit, monicity-normalized, or 3-entry block reduction stage applies",
+            )),
+        )
+        @test exact_boundary_result.status == :certified_algorithm_boundary
 
         start_ns = time_ns()
         route_timings = Dict{Symbol, Any}()
