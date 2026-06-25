@@ -1086,6 +1086,9 @@ function _reduce_laurent_unimodular_column_certificate(column::AbstractVector, R
     unit_idx = findfirst(is_unit, column)
     unit_idx !== nothing && return _unit_entry_reduction_certificate_stage(column, unit_idx, R)
 
+    unit_creation = _reduce_via_laurent_unit_creation_certificate(column, R)
+    unit_creation !== nothing && return unit_creation
+
     normalization = normalize_laurent_object(column)
     poly_column = normalization.normalized_object
     P = normalization.metadata.polynomial_ring
@@ -2471,6 +2474,10 @@ function _diagnose_laurent_unimodular_column_reduction(column::AbstractVector, R
     push!(attempted, :unit_entry)
     unit_idx = findfirst(is_unit, column)
     unit_idx !== nothing && return (; supported = true, stage = :unit_entry)
+
+    push!(attempted, :laurent_unit_creation)
+    unit_creation = _reduce_via_laurent_unit_creation_certificate(column, R)
+    unit_creation !== nothing && return (; supported = true, stage = :laurent_unit_creation)
 
     push!(attempted, :laurent_normalization)
     normalization = normalize_laurent_object(column)

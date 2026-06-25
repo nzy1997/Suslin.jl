@@ -9,7 +9,7 @@ function _try_laurent_divexact(numerator, denominator)
     end
 end
 
-function _laurent_unit_creation_candidate(column::Vector, R)
+function _laurent_unit_creation_candidate(column::AbstractVector, R)
     _is_laurent_polynomial_ring(R) || return nothing
     length(column) == 5 || return nothing
     target_unit = one(R)
@@ -35,7 +35,7 @@ function _laurent_unit_creation_factors(n::Int, pivot_idx::Int, source_idx::Int,
     return [elementary_matrix(n, pivot_idx, source_idx, coeff, R)]
 end
 
-function _reduce_via_laurent_unit_creation_certificate(column::Vector, R)
+function _reduce_via_laurent_unit_creation_certificate(column::AbstractVector, R)
     candidate = _laurent_unit_creation_candidate(column, R)
     candidate === nothing && return nothing
     return _laurent_unit_creation_certificate_stage(
@@ -49,7 +49,7 @@ function _reduce_via_laurent_unit_creation_certificate(column::Vector, R)
 end
 
 function _laurent_unit_creation_certificate_stage(
-    column::Vector,
+    column::AbstractVector,
     R,
     pivot_idx::Int,
     source_idx::Int,
@@ -80,48 +80,6 @@ function _laurent_unit_creation_certificate_stage(
         creation_factors,
         created_column = tuple(created_column...),
         unit_stage,
-        factors,
-        output_column = _apply_reduction_factors(factors, column, R),
-    )
-    return (; factors, stage)
-end
-
-function _reduce_laurent_unimodular_column_certificate(column::Vector, R)
-    unit_idx = findfirst(is_unit, column)
-    unit_idx !== nothing && return _unit_entry_reduction_certificate_stage(column, unit_idx, R)
-
-    unit_creation = _reduce_via_laurent_unit_creation_certificate(column, R)
-    unit_creation !== nothing && return unit_creation
-
-    normalization = normalize_laurent_object(column)
-    poly_column = normalization.normalized_object
-    P = normalization.metadata.polynomial_ring
-    is_unimodular_column(poly_column, P) || return nothing
-
-    poly_result = _reduce_polynomial_unimodular_column_exact_certificate(poly_column, P)
-    poly_result === nothing && return nothing
-
-    polynomial_certificate = _ecp_certificate_from_stage(poly_column, P, poly_result.stage)
-    lifted_factors = [_lift_polynomial_reduction_factor(factor, R) for factor in polynomial_certificate.factors]
-    shift = only(normalization.metadata.shift_monomials)
-    inverse_shift = only(normalization.metadata.inverse_shift_monomials)
-    normalization_factors = _unit_normalization_factors(length(column), inverse_shift, shift, R)
-    factors = _checked_reduction_factors(
-        vcat(normalization_factors, lifted_factors),
-        column,
-        R,
-        "Laurent normalization reduction",
-    )
-    stage = (;
-        kind = :laurent_normalization,
-        input_column = _ecp_column_tuple(column),
-        normalization,
-        normalized_column = _ecp_column_tuple(poly_column),
-        polynomial_certificate,
-        lifted_factors,
-        shift,
-        inverse_shift,
-        normalization_factors,
         factors,
         output_column = _apply_reduction_factors(factors, column, R),
     )
@@ -176,20 +134,4 @@ function _ecp_replay_stage(
         _ecp_factor_sequences_equal(stage.factors, expected_factors) &&
         stage.output_column == expected_output
     return (; ok, factors = expected_factors, output_column = expected_output)
-end
-
-function _diagnose_laurent_unimodular_column_reduction(column::Vector, R, attempted::Vector{Symbol})
-    push!(attempted, :unit_entry)
-    unit_idx = findfirst(is_unit, column)
-    unit_idx !== nothing && return (; supported = true, stage = :unit_entry)
-
-    push!(attempted, :laurent_unit_creation)
-    unit_creation = _reduce_via_laurent_unit_creation_certificate(column, R)
-    unit_creation !== nothing && return (; supported = true, stage = :laurent_unit_creation)
-
-    push!(attempted, :laurent_normalization)
-    normalization = normalize_laurent_object(column)
-    poly_column = normalization.normalized_object
-    P = normalization.metadata.polynomial_ring
-    return _diagnose_polynomial_unimodular_column_reduction(poly_column, P, attempted)
 end
