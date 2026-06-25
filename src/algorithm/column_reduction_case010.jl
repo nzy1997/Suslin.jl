@@ -9,10 +9,20 @@ function _try_laurent_divexact(numerator, denominator)
     end
 end
 
+function _preferred_laurent_unit_creation_candidate(left, right)
+    left === nothing && return right
+    # Prefer lower rows so the recursive column-peel keeps the exposed case_010
+    # trailing blocks in the existing supported Laurent families.
+    right.pivot_index > left.pivot_index && return right
+    right.pivot_index == left.pivot_index && right.source_index < left.source_index && return right
+    return left
+end
+
 function _laurent_unit_creation_candidate(column::AbstractVector, R)
     _is_laurent_polynomial_ring(R) || return nothing
-    length(column) == 5 || return nothing
+    length(column) in (4, 5) || return nothing
     target_unit = one(R)
+    candidate = nothing
 
     for pivot_idx in eachindex(column), source_idx in eachindex(column)
         pivot_idx == source_idx && continue
@@ -20,15 +30,15 @@ function _laurent_unit_creation_candidate(column::AbstractVector, R)
         coeff === nothing && continue
         coeff == zero(R) && continue
         column[pivot_idx] + coeff * column[source_idx] == target_unit || continue
-        return (;
+        candidate = _preferred_laurent_unit_creation_candidate(candidate, (;
             pivot_index = pivot_idx,
             source_index = source_idx,
             target_unit,
             creation_coefficient = coeff,
-        )
+        ))
     end
 
-    return nothing
+    return candidate
 end
 
 function _laurent_unit_creation_factors(n::Int, pivot_idx::Int, source_idx::Int, coeff, R)
