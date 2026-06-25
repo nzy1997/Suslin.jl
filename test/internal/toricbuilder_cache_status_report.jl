@@ -89,7 +89,6 @@ const TORICBUILDER_CACHE_STATUS_REPORT_PATH =
     @test !occursin("## Route Error Details", markdown)
     @test !occursin("unsupported exact unimodular column reduction", markdown)
     @test occursin("julia --project=. scripts/report_toricbuilder_cache_q_blocks.jl", markdown)
-    @test isfile(TORICBUILDER_CACHE_STATUS_REPORT_PATH)
 
     parsed_timeout = ToricBuilderCacheQBlockStatusReport._parse_args([
         "--exercise=case_007",
@@ -115,5 +114,49 @@ const TORICBUILDER_CACHE_STATUS_REPORT_PATH =
         "--exercise=case_999",
         "--output=$(unknown_output)",
     ])
+    @testset "_record_stage! failure paths" begin
+        entry = (;
+            id = "case_failure",
+            dimensions = (; matrix = (3, 3)),
+            sparse_entry_count = 9,
+            expected_test_level = :default_contract,
+        )
+
+        start_ns = time_ns()
+        boundary_timings = Dict{Symbol, Any}()
+        boundary_result = ToricBuilderCacheQBlockStatusReport._record_stage!(
+            boundary_timings,
+            :determinant_classification,
+            () -> throw(ArgumentError("unsupported Laurent GL_n determinant test boundary")),
+        )
+        @test boundary_result.status == :certified_algorithm_boundary
+        boundary_row = ToricBuilderCacheQBlockStatusReport._stage_failure_row(
+            entry,
+            boundary_timings,
+            boundary_result,
+            start_ns,
+        )
+        @test boundary_row.route_status == :certified_algorithm_boundary
+        @test boundary_row.stage_timings.determinant_classification.status ==
+              :certified_algorithm_boundary
+
+        start_ns = time_ns()
+        route_timings = Dict{Symbol, Any}()
+        route_result = ToricBuilderCacheQBlockStatusReport._record_stage!(
+            route_timings,
+            :determinant_classification,
+            () -> throw(ErrorException("unexpected qblock test failure")),
+        )
+        @test route_result.status == :route_error
+        route_row = ToricBuilderCacheQBlockStatusReport._stage_failure_row(
+            entry,
+            route_timings,
+            route_result,
+            start_ns,
+        )
+        @test route_row.route_status == :route_error
+        @test route_row.stage_timings.determinant_classification.status == :route_error
+    end
     @test !isfile(unknown_output)
+    @test isfile(TORICBUILDER_CACHE_STATUS_REPORT_PATH)
 end
