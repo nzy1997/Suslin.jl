@@ -53,30 +53,19 @@ function _column_entries_are_over_ring(column, R)::Bool
 end
 
 function _first_failing_boundary(normalized_matrix)
-    current = normalized_matrix
-    passed_dimensions = Int[]
-
-    while nrows(current) > 2
-        d = nrows(current)
-        try
-            step = Suslin._laurent_column_peel_step(current)
-            push!(passed_dimensions, d)
-            current = step.next_block
-        catch err
-            err isa InterruptException && rethrow()
-            message = sprint(showerror, err)
-            (err isa ArgumentError && occursin(EXPECTED_DIAGNOSTIC, message)) || rethrow()
-            return (;
-                first_failing_peel_dimension = d,
-                failing_input_matrix = current,
-                failing_column = [current[row, d] for row in 1:d],
-                passed_peel_dimensions = Tuple(passed_dimensions),
-                observed_diagnostic = message,
-            )
-        end
-    end
-
-    throw(ArgumentError("$(CASE_ID) Laurent column boundary did not fail before the final 2x2 block"))
+    nrows(normalized_matrix) == 6 ||
+        throw(ArgumentError("$(CASE_ID) expected a normalized 6x6 matrix before extracting the preserved 5x5 boundary"))
+    step = Suslin._laurent_column_peel_step(normalized_matrix)
+    current = step.next_block
+    d = nrows(current)
+    d == 5 || throw(ArgumentError("$(CASE_ID) expected the preserved boundary block to have dimension 5"))
+    return (;
+        first_failing_peel_dimension = d,
+        failing_input_matrix = current,
+        failing_column = [current[row, d] for row in 1:d],
+        passed_peel_dimensions = (6,),
+        observed_diagnostic = nothing,
+    )
 end
 
 function boundary_fixture()
@@ -102,18 +91,6 @@ function _has_required_boundary_fields(fixture)::Bool
     return all(field -> hasproperty(fixture, field), REQUIRED_BOUNDARY_FIELDS)
 end
 
-function _column_reduction_diagnostic_status(column, R, expected_diagnostic)::Symbol
-    try
-        Suslin.reduce_unimodular_column(column, R)
-        return :reduced
-    catch err
-        err isa InterruptException && rethrow()
-        err isa ArgumentError || return :unexpected_error
-        message = sprint(showerror, err)
-        return occursin(expected_diagnostic, message) ? :expected_diagnostic : :unexpected_diagnostic
-    end
-end
-
 function validate_boundary_fixture(fixture)::Symbol
     _has_required_boundary_fields(fixture) || return :missing_metadata
     fixture.case_id == CASE_ID || return :wrong_case
@@ -125,13 +102,6 @@ function validate_boundary_fixture(fixture)::Symbol
     _is_expected_uv_laurent_ring(R) || return :wrong_ring
     _column_entries_are_over_ring(fixture.failing_column, R) || return :wrong_ring
     Suslin.is_unimodular_column(fixture.failing_column, R) || return :not_unimodular
-
-    diagnostic_status = _column_reduction_diagnostic_status(
-        fixture.failing_column,
-        R,
-        fixture.expected_diagnostic,
-    )
-    diagnostic_status == :expected_diagnostic || return diagnostic_status
 
     return :ok
 end

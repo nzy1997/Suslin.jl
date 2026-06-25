@@ -22,14 +22,12 @@ const TORICBUILDER_CASE010_COLUMN_BOUNDARY_PATH =
     @test Suslin.is_unimodular_column(fixture.failing_column, fixture.ring)
     @test ToricBuilderCase010ColumnBoundary.validate_boundary_fixture(fixture) == :ok
 
-    err = try
-        Suslin.reduce_unimodular_column(fixture.failing_column, fixture.ring)
-        nothing
-    catch caught
-        caught
-    end
-    @test err isa ArgumentError
-    @test occursin(fixture.expected_diagnostic, sprint(showerror, err))
+    diagnostic = Suslin.diagnose_unimodular_column_reduction(
+        fixture.failing_column,
+        fixture.ring,
+    )
+    @test diagnostic.status == :supported
+    @test :laurent_unit_creation in diagnostic.attempted_stages
 
     negative = ToricBuilderCase010ColumnBoundary.non_unimodular_negative_control(fixture)
     @test !Suslin.is_unimodular_column(negative.failing_column, negative.ring)
