@@ -5,10 +5,93 @@ const TORICBUILDER_CACHE_STATUS_REPORT_SCRIPT =
 const TORICBUILDER_CACHE_STATUS_REPORT_PATH =
     joinpath(@__DIR__, "..", "..", "docs", "audits", "2026-06-24-toricbuilder-cache-q-block-status.md")
 
+struct FakeBoundedEntry
+    id::String
+    dimensions::NamedTuple{(:matrix,), Tuple{Tuple{Int, Int}}}
+    sparse_entry_count::Int
+    expected_test_level::Symbol
+    mode::Symbol
+end
+
+FakeBoundedEntry(id::AbstractString; matrix = (5, 5), sparse_entry_count = 25, mode::Symbol) =
+    FakeBoundedEntry(
+        String(id),
+        (; matrix),
+        sparse_entry_count,
+        :default_contract,
+        mode,
+    )
+
+const FORCE_WAIT_FOR_EXIT_FAILURE = Ref(false)
+
 @testset "ToricBuilder cache Q-block status report" begin
     @test isfile(TORICBUILDER_CACHE_STATUS_REPORT_SCRIPT)
 
     include(TORICBUILDER_CACHE_STATUS_REPORT_SCRIPT)
+    @eval ToricBuilderCacheQBlockStatusReport begin
+        const _TEST_FORCE_WAIT_FOR_EXIT_FAILURE = Main.FORCE_WAIT_FOR_EXIT_FAILURE
+
+        function _worker_command(entry::Main.FakeBoundedEntry, progress_path)
+            project_path = dirname(Base.active_project())
+            script = if entry.mode == :invalid_stdout
+                """
+                write(stderr, "fake worker stderr")
+                write(stdout, "not a serialized row")
+                """
+            elseif entry.mode == :slow_timeout
+                """
+                open($(repr(progress_path)), "w") do io
+                    println(io, "current_stage=normalization")
+                    println(io, "stage_started_at=", time())
+                end
+                sleep(10)
+                """
+            elseif entry.mode == :serialized_success
+                """
+                using Serialization
+                row = (
+                    case_id = $(repr(entry.id)),
+                    matrix_size = (5, 5),
+                    sparse_entry_count = 25,
+                    expected_test_level = :default_contract,
+                    route_status = :gl_certificate_pass,
+                    public_elementary_status = :not_run,
+                    determinant_class = :laurent_monomial_unit,
+                    determinant = "1",
+                    normalization_status = :pass,
+                    gl_certificate_status = :pass,
+                    verified = true,
+                    factor_count = 3,
+                    decomposed_base_matrix_count = 3,
+                    runtime_seconds = 0.01,
+                    error_details = "none",
+                    evidence = "fake bounded worker success",
+                    stage_timings = (
+                        determinant_classification = (status = :pass, elapsed_seconds = 0.001, error_details = "none"),
+                        normalization = (status = :pass, elapsed_seconds = 0.002, error_details = "none"),
+                        certificate_construction = (status = :pass, elapsed_seconds = 0.003, error_details = "none"),
+                        verification = (status = :pass, elapsed_seconds = 0.004, error_details = "none"),
+                    ),
+                )
+                serialize(stdout, row)
+                """
+            else
+                error("unsupported fake bounded worker mode $(entry.mode)")
+            end
+            return `$(Base.julia_cmd()) --project=$(project_path) -e $(script)`
+        end
+
+        function _wait_for_exit_after_kill(proc::Base.Process; grace_seconds = 1.0, poll_seconds = 0.05)
+            exited = invoke(
+                _wait_for_exit_after_kill,
+                Tuple{Any},
+                proc;
+                grace_seconds = grace_seconds,
+                poll_seconds = poll_seconds,
+            )
+            return _TEST_FORCE_WAIT_FOR_EXIT_FAILURE[] ? false : exited
+        end
+    end
     report = ToricBuilderCacheQBlockStatusReport.build_report()
 
     @test length(report.rows) == 12
@@ -70,8 +153,231 @@ const TORICBUILDER_CACHE_STATUS_REPORT_PATH =
     @test occursin(r"\| case_006 \| 18x18 \| 99 \| default_contract \| gl_certificate_pass \| staged_boundary \| laurent_monomial_unit \| 212 \| [0-9]+\.[0-9]{3} \|", markdown)
     @test occursin(r"\| case_010 \| 6x6 \| 34 \| default_contract \| gl_certificate_pass \| staged_boundary \| laurent_monomial_unit \| [1-9][0-9]* \| [0-9]+\.[0-9]{3} \|", markdown)
     @test occursin("| case_011 | 288x288 | 14713 | optional_slow | not_exercised_in_default_report | not_run | not_run | not_run | not_run |", markdown)
+    @test hasproperty(by_id["case_001"], :stage_timings)
+    @test by_id["case_001"].stage_timings.determinant_classification.status == :pass
+    @test by_id["case_001"].stage_timings.normalization.status == :pass
+    @test by_id["case_001"].stage_timings.certificate_construction.status == :pass
+    @test by_id["case_001"].stage_timings.verification.status == :pass
+    @test by_id["case_001"].stage_timings.determinant_classification.elapsed_seconds >= 0
+
+    @test hasproperty(by_id["case_007"], :stage_timings)
+    @test by_id["case_007"].stage_timings.determinant_classification.status == :not_run
+    @test by_id["case_007"].stage_timings.normalization.status == :not_run
+    @test by_id["case_007"].stage_timings.certificate_construction.status == :not_run
+    @test by_id["case_007"].stage_timings.verification.status == :not_run
+
+    @test occursin("## Stage Timing Details", markdown)
+    @test occursin("Determinant classification", markdown)
+    @test occursin("Certificate construction", markdown)
     @test !occursin("## Route Error Details", markdown)
     @test !occursin("unsupported exact unimodular column reduction", markdown)
     @test occursin("julia --project=. scripts/report_toricbuilder_cache_q_blocks.jl", markdown)
+
+    parsed_timeout = ToricBuilderCacheQBlockStatusReport._parse_args([
+        "--exercise=case_007",
+        "--timeout-seconds=1.5",
+        "--output=/tmp/qblock-timeout.md",
+    ])
+    @test parsed_timeout.exercised == ["case_007"]
+    @test parsed_timeout.timeout_seconds == 1.5
+
+    @test_throws ArgumentError ToricBuilderCacheQBlockStatusReport._parse_args([
+        "--timeout-seconds=0",
+    ])
+    @test_throws ArgumentError ToricBuilderCacheQBlockStatusReport._parse_args([
+        "--timeout-seconds=not-a-number",
+    ])
+
+    @test_throws ArgumentError ToricBuilderCacheQBlockStatusReport.build_report(;
+        exercised_case_ids = ("case_999",),
+    )
+
+    unknown_output = tempname()
+    @test_throws ArgumentError ToricBuilderCacheQBlockStatusReport.main([
+        "--exercise=case_999",
+        "--output=$(unknown_output)",
+    ])
+
+    timeout_report = ToricBuilderCacheQBlockStatusReport.build_report(;
+        exercised_case_ids = ("case_007",),
+        timeout_seconds = 1.0,
+    )
+    timeout_by_id = Dict(row.case_id => row for row in timeout_report.rows)
+    @test timeout_by_id["case_007"].route_status == :timed_out
+    @test timeout_by_id["case_007"].runtime_seconds >= 1.0
+    @test timeout_by_id["case_007"].runtime_seconds < 20.0
+    timeout_stage_statuses = [
+        getproperty(timeout_by_id["case_007"].stage_timings, stage).status for
+        stage in ToricBuilderCacheQBlockStatusReport.STAGE_NAMES
+    ]
+    @test :timed_out in timeout_stage_statuses
+    @test !all(==(:not_run), timeout_stage_statuses)
+    @test timeout_by_id["case_008"].route_status == :not_exercised_in_default_report
+
+    timeout_output = tempname()
+    timeout_path = ToricBuilderCacheQBlockStatusReport.main([
+        "--exercise=case_007",
+        "--timeout-seconds=1",
+        "--output=$(timeout_output)",
+    ])
+    @test timeout_path == timeout_output
+    timeout_markdown = read(timeout_output, String)
+    @test occursin("| case_007 | 42x42 | 546 | default_contract | timed_out |", timeout_markdown)
+    @test occursin("## Stage Timing Details", timeout_markdown)
+    rm(timeout_output; force = true)
+
+    @testset "bounded worker helpers" begin
+        worker = run(`$(Base.julia_cmd()) --startup-file=no -e "exit()"`; wait = false)
+        wait(worker)
+        start_time = time()
+        exited = ToricBuilderCacheQBlockStatusReport._wait_for_exit_after_kill(
+            worker;
+            grace_seconds = 0.5,
+            poll_seconds = 0.01,
+        )
+        @test exited
+        @test !process_running(worker)
+        @test time() - start_time < 1.0
+
+        entry = (;
+            id = "case_route_error",
+            dimensions = (; matrix = (5, 5)),
+            sparse_entry_count = 25,
+            expected_test_level = :default_contract,
+        )
+        runtime_seconds = 1.234
+        stderr_text = "bounded worker stderr"
+        route_error_row = ToricBuilderCacheQBlockStatusReport._worker_route_error_row(
+            entry,
+            runtime_seconds,
+            stderr_text,
+        )
+        @test route_error_row.route_status == :route_error
+        @test route_error_row.error_details == stderr_text
+        @test route_error_row.stage_timings.determinant_classification.status == :route_error
+        @test route_error_row.stage_timings.determinant_classification.elapsed_seconds == runtime_seconds
+        @test route_error_row.stage_timings.determinant_classification.error_details == stderr_text
+
+        timeout_entry = (;
+            id = "case_timeout",
+            dimensions = (; matrix = (4, 4)),
+            sparse_entry_count = 16,
+            expected_test_level = :default_contract,
+        )
+        timed_out_row = ToricBuilderCacheQBlockStatusReport._timed_out_row(
+            timeout_entry,
+            1.0,
+            1.25,
+            (;
+                current_stage = :normalization,
+                stage_started_at = time() - 0.05,
+                timings = Dict{Symbol, Any}(),
+            ),
+        )
+        @test timed_out_row.route_status == :timed_out
+        @test timed_out_row.error_details == "timed out after 1.000 seconds while running normalization"
+        @test timed_out_row.stage_timings.normalization.status == :timed_out
+        @test timed_out_row.stage_timings.normalization.elapsed_seconds < 1.0
+
+        fallback_timed_out_row = ToricBuilderCacheQBlockStatusReport._timed_out_row(
+            timeout_entry,
+            1.0,
+            1.25,
+            (; current_stage = :verification, timings = Dict{Symbol, Any}()),
+        )
+        @test fallback_timed_out_row.stage_timings.verification.elapsed_seconds == 1.25
+
+        progress_path = tempname()
+        worker_row = ToricBuilderCacheQBlockStatusReport._worker_exercised_row("case_010", progress_path)
+        @test worker_row.case_id == "case_010"
+        @test worker_row.route_status == :gl_certificate_pass
+        @test worker_row.public_elementary_status == :not_run
+        @test worker_row.error_details == "none"
+        @test worker_row.stage_timings.determinant_classification.status == :pass
+        @test worker_row.stage_timings.verification.status == :pass
+        for path in (progress_path, string(progress_path, ".tmp"))
+            isfile(path) && rm(path; force = true)
+        end
+
+        invalid_stdout_row = ToricBuilderCacheQBlockStatusReport._bounded_exercised_row(
+            FakeBoundedEntry("case_invalid_stdout"; mode = :invalid_stdout),
+            2.0,
+        )
+        @test invalid_stdout_row.route_status == :route_error
+        @test occursin("fake worker stderr", invalid_stdout_row.error_details)
+        @test occursin("deserialize", invalid_stdout_row.error_details)
+        @test invalid_stdout_row.stage_timings.determinant_classification.status == :route_error
+
+        FORCE_WAIT_FOR_EXIT_FAILURE[] = true
+        timeout_row = try
+            ToricBuilderCacheQBlockStatusReport._bounded_exercised_row(
+                FakeBoundedEntry("case_kill_grace"; mode = :slow_timeout),
+                0.2,
+            )
+        finally
+            FORCE_WAIT_FOR_EXIT_FAILURE[] = false
+        end
+        @test timeout_row.route_status == :timed_out
+        @test occursin("did not exit after kill grace", timeout_row.error_details)
+        @test occursin("did not exit after kill grace", timeout_row.evidence)
+        kill_grace_stage_statuses = [
+            getproperty(timeout_row.stage_timings, stage).status for
+            stage in ToricBuilderCacheQBlockStatusReport.STAGE_NAMES
+        ]
+        @test :timed_out in kill_grace_stage_statuses
+
+        bounded_worker_row = ToricBuilderCacheQBlockStatusReport._bounded_exercised_row(
+            FakeBoundedEntry("case_success"; mode = :serialized_success),
+            5.0,
+        )
+        @test bounded_worker_row.case_id == "case_success"
+        @test bounded_worker_row.route_status == :gl_certificate_pass
+        @test bounded_worker_row.error_details == "none"
+    end
+
+    @testset "_record_stage! failure paths" begin
+        entry = (;
+            id = "case_failure",
+            dimensions = (; matrix = (3, 3)),
+            sparse_entry_count = 9,
+            expected_test_level = :default_contract,
+        )
+
+        start_ns = time_ns()
+        boundary_timings = Dict{Symbol, Any}()
+        boundary_result = ToricBuilderCacheQBlockStatusReport._record_stage!(
+            boundary_timings,
+            :determinant_classification,
+            () -> throw(ArgumentError("unsupported Laurent GL_n determinant test boundary")),
+        )
+        @test boundary_result.status == :certified_algorithm_boundary
+        boundary_row = ToricBuilderCacheQBlockStatusReport._stage_failure_row(
+            entry,
+            boundary_timings,
+            boundary_result,
+            start_ns,
+        )
+        @test boundary_row.route_status == :certified_algorithm_boundary
+        @test boundary_row.stage_timings.determinant_classification.status ==
+              :certified_algorithm_boundary
+
+        start_ns = time_ns()
+        route_timings = Dict{Symbol, Any}()
+        route_result = ToricBuilderCacheQBlockStatusReport._record_stage!(
+            route_timings,
+            :determinant_classification,
+            () -> throw(ErrorException("unexpected qblock test failure")),
+        )
+        @test route_result.status == :route_error
+        route_row = ToricBuilderCacheQBlockStatusReport._stage_failure_row(
+            entry,
+            route_timings,
+            route_result,
+            start_ns,
+        )
+        @test route_row.route_status == :route_error
+        @test route_row.stage_timings.determinant_classification.status == :route_error
+    end
+    @test !isfile(unknown_output)
     @test isfile(TORICBUILDER_CACHE_STATUS_REPORT_PATH)
 end
