@@ -41,6 +41,12 @@ function _case010_tamper_certificate_first_factor(cert)
     )
 end
 
+struct Case010UnexpectedDivisor end
+
+Base.iszero(::Case010UnexpectedDivisor) = false
+
+Oscar.divexact(::Int, ::Case010UnexpectedDivisor) = throw(DomainError(:case010_unexpected_divisor))
+
 @testset "case_010 Laurent column reduction" begin
     fixture = ToricBuilderCase010ColumnBoundary.boundary_fixture()
     R = fixture.ring
@@ -63,4 +69,11 @@ end
     @test diagnostic.status == :supported
     @test diagnostic.failure_code === nothing
     @test :laurent_unit_creation in diagnostic.attempted_stages
+end
+
+@testset "case_010 Laurent unit-creation edge cases" begin
+    R, _ = Suslin.suslin_laurent_polynomial_ring(GF(2), ["x", "y"])
+
+    @test Suslin._laurent_unit_creation_candidate([one(R) for _ in 1:5], R) === nothing
+    @test_throws DomainError Suslin._try_laurent_divexact(1, Case010UnexpectedDivisor())
 end
