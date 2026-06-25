@@ -139,6 +139,55 @@ const TORICBUILDER_CACHE_STATUS_REPORT_PATH =
     @test occursin("## Stage Timing Details", timeout_markdown)
     rm(timeout_output; force = true)
 
+    @testset "bounded worker helpers" begin
+        worker = run(
+            `$(Base.julia_cmd()) -e "while true; sleep(0.1); end"`;
+            wait = false,
+        )
+        sleep(0.1)
+        kill(worker)
+        start_time = time()
+        exited = ToricBuilderCacheQBlockStatusReport._wait_for_exit_after_kill(
+            worker;
+            grace_seconds = 0.5,
+            poll_seconds = 0.01,
+        )
+        @test exited
+        @test !process_running(worker)
+        @test time() - start_time < 1.0
+
+        entry = (;
+            id = "case_route_error",
+            dimensions = (; matrix = (5, 5)),
+            sparse_entry_count = 25,
+            expected_test_level = :default_contract,
+        )
+        runtime_seconds = 1.234
+        stderr_text = "bounded worker stderr"
+        route_error_row = ToricBuilderCacheQBlockStatusReport._worker_route_error_row(
+            entry,
+            runtime_seconds,
+            stderr_text,
+        )
+        @test route_error_row.route_status == :route_error
+        @test route_error_row.error_details == stderr_text
+        @test route_error_row.stage_timings.determinant_classification.status == :route_error
+        @test route_error_row.stage_timings.determinant_classification.elapsed_seconds == runtime_seconds
+        @test route_error_row.stage_timings.determinant_classification.error_details == stderr_text
+
+        progress_path = tempname()
+        worker_row = ToricBuilderCacheQBlockStatusReport._worker_exercised_row("case_010", progress_path)
+        @test worker_row.case_id == "case_010"
+        @test worker_row.route_status == :gl_certificate_pass
+        @test worker_row.public_elementary_status == :not_run
+        @test worker_row.error_details == "none"
+        @test worker_row.stage_timings.determinant_classification.status == :pass
+        @test worker_row.stage_timings.verification.status == :pass
+        for path in (progress_path, string(progress_path, ".tmp"))
+            isfile(path) && rm(path; force = true)
+        end
+    end
+
     @testset "_record_stage! failure paths" begin
         entry = (;
             id = "case_failure",

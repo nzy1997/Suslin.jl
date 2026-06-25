@@ -129,7 +129,7 @@ function _record_stage!(timings::Dict{Symbol, Any}, stage::Symbol, f)
     end
 end
 
-function _record_worker_stage!(timings::Dict{Symbol, Any}, stage::Symbol, progress_path, f)
+function _record_worker_stage!(f, timings::Dict{Symbol, Any}, stage::Symbol, progress_path)
     stage_started_at = time()
     _write_worker_progress(progress_path, stage, stage_started_at, timings)
     result = _record_stage!(timings, stage, f)
@@ -445,9 +445,10 @@ function _worker_command(entry, progress_path)
 end
 
 function _worker_route_error_row(entry, runtime_seconds, stderr_text)
+    error_details = isempty(stderr_text) ? "bounded worker exited nonzero" : stderr_text
     timings = Dict{Symbol, Any}(
         :determinant_classification =>
-            _stage_timing(:route_error; elapsed_seconds = runtime_seconds, error_details = stderr_text),
+            _stage_timing(:route_error; elapsed_seconds = runtime_seconds, error_details),
     )
     return (;
         case_id = entry.id,
@@ -464,10 +465,20 @@ function _worker_route_error_row(entry, runtime_seconds, stderr_text)
         factor_count = 0,
         decomposed_base_matrix_count = 0,
         runtime_seconds,
-        error_details = isempty(stderr_text) ? "bounded worker exited nonzero" : stderr_text,
+        error_details,
         evidence = "Bounded worker exited before producing a report row.",
         stage_timings = _stage_timings_from_dict(timings),
     )
+end
+
+function _wait_for_exit_after_kill(proc; grace_seconds = 1.0, poll_seconds = 0.05)
+    deadline = time() + grace_seconds
+    while process_running(proc)
+        remaining = deadline - time()
+        remaining <= 0 && break
+        sleep(min(poll_seconds, remaining))
+    end
+    return !process_running(proc)
 end
 
 function _bounded_exercised_row(entry, timeout_seconds::Float64)
@@ -484,11 +495,11 @@ function _bounded_exercised_row(entry, timeout_seconds::Float64)
         while process_running(proc)
             runtime_seconds = round(time() - start_time; digits = 3)
             if runtime_seconds >= timeout_seconds
-                kill(proc)
                 try
-                    wait(proc)
+                    kill(proc)
                 catch
                 end
+                _wait_for_exit_after_kill(proc)
                 progress = _read_worker_progress(progress_path)
                 return _timed_out_row(entry, timeout_seconds, runtime_seconds, progress)
             end
