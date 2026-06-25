@@ -43,12 +43,13 @@ const TORICBUILDER_CACHE_STATUS_REPORT_PATH =
     @test by_id["case_006"].route_status == :gl_certificate_pass
     @test by_id["case_006"].decomposed_base_matrix_count == 212
 
-    @test by_id["case_010"].route_status == :route_error
+    @test by_id["case_010"].route_status == :gl_certificate_pass
     @test by_id["case_010"].public_elementary_status == :staged_boundary
     @test by_id["case_010"].determinant_class == :laurent_monomial_unit
-    @test by_id["case_010"].verified == false
+    @test by_id["case_010"].verified == true
+    @test by_id["case_010"].decomposed_base_matrix_count > 0
     @test by_id["case_010"].runtime_seconds > 0
-    @test occursin("unsupported exact unimodular column reduction", by_id["case_010"].error_details)
+    @test by_id["case_010"].error_details == "none"
 
     @test by_id["case_011"].matrix_size == (288, 288)
     @test by_id["case_011"].route_status == :not_exercised_in_default_report
@@ -67,10 +68,10 @@ const TORICBUILDER_CACHE_STATUS_REPORT_PATH =
     @test occursin(r"\| case_004 \| 18x18 \| 73 \| default_contract \| gl_certificate_pass \| staged_boundary \| laurent_monomial_unit \| 189 \| [0-9]+\.[0-9]{3} \|", markdown)
     @test occursin(r"\| case_005 \| 14x14 \| 90 \| default_contract \| gl_certificate_pass \| staged_boundary \| laurent_monomial_unit \| 168 \| [0-9]+\.[0-9]{3} \|", markdown)
     @test occursin(r"\| case_006 \| 18x18 \| 99 \| default_contract \| gl_certificate_pass \| staged_boundary \| laurent_monomial_unit \| 212 \| [0-9]+\.[0-9]{3} \|", markdown)
-    @test occursin(r"\| case_010 \| 6x6 \| 34 \| default_contract \| route_error \| staged_boundary \| laurent_monomial_unit \| 0 \| [0-9]+\.[0-9]{3} \|", markdown)
+    @test occursin(r"\| case_010 \| 6x6 \| 34 \| default_contract \| gl_certificate_pass \| staged_boundary \| laurent_monomial_unit \| [1-9][0-9]* \| [0-9]+\.[0-9]{3} \|", markdown)
     @test occursin("| case_011 | 288x288 | 14713 | optional_slow | not_exercised_in_default_report | not_run | not_run | not_run | not_run |", markdown)
-    @test occursin("## Route Error Details", markdown)
-    @test occursin("unsupported exact unimodular column reduction", markdown)
+    @test !occursin("## Route Error Details", markdown)
+    @test !occursin("unsupported exact unimodular column reduction", markdown)
     @test occursin("julia --project=. scripts/report_toricbuilder_cache_q_blocks.jl", markdown)
     @test isfile(TORICBUILDER_CACHE_STATUS_REPORT_PATH)
 end

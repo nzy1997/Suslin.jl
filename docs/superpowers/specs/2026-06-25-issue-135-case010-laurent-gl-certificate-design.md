@@ -44,9 +44,11 @@ guard.
 ## Approach Options
 
 Recommended: extend the certified Laurent unit-creation stage so it also
-accepts the observed length-4 `case_010` boundary. Keep the algorithm otherwise
-unchanged: exact division finds a coefficient, replay recomputes it from the
-input column, and all factors still pass `_checked_reduction_factors`.
+accepts the observed length-4 `case_010` boundary, and choose a deterministic
+downstream-compatible candidate when several exact unit-creation relations are
+available. Keep the algorithm otherwise unchanged: exact division finds a
+coefficient, replay recomputes it from the input column, and all factors still
+pass `_checked_reduction_factors`.
 
 Alternative: add a second `case_010`-specific hard-coded factor sequence for the
 length-4 column. This is smaller but worse, because it bypasses the reusable
@@ -62,6 +64,14 @@ Update `_laurent_unit_creation_candidate(column, R)` in
 `src/algorithm/column_reduction_case010.jl` so the existing stage can run for
 length-4 and length-5 Laurent columns. The ring guard, exact-division guard,
 nonzero coefficient guard, and exact unit equality check stay intact.
+
+When several row pairs can create a unit, prefer the candidate with the larger
+`pivot_index`, then the smaller `source_index` for ties. For the original
+`case_010` route this picks pivot/source `(4, 1)` at dimension 5 and `(3, 1)`
+at dimension 4, which leaves the recursive trailing blocks in supported
+families. A first-match choice still creates a unit locally but exposes a later
+unsupported length-3 boundary, so candidate selection is part of the full-route
+certificate design.
 
 This keeps the public meaning of `elementary_factorization(case_010)`
 unchanged. The public route remains `:staged_boundary`; only the explicit
