@@ -24,6 +24,48 @@ FakeBoundedEntry(id::AbstractString; matrix = (5, 5), sparse_entry_count = 25, m
 
 const FORCE_WAIT_FOR_EXIT_FAILURE = Ref(false)
 
+function _matching_stage_names(row, status::Symbol)
+    return [
+        stage for stage in ToricBuilderCacheQBlockStatusReport.STAGE_NAMES if
+        getproperty(row.stage_timings, stage).status == status
+    ]
+end
+
+function _stage_has_numeric_elapsed(row, stage::Symbol)
+    return getproperty(row.stage_timings, stage).elapsed_seconds isa Number
+end
+
+function _stage_has_stable_error(row, stage::Symbol)
+    details = getproperty(row.stage_timings, stage).error_details
+    return details isa AbstractString && details != "none" && details != "not_run"
+end
+
+function _bounded_route_row_is_structured(row; timeout_seconds)
+    if row.route_status == :gl_certificate_pass
+        return row.verified == true && row.error_details == "none"
+    elseif row.route_status == :certified_algorithm_boundary
+        stages = _matching_stage_names(row, :certified_algorithm_boundary)
+        length(stages) == 1 || return false
+        stage = only(stages)
+        return _stage_has_numeric_elapsed(row, stage) &&
+            _stage_has_stable_error(row, stage) &&
+            occursin(string(stage), row.evidence)
+    elseif row.route_status == :timed_out
+        stages = _matching_stage_names(row, :timed_out)
+        length(stages) == 1 || return false
+        stage = only(stages)
+        budget_text = "timed out after $(ToricBuilderCacheQBlockStatusReport._runtime_text(timeout_seconds)) seconds"
+        timing = getproperty(row.stage_timings, stage)
+        return _stage_has_numeric_elapsed(row, stage) &&
+            timing.error_details isa AbstractString &&
+            occursin(budget_text, timing.error_details) &&
+            row.error_details isa AbstractString &&
+            occursin(budget_text, row.error_details) &&
+            occursin(string(stage), row.error_details)
+    end
+    return false
+end
+
 @testset "ToricBuilder cache Q-block status report" begin
     @test isfile(TORICBUILDER_CACHE_STATUS_REPORT_SCRIPT)
 
@@ -261,6 +303,30 @@ const FORCE_WAIT_FOR_EXIT_FAILURE = Ref(false)
     @test :timed_out in timeout_stage_statuses
     @test !all(==(:not_run), timeout_stage_statuses)
     @test timeout_by_id["case_008"].route_status == :not_exercised_in_default_report
+
+    case008_timeout_report = ToricBuilderCacheQBlockStatusReport.build_report(;
+        exercised_case_ids = ("case_008",),
+        timeout_seconds = 1.0,
+    )
+    case008_timeout_by_id = Dict(row.case_id => row for row in case008_timeout_report.rows)
+    case008_timeout_row = case008_timeout_by_id["case_008"]
+    @test case008_timeout_row.route_status != :not_exercised_in_default_report
+    @test case008_timeout_row.route_status != :route_error
+    @test _bounded_route_row_is_structured(case008_timeout_row; timeout_seconds = 1.0)
+
+    raw_route_error_row = merge(case008_timeout_row, (;
+        route_status = :route_error,
+        error_details = "timeout",
+        stage_timings = ToricBuilderCacheQBlockStatusReport._not_run_stage_timings(),
+    ))
+    @test !_bounded_route_row_is_structured(raw_route_error_row; timeout_seconds = 1.0)
+
+    plain_timeout_row = merge(case008_timeout_row, (;
+        route_status = :timed_out,
+        error_details = "timeout",
+        stage_timings = ToricBuilderCacheQBlockStatusReport._not_run_stage_timings(),
+    ))
+    @test !_bounded_route_row_is_structured(plain_timeout_row; timeout_seconds = 1.0)
 
     timeout_output = tempname()
     timeout_path = ToricBuilderCacheQBlockStatusReport.main([
