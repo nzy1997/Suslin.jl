@@ -49,6 +49,7 @@ const TEST_GROUP_FILES = Dict(
         "expert/park_woodburn_polynomial_column_peel.jl",
         "expert/sln_to_sl3_diagnostics.jl",
         "expert/laurent_column_peel_issue38.jl",
+        "expert/laurent_column_reduction_diagnostics.jl",
         "expert/issue38_laurent_gl_certificate.jl",
         "expert/quillen_induction.jl",
         "expert/quillen_patching_exact.jl",
