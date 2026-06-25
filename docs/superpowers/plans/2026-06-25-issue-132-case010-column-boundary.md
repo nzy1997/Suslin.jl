@@ -29,6 +29,7 @@
 ### Task 1: Add Case 010 Boundary Fixture And Internal Test
 
 **Files:**
+- Modify: `Project.toml`
 - Create: `test/fixtures/toricbuilder_case010_column_boundary.jl`
 - Create: `test/internal/toricbuilder_case010_column_boundary.jl`
 - Modify: `test/runtests.jl`
@@ -293,11 +294,11 @@ Expected: PASS for the internal group, including the new `toricbuilder_case010_c
 Run:
 
 ```bash
-git add test/fixtures/toricbuilder_case010_column_boundary.jl test/internal/toricbuilder_case010_column_boundary.jl test/runtests.jl
+git add Project.toml test/fixtures/toricbuilder_case010_column_boundary.jl test/internal/toricbuilder_case010_column_boundary.jl test/runtests.jl
 git commit -m "test: extract case010 Laurent column boundary"
 ```
 
-Expected: commit succeeds and contains only the new fixture, the new internal test, and the test registration.
+Expected: commit succeeds and contains the stdlib test-target metadata fix, the new fixture, the new internal test, and the test registration.
 
 ---
 
