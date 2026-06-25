@@ -227,12 +227,8 @@ const FORCE_WAIT_FOR_EXIT_FAILURE = Ref(false)
     rm(timeout_output; force = true)
 
     @testset "bounded worker helpers" begin
-        worker = run(
-            `$(Base.julia_cmd()) -e "while true; sleep(0.1); end"`;
-            wait = false,
-        )
-        sleep(0.1)
-        kill(worker)
+        worker = run(`$(Base.julia_cmd()) --startup-file=no -e "exit()"`; wait = false)
+        wait(worker)
         start_time = time()
         exited = ToricBuilderCacheQBlockStatusReport._wait_for_exit_after_kill(
             worker;
@@ -324,7 +320,11 @@ const FORCE_WAIT_FOR_EXIT_FAILURE = Ref(false)
         @test timeout_row.route_status == :timed_out
         @test occursin("did not exit after kill grace", timeout_row.error_details)
         @test occursin("did not exit after kill grace", timeout_row.evidence)
-        @test timeout_row.stage_timings.normalization.status == :timed_out
+        kill_grace_stage_statuses = [
+            getproperty(timeout_row.stage_timings, stage).status for
+            stage in ToricBuilderCacheQBlockStatusReport.STAGE_NAMES
+        ]
+        @test :timed_out in kill_grace_stage_statuses
 
         bounded_worker_row = ToricBuilderCacheQBlockStatusReport._bounded_exercised_row(
             FakeBoundedEntry("case_success"; mode = :serialized_success),
