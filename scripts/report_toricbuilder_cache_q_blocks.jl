@@ -69,6 +69,51 @@ function _stage_timings_from_dict(timings::Dict{Symbol, Any})
     )
 end
 
+function _write_worker_progress(progress_path, current_stage::Symbol, stage_started_at::Float64, timings)
+    progress_path === nothing && return nothing
+    tmp = string(progress_path, ".tmp")
+    open(tmp, "w") do io
+        println(io, "current_stage=", current_stage)
+        println(io, "stage_started_at=", stage_started_at)
+        for stage in STAGE_NAMES
+            timing = get(timings, stage, nothing)
+            timing === nothing && continue
+            println(io, "stage.", stage, ".status=", timing.status)
+            println(io, "stage.", stage, ".elapsed_seconds=", timing.elapsed_seconds)
+            println(io, "stage.", stage, ".error_details=", replace(timing.error_details, '\n' => "\\n"))
+        end
+    end
+    mv(tmp, progress_path; force = true)
+    return nothing
+end
+
+function _read_worker_progress(progress_path)
+    progress_path === nothing && return (; current_stage = :determinant_classification, timings = Dict{Symbol, Any}())
+    isfile(progress_path) || return (; current_stage = :determinant_classification, timings = Dict{Symbol, Any}())
+    data = Dict{String, String}()
+    for line in eachline(progress_path)
+        key, value = split(line, "="; limit = 2)
+        data[key] = value
+    end
+    timings = Dict{Symbol, Any}()
+    for stage in STAGE_NAMES
+        prefix = string("stage.", stage, ".")
+        haskey(data, string(prefix, "status")) || continue
+        elapsed_raw = data[string(prefix, "elapsed_seconds")]
+        elapsed = elapsed_raw == "not_run" ? :not_run : parse(Float64, elapsed_raw)
+        timings[stage] = _stage_timing(
+            Symbol(data[string(prefix, "status")]);
+            elapsed_seconds = elapsed,
+            error_details = replace(get(data, string(prefix, "error_details"), "none"), "\\n" => "\n"),
+        )
+    end
+    return (;
+        current_stage = Symbol(get(data, "current_stage", "determinant_classification")),
+        stage_started_at = parse(Float64, get(data, "stage_started_at", string(time()))),
+        timings,
+    )
+end
+
 function _record_stage!(timings::Dict{Symbol, Any}, stage::Symbol, f)
     start_ns = time_ns()
     try
@@ -82,6 +127,14 @@ function _record_stage!(timings::Dict{Symbol, Any}, stage::Symbol, f)
         timings[stage] = _stage_timing(status; elapsed_seconds = _elapsed_seconds(start_ns), error_details)
         return (; status, error = err, error_details)
     end
+end
+
+function _record_worker_stage!(timings::Dict{Symbol, Any}, stage::Symbol, progress_path, f)
+    stage_started_at = time()
+    _write_worker_progress(progress_path, stage, stage_started_at, timings)
+    result = _record_stage!(timings, stage, f)
+    _write_worker_progress(progress_path, stage, stage_started_at, timings)
+    return result
 end
 
 function _stage_timing_text(timing)
@@ -269,6 +322,71 @@ function _exercised_row(entry)
     end
 end
 
+function _worker_exercised_row(case_id::AbstractString, progress_path)
+    catalog = ToricBuilderCacheQBlocks.catalog()
+    _validate_exercised_case_ids!(Set([String(case_id)]), catalog)
+    entry = only(filter(entry -> entry.id == case_id, catalog.cases))
+
+    start_ns = time_ns()
+    timings = Dict{Symbol, Any}()
+    A = ToricBuilderCacheQBlocks.materialize_matrix(entry)
+
+    profile_result = _record_worker_stage!(timings, :determinant_classification, progress_path) do
+        classify_laurent_determinant(A)
+    end
+    if profile_result.status != :pass
+        return _stage_failure_row(entry, timings, profile_result, start_ns)
+    end
+    profile = profile_result.value
+
+    normalization_result = _record_worker_stage!(timings, :normalization, progress_path) do
+        normalize_laurent_gl_matrix(A)
+    end
+    normalization_result.status == :pass ||
+        return _stage_failure_row(entry, timings, normalization_result, start_ns; profile)
+    normalization = normalization_result.value
+
+    certificate_result = _record_worker_stage!(timings, :certificate_construction, progress_path) do
+        laurent_gl_factorization_certificate(A)
+    end
+    certificate_result.status == :pass ||
+        return _stage_failure_row(entry, timings, certificate_result, start_ns; profile)
+    certificate = certificate_result.value
+
+    verification_result = _record_worker_stage!(timings, :verification, progress_path) do
+        verify_laurent_gl_factorization_certificate(certificate)
+    end
+    verification_result.status == :pass ||
+        return _stage_failure_row(entry, timings, verification_result, start_ns; profile)
+    verified = verification_result.value
+
+    return (;
+        case_id = entry.id,
+        matrix_size = entry.dimensions.matrix,
+        sparse_entry_count = entry.sparse_entry_count,
+        expected_test_level = entry.expected_test_level,
+        route_status = verified ? :gl_certificate_pass : :gl_certificate_fail,
+        public_elementary_status = :not_run,
+        determinant_class = profile.classification,
+        determinant = string(profile.determinant),
+        normalization_status = :normalization_pass,
+        gl_certificate_status = verified ? :gl_certificate_pass : :gl_certificate_fail,
+        verified,
+        factor_count = length(certificate.core_factors),
+        decomposed_base_matrix_count = length(certificate.core_factors),
+        runtime_seconds = _elapsed_seconds(start_ns),
+        error_details = "none",
+        evidence = "Bounded certificate route exercised; normalized determinant is $(det(normalization.normalized_matrix)).",
+        stage_timings = _stage_timings_from_dict(timings),
+    )
+end
+
+function _worker_main(case_id::AbstractString, progress_path)
+    row = _worker_exercised_row(case_id, progress_path)
+    serialize(stdout, row)
+    return nothing
+end
+
 function _catalog_case_ids(catalog)
     return Set(entry.id for entry in catalog.cases)
 end
@@ -285,6 +403,112 @@ function _validate_exercised_case_ids!(exercised::Set{String}, catalog)
     return exercised
 end
 
+function _timed_out_row(entry, timeout_seconds, runtime_seconds, progress)
+    timings = copy(progress.timings)
+    current_stage = progress.current_stage
+    stage_elapsed =
+        hasproperty(progress, :stage_started_at) ? round(time() - progress.stage_started_at; digits = 3) :
+        runtime_seconds
+    timings[current_stage] = _stage_timing(
+        :timed_out;
+        elapsed_seconds = max(stage_elapsed, timeout_seconds),
+        error_details = "timed out after $(_runtime_text(timeout_seconds)) seconds",
+    )
+    return (;
+        case_id = entry.id,
+        matrix_size = entry.dimensions.matrix,
+        sparse_entry_count = entry.sparse_entry_count,
+        expected_test_level = entry.expected_test_level,
+        route_status = :timed_out,
+        public_elementary_status = :not_run,
+        determinant_class = :timed_out,
+        determinant = "timed_out",
+        normalization_status = current_stage == :normalization ? :timed_out : get(
+            timings,
+            :normalization,
+            _stage_timing(:not_run),
+        ).status,
+        gl_certificate_status = current_stage in (:certificate_construction, :verification) ? :timed_out : :not_run,
+        verified = false,
+        factor_count = 0,
+        decomposed_base_matrix_count = 0,
+        runtime_seconds,
+        error_details = "timed out after $(_runtime_text(timeout_seconds)) seconds while running $(current_stage)",
+        evidence = "Bounded worker exceeded the configured process-level budget.",
+        stage_timings = _stage_timings_from_dict(timings),
+    )
+end
+
+function _worker_command(entry, progress_path)
+    project_path = dirname(Base.active_project())
+    return `$(Base.julia_cmd()) --project=$(project_path) $(abspath(@__FILE__)) --bounded-worker=$(entry.id) --worker-progress=$(progress_path)`
+end
+
+function _worker_route_error_row(entry, runtime_seconds, stderr_text)
+    timings = Dict{Symbol, Any}(
+        :determinant_classification =>
+            _stage_timing(:route_error; elapsed_seconds = runtime_seconds, error_details = stderr_text),
+    )
+    return (;
+        case_id = entry.id,
+        matrix_size = entry.dimensions.matrix,
+        sparse_entry_count = entry.sparse_entry_count,
+        expected_test_level = entry.expected_test_level,
+        route_status = :route_error,
+        public_elementary_status = :not_run,
+        determinant_class = :route_error,
+        determinant = "route_error",
+        normalization_status = :not_run,
+        gl_certificate_status = :not_run,
+        verified = false,
+        factor_count = 0,
+        decomposed_base_matrix_count = 0,
+        runtime_seconds,
+        error_details = isempty(stderr_text) ? "bounded worker exited nonzero" : stderr_text,
+        evidence = "Bounded worker exited before producing a report row.",
+        stage_timings = _stage_timings_from_dict(timings),
+    )
+end
+
+function _bounded_exercised_row(entry, timeout_seconds::Float64)
+    stdout_path = tempname()
+    stderr_path = tempname()
+    progress_path = tempname()
+    start_time = time()
+    proc = run(
+        pipeline(_worker_command(entry, progress_path); stdout = stdout_path, stderr = stderr_path),
+        wait = false,
+    )
+
+    try
+        while process_running(proc)
+            runtime_seconds = round(time() - start_time; digits = 3)
+            if runtime_seconds >= timeout_seconds
+                kill(proc)
+                try
+                    wait(proc)
+                catch
+                end
+                progress = _read_worker_progress(progress_path)
+                return _timed_out_row(entry, timeout_seconds, runtime_seconds, progress)
+            end
+            sleep(0.05)
+        end
+
+        wait(proc)
+        runtime_seconds = round(time() - start_time; digits = 3)
+        if success(proc)
+            return open(deserialize, stdout_path)
+        end
+        stderr_text = isfile(stderr_path) ? read(stderr_path, String) : ""
+        return _worker_route_error_row(entry, runtime_seconds, stderr_text)
+    finally
+        for path in (stdout_path, stderr_path, progress_path, string(progress_path, ".tmp"))
+            isfile(path) && rm(path; force = true)
+        end
+    end
+end
+
 function build_report(;
     exercised_case_ids = DEFAULT_EXERCISED_CASE_IDS,
     generated_on = Dates.today(),
@@ -294,7 +518,9 @@ function build_report(;
     catalog = ToricBuilderCacheQBlocks.catalog()
     _validate_exercised_case_ids!(exercised, catalog)
     rows = [
-        entry.id in exercised ? _exercised_row(entry) : _pending_row(entry)
+        entry.id in exercised ?
+        (timeout_seconds === nothing ? _exercised_row(entry) : _bounded_exercised_row(entry, timeout_seconds)) :
+        _pending_row(entry)
         for entry in catalog.cases
     ]
     return (;
@@ -403,7 +629,19 @@ function _parse_args(args)
     return (; output, exercised, timeout_seconds)
 end
 
+function _worker_arg_value(args, prefix::AbstractString)
+    matches = [arg[length(prefix)+1:end] for arg in args if startswith(arg, prefix)]
+    return isempty(matches) ? nothing : only(matches)
+end
+
 function main(args = ARGS)
+    worker_case = _worker_arg_value(args, "--bounded-worker=")
+    if worker_case !== nothing
+        progress_path = _worker_arg_value(args, "--worker-progress=")
+        _worker_main(worker_case, progress_path)
+        return nothing
+    end
+
     options = _parse_args(args)
     report = build_report(;
         exercised_case_ids = options.exercised,

@@ -114,6 +114,31 @@ const TORICBUILDER_CACHE_STATUS_REPORT_PATH =
         "--exercise=case_999",
         "--output=$(unknown_output)",
     ])
+
+    timeout_report = ToricBuilderCacheQBlockStatusReport.build_report(;
+        exercised_case_ids = ("case_007",),
+        timeout_seconds = 1.0,
+    )
+    timeout_by_id = Dict(row.case_id => row for row in timeout_report.rows)
+    @test timeout_by_id["case_007"].route_status == :timed_out
+    @test timeout_by_id["case_007"].runtime_seconds >= 1.0
+    @test timeout_by_id["case_007"].runtime_seconds < 20.0
+    @test timeout_by_id["case_007"].stage_timings.determinant_classification.status in
+          (:timed_out, :pass, :not_run)
+    @test timeout_by_id["case_008"].route_status == :not_exercised_in_default_report
+
+    timeout_output = tempname()
+    timeout_path = ToricBuilderCacheQBlockStatusReport.main([
+        "--exercise=case_007",
+        "--timeout-seconds=1",
+        "--output=$(timeout_output)",
+    ])
+    @test timeout_path == timeout_output
+    timeout_markdown = read(timeout_output, String)
+    @test occursin("| case_007 | 42x42 | 546 | default_contract | timed_out |", timeout_markdown)
+    @test occursin("## Stage Timing Details", timeout_markdown)
+    rm(timeout_output; force = true)
+
     @testset "_record_stage! failure paths" begin
         entry = (;
             id = "case_failure",
