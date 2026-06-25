@@ -17,10 +17,26 @@ include(joinpath(@__DIR__, "..", "fixtures", "toricbuilder_case010_column_bounda
     @test unsupported.ring_profile.kind == :laurent_polynomial
     @test unsupported.ring_profile.generators == ("u", "v")
     @test occursin("unsupported exact unimodular column reduction", unsupported.message)
+    @test occursin(
+        "no supported unit, witness-unit, monicity-normalized, or 3-entry block reduction stage applies",
+        unsupported.message,
+    )
     for stage in (:unit_entry, :witness_unit, :monicity_normalization, :three_entry_block)
         @test stage in unsupported.attempted_stages
     end
     @test :laurent_normalization in unsupported.attempted_stages
+
+    thrown = try
+        Suslin.reduce_unimodular_column(fixture.failing_column, fixture.ring)
+        nothing
+    catch err
+        err
+    end
+    @test thrown isa ArgumentError
+    @test occursin(
+        "no supported unit, witness-unit, monicity-normalized, or 3-entry block reduction stage applies",
+        sprint(showerror, thrown),
+    )
 
     d = nrows(fixture.normalized_matrix)
     supported_column = [fixture.normalized_matrix[row, d] for row in 1:d]

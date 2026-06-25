@@ -2620,10 +2620,9 @@ function _unit_normalization_factors(n::Int, u, uinv, R)
 end
 
 function _unsupported_unimodular_column_reduction_message(column::AbstractVector, R)
-    if _is_laurent_polynomial_ring(R)
-        return "unsupported exact unimodular column reduction for Laurent-normalized column of length $(length(column))"
-    end
-    return "unsupported exact unimodular column reduction for column of length $(length(column)) over $(R)"
+    profile = _is_laurent_polynomial_ring(R) ? "Laurent-normalized" : "ordinary polynomial"
+    n = length(column)
+    return "unsupported exact unimodular column reduction for $(profile) column of length $(n): no supported unit, witness-unit, monicity-normalized, or 3-entry block reduction stage applies"
 end
 
 function _throw_unsupported_unimodular_column_reduction(column::AbstractVector, R)
