@@ -31,6 +31,18 @@ function _elapsed_seconds(start_ns::UInt64)
     return round((time_ns() - start_ns) / 1.0e9; digits = 3)
 end
 
+function _parse_timeout_seconds(raw::AbstractString)
+    value = try
+        parse(Float64, raw)
+    catch err
+        err isa ArgumentError || rethrow()
+        throw(ArgumentError("--timeout-seconds must be a positive number, got $(repr(raw))"))
+    end
+    isfinite(value) && value > 0 ||
+        throw(ArgumentError("--timeout-seconds must be positive, got $(raw)"))
+    return value
+end
+
 function _staged_argument_error(err)
     err isa ArgumentError || return false
     message = sprint(showerror, err)
@@ -122,9 +134,30 @@ function _exercised_row(entry)
     end
 end
 
-function build_report(; exercised_case_ids = DEFAULT_EXERCISED_CASE_IDS, generated_on = Dates.today())
+function _catalog_case_ids(catalog)
+    return Set(entry.id for entry in catalog.cases)
+end
+
+function _validate_exercised_case_ids!(exercised::Set{String}, catalog)
+    known = _catalog_case_ids(catalog)
+    unknown = sort!(collect(setdiff(exercised, known)))
+    if !isempty(unknown)
+        known_text = join(sort!(collect(known)), ", ")
+        throw(ArgumentError(
+            "unknown --exercise case ID(s): $(join(unknown, ", ")); known case IDs: $(known_text)",
+        ))
+    end
+    return exercised
+end
+
+function build_report(;
+    exercised_case_ids = DEFAULT_EXERCISED_CASE_IDS,
+    generated_on = Dates.today(),
+    timeout_seconds = nothing,
+)
     exercised = Set(string.(exercised_case_ids))
     catalog = ToricBuilderCacheQBlocks.catalog()
+    _validate_exercised_case_ids!(exercised, catalog)
     rows = [
         entry.id in exercised ? _exercised_row(entry) : _pending_row(entry)
         for entry in catalog.cases
@@ -134,6 +167,7 @@ function build_report(; exercised_case_ids = DEFAULT_EXERCISED_CASE_IDS, generat
         generated_on,
         source_fixture = SOURCE_FIXTURE,
         exercised_case_ids = Tuple(sort!(collect(exercised))),
+        timeout_seconds,
         rows,
     )
 end
@@ -215,6 +249,7 @@ end
 function _parse_args(args)
     output = DEFAULT_REPORT_PATH
     exercised = collect(DEFAULT_EXERCISED_CASE_IDS)
+    timeout_seconds = nothing
 
     for arg in args
         if startswith(arg, "--output=")
@@ -222,17 +257,22 @@ function _parse_args(args)
         elseif startswith(arg, "--exercise=")
             raw = split(arg[length("--exercise=")+1:end], ",")
             exercised = [strip(case_id) for case_id in raw if !isempty(strip(case_id))]
+        elseif startswith(arg, "--timeout-seconds=")
+            timeout_seconds = _parse_timeout_seconds(arg[length("--timeout-seconds=")+1:end])
         else
             throw(ArgumentError("unsupported argument: $(arg)"))
         end
     end
 
-    return (; output, exercised)
+    return (; output, exercised, timeout_seconds)
 end
 
 function main(args = ARGS)
     options = _parse_args(args)
-    report = build_report(; exercised_case_ids = options.exercised)
+    report = build_report(;
+        exercised_case_ids = options.exercised,
+        timeout_seconds = options.timeout_seconds,
+    )
     path = write_report(options.output; report)
     println("wrote ToricBuilder cache Q-block status report to $(path)")
     return path

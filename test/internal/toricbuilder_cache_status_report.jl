@@ -74,4 +74,30 @@ const TORICBUILDER_CACHE_STATUS_REPORT_PATH =
     @test !occursin("unsupported exact unimodular column reduction", markdown)
     @test occursin("julia --project=. scripts/report_toricbuilder_cache_q_blocks.jl", markdown)
     @test isfile(TORICBUILDER_CACHE_STATUS_REPORT_PATH)
+
+    parsed_timeout = ToricBuilderCacheQBlockStatusReport._parse_args([
+        "--exercise=case_007",
+        "--timeout-seconds=1.5",
+        "--output=/tmp/qblock-timeout.md",
+    ])
+    @test parsed_timeout.exercised == ["case_007"]
+    @test parsed_timeout.timeout_seconds == 1.5
+
+    @test_throws ArgumentError ToricBuilderCacheQBlockStatusReport._parse_args([
+        "--timeout-seconds=0",
+    ])
+    @test_throws ArgumentError ToricBuilderCacheQBlockStatusReport._parse_args([
+        "--timeout-seconds=not-a-number",
+    ])
+
+    @test_throws ArgumentError ToricBuilderCacheQBlockStatusReport.build_report(;
+        exercised_case_ids = ("case_999",),
+    )
+
+    unknown_output = tempname()
+    @test_throws ArgumentError ToricBuilderCacheQBlockStatusReport.main([
+        "--exercise=case_999",
+        "--output=$(unknown_output)",
+    ])
+    @test !isfile(unknown_output)
 end
