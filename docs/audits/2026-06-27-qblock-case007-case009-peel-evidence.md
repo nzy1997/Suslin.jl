@@ -26,19 +26,19 @@ julia --project=. -e 'include("test/internal/toricbuilder_cache_status_report.jl
 Case table row:
 
 ```text
-| case_007 | 42x42 | 546 | default_contract | timed_out | not_run | timed_out | 0 | 180.001 |
+| case_007 | 42x42 | 546 | default_contract | timed_out | not_run | timed_out | 0 | 180.020 |
 ```
 
 Stage timing row:
 
 ```text
-| case_007 | pass (20.409s) | pass (76.332s) | timed_out (25.864s) | not_run |
+| case_007 | pass (11.953s) | pass (45.232s) | timed_out (83.990s) | not_run |
 ```
 
 Route Error Details:
 
 ```text
-- `case_007`: timed out after 180.000 seconds while running certificate_construction
+- `case_007`: timed out after 180.000 seconds; peel progress: current d=30, completed steps=12, last completed d=31 (elapsed 2.680s, left factors=24, right factors=27), last-column nnz=25, max entry terms=8 while running certificate_construction
 ```
 
 ### `case_009`

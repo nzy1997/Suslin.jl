@@ -317,6 +317,24 @@ end
     _issue57_assert_core(entry.normalizations.row.core, row_expected)
     _issue57_assert_core(entry.normalizations.column.core, column_expected)
 
+    progress_records = Any[]
+    determinant_err = try
+        Suslin._factor_laurent_sl_column_peel(
+            entry.inputs.matrix;
+            progress_callback = record -> push!(progress_records, record),
+        )
+        nothing
+    catch err
+        err
+    end
+    @test determinant_err isa ArgumentError
+    @test occursin("determinant-one input", sprint(showerror, determinant_err))
+    @test !isempty(progress_records)
+    @test first(progress_records).current_dimension == nrows(entry.inputs.matrix)
+    @test first(progress_records).completed_steps == 0
+    @test first(progress_records).last_column_nnz isa Int
+    @test first(progress_records).max_entry_terms isa Int
+
     original_err = try
         elementary_factorization(entry.inputs.matrix)
         nothing

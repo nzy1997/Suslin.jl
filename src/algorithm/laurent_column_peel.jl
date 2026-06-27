@@ -56,11 +56,15 @@ function _verify_laurent_column_peel_replay(certificate)::Bool
     return _laurent_column_peel_verification(certificate).overall_ok
 end
 
-function _validate_laurent_column_peel_input(A)
+function _validate_laurent_column_peel_input_shape_and_ring(A)
     nrows(A) == ncols(A) || throw(ArgumentError("Laurent column-peel factorization requires a square matrix"))
     nrows(A) >= 2 || throw(ArgumentError("Laurent column-peel factorization requires size at least 2"))
     R = base_ring(A)
     _is_laurent_polynomial_ring(R) || throw(ArgumentError("Laurent column-peel factorization requires a Laurent polynomial ring"))
+    return nrows(A)
+end
+
+function _validate_laurent_column_peel_input_determinant_one(A)
     profile = classify_laurent_determinant(A)
     profile.classification == :one || throw(ArgumentError("Laurent column-peel factorization requires determinant-one input"))
     return nrows(A)
@@ -110,13 +114,21 @@ function _emit_laurent_column_peel_progress(progress_callback, current, complete
 end
 
 function _factor_laurent_sl_column_peel(A; progress_callback = nothing)
-    _validate_laurent_column_peel_input(A)
+    _validate_laurent_column_peel_input_shape_and_ring(A)
+    _emit_laurent_column_peel_progress(
+        progress_callback,
+        A,
+        0,
+        _laurent_column_peel_empty_last_completed(),
+    )
+    _validate_laurent_column_peel_input_determinant_one(A)
     factors, steps, final_block, final_target, final_local, final_2x2 =
         _laurent_column_peel_recursive(
             A;
             progress_callback,
             completed_steps = 0,
             last_completed = _laurent_column_peel_empty_last_completed(),
+            emit_current = false,
         )
     R = base_ring(A)
     product = _factor_product(factors, R, nrows(A))
@@ -151,10 +163,12 @@ function _laurent_column_peel_recursive(
     progress_callback = nothing,
     completed_steps::Int = 0,
     last_completed = _laurent_column_peel_empty_last_completed(),
+    emit_current::Bool = true,
 )
     d = nrows(current)
     R = base_ring(current)
-    _emit_laurent_column_peel_progress(progress_callback, current, completed_steps, last_completed)
+    emit_current &&
+        _emit_laurent_column_peel_progress(progress_callback, current, completed_steps, last_completed)
 
     if d == 2
         final_block = current
@@ -183,6 +197,7 @@ function _laurent_column_peel_recursive(
             progress_callback,
             completed_steps = next_completed_steps,
             last_completed = next_last_completed,
+            emit_current = true,
         )
     current_factors = vcat(
         _inverse_elementary_sequence(step.left_factors),
