@@ -521,6 +521,7 @@ function validate_boundary_fixture(fixture)::Symbol
     fixture.failing_column == _last_column(fixture.failing_input_matrix) || return :wrong_column
     _column_entries_are_over_ring(fixture.failing_column, R) || return :wrong_ring
     Suslin.is_unimodular_column(fixture.failing_column, R) || return :not_unimodular
+    fixture.failing_input_matrix == _snapshot_matrix() || return :wrong_snapshot
     _diagnostic_matches_expected(fixture.failing_column, R, fixture.expected_diagnostic) ||
         return :wrong_diagnostic
 
