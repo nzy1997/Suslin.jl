@@ -246,6 +246,23 @@ end
 
 function _issue57_assert_core(core, expected_final_block)
     certificate = Suslin._factor_laurent_sl_column_peel(core)
+    progress_records = Any[]
+    callback_certificate = Suslin._factor_laurent_sl_column_peel(
+        core;
+        progress_callback = record -> push!(progress_records, record),
+    )
+    @test verify_factorization(core, callback_certificate.factors)
+    @test callback_certificate.final_block == certificate.final_block
+    @test callback_certificate.product == certificate.product
+    @test !isempty(progress_records)
+    @test first(progress_records).current_dimension == nrows(core)
+    @test first(progress_records).completed_steps == 0
+    @test last(progress_records).current_dimension == 2
+    @test last(progress_records).completed_steps == length(callback_certificate.peel_steps)
+    @test all(record -> record.current_dimension isa Int, progress_records)
+    @test all(record -> record.completed_steps isa Int, progress_records)
+    @test any(record -> record.last_column_nnz isa Int, progress_records)
+    @test any(record -> record.max_entry_terms isa Int, progress_records)
 
     @test certificate.final_block == expected_final_block
     @test length(certificate.factors) > 0
