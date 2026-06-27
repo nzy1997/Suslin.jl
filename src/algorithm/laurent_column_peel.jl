@@ -48,10 +48,88 @@ struct LaurentColumnPeelFactorization
     end
 end
 
-function _factor_laurent_sl_column_peel(A)
-    _validate_laurent_column_peel_input(A)
+function _laurent_column_peel_factors(A)
+    return _factor_laurent_sl_column_peel(A).factors
+end
+
+function _verify_laurent_column_peel_replay(certificate)::Bool
+    return _laurent_column_peel_verification(certificate).overall_ok
+end
+
+function _validate_laurent_column_peel_input_shape_and_ring(A)
+    nrows(A) == ncols(A) || throw(ArgumentError("Laurent column-peel factorization requires a square matrix"))
+    nrows(A) >= 2 || throw(ArgumentError("Laurent column-peel factorization requires size at least 2"))
+    R = base_ring(A)
+    _is_laurent_polynomial_ring(R) || throw(ArgumentError("Laurent column-peel factorization requires a Laurent polynomial ring"))
+    return nrows(A)
+end
+
+function _validate_laurent_column_peel_input_determinant_one(A)
+    profile = classify_laurent_determinant(A)
+    profile.classification == :one || throw(ArgumentError("Laurent column-peel factorization requires determinant-one input"))
+    return nrows(A)
+end
+
+function _laurent_column_peel_empty_last_completed()
+    return (;
+        dimension = nothing,
+        elapsed_seconds = nothing,
+        left_factors = nothing,
+        right_factors = nothing,
+    )
+end
+
+function _laurent_column_peel_column_stats(column)
+    nnz = count(!iszero, column)
+    max_terms = 0
+    for entry in column
+        iszero(entry) && continue
+        term_count = try
+            length(collect(coefficients(entry)))
+        catch err
+            err isa MethodError || err isa ErrorException || rethrow()
+            0
+        end
+        max_terms = max(max_terms, term_count)
+    end
+    return (; last_column_nnz = nnz, max_entry_terms = max_terms)
+end
+
+function _emit_laurent_column_peel_progress(progress_callback, current, completed_steps::Int, last_completed)
+    progress_callback === nothing && return nothing
+    d = nrows(current)
+    last_column = [current[row, d] for row in 1:d]
+    stats = _laurent_column_peel_column_stats(last_column)
+    progress_callback((;
+        current_dimension = d,
+        completed_steps,
+        last_completed_dimension = last_completed.dimension,
+        last_completed_elapsed_seconds = last_completed.elapsed_seconds,
+        last_completed_left_factors = last_completed.left_factors,
+        last_completed_right_factors = last_completed.right_factors,
+        last_column_nnz = stats.last_column_nnz,
+        max_entry_terms = stats.max_entry_terms,
+    ))
+    return nothing
+end
+
+function _factor_laurent_sl_column_peel(A; progress_callback = nothing)
+    _validate_laurent_column_peel_input_shape_and_ring(A)
+    _emit_laurent_column_peel_progress(
+        progress_callback,
+        A,
+        0,
+        _laurent_column_peel_empty_last_completed(),
+    )
+    _validate_laurent_column_peel_input_determinant_one(A)
     factors, steps, final_block, final_target, final_local, final_2x2 =
-        _laurent_column_peel_recursive(A)
+        _laurent_column_peel_recursive(
+            A;
+            progress_callback,
+            completed_steps = 0,
+            last_completed = _laurent_column_peel_empty_last_completed(),
+            emit_current = false,
+        )
     R = base_ring(A)
     product = _factor_product(factors, R, nrows(A))
     certificate = LaurentColumnPeelFactorization(
@@ -80,27 +158,17 @@ function _factor_laurent_sl_column_peel(A)
     )
 end
 
-function _laurent_column_peel_factors(A)
-    return _factor_laurent_sl_column_peel(A).factors
-end
-
-function _verify_laurent_column_peel_replay(certificate)::Bool
-    return _laurent_column_peel_verification(certificate).overall_ok
-end
-
-function _validate_laurent_column_peel_input(A)
-    nrows(A) == ncols(A) || throw(ArgumentError("Laurent column-peel factorization requires a square matrix"))
-    nrows(A) >= 2 || throw(ArgumentError("Laurent column-peel factorization requires size at least 2"))
-    R = base_ring(A)
-    _is_laurent_polynomial_ring(R) || throw(ArgumentError("Laurent column-peel factorization requires a Laurent polynomial ring"))
-    profile = classify_laurent_determinant(A)
-    profile.classification == :one || throw(ArgumentError("Laurent column-peel factorization requires determinant-one input"))
-    return nrows(A)
-end
-
-function _laurent_column_peel_recursive(current)
+function _laurent_column_peel_recursive(
+    current;
+    progress_callback = nothing,
+    completed_steps::Int = 0,
+    last_completed = _laurent_column_peel_empty_last_completed(),
+    emit_current::Bool = true,
+)
     d = nrows(current)
     R = base_ring(current)
+    emit_current &&
+        _emit_laurent_column_peel_progress(progress_callback, current, completed_steps, last_completed)
 
     if d == 2
         final_block = current
@@ -113,9 +181,24 @@ function _laurent_column_peel_recursive(current)
         return final_factors, LaurentColumnPeelStep[], final_block, final_target, final_local, final_factors
     end
 
+    step_started_at = time()
     step = _laurent_column_peel_step(current)
+    step_elapsed = round(time() - step_started_at; digits = 3)
+    next_completed_steps = completed_steps + 1
+    next_last_completed = (;
+        dimension = d,
+        elapsed_seconds = step_elapsed,
+        left_factors = length(step.left_factors),
+        right_factors = length(step.right_factors),
+    )
     next_factors, next_steps, final_block, final_target, final_local, final_2x2 =
-        _laurent_column_peel_recursive(step.next_block)
+        _laurent_column_peel_recursive(
+            step.next_block;
+            progress_callback,
+            completed_steps = next_completed_steps,
+            last_completed = next_last_completed,
+            emit_current = true,
+        )
     current_factors = vcat(
         _inverse_elementary_sequence(step.left_factors),
         _embed_upper_left_factors(next_factors, R, d),

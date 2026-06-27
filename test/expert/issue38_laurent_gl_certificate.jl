@@ -109,6 +109,29 @@ end
     @test determinant_profile.determinant == u * v
 
     certificate = laurent_gl_factorization_certificate(Q)
+    callback_records = Any[]
+    callback_certificate = Suslin._laurent_gl_factorization_certificate(
+        Q;
+        progress_callback = record -> push!(callback_records, record),
+    )
+    @test verify_laurent_gl_factorization_certificate(callback_certificate)
+    @test callback_certificate.reconstructed_product == certificate.reconstructed_product
+    @test callback_certificate.normalized_core == certificate.normalized_core
+    @test !isempty(callback_records)
+    @test first(callback_records).current_dimension == nrows(callback_certificate.normalized_core)
+    @test last(callback_records).current_dimension == 2
+
+    normalized = normalize_laurent_gl_matrix(Q)
+    from_normalization_records = Any[]
+    from_normalization_certificate = Suslin._laurent_gl_factorization_certificate_from_normalization(
+        Q,
+        normalized;
+        progress_callback = record -> push!(from_normalization_records, record),
+    )
+    @test verify_laurent_gl_factorization_certificate(from_normalization_certificate)
+    @test from_normalization_certificate.normalization == normalized
+    @test from_normalization_certificate.reconstructed_product == certificate.reconstructed_product
+    @test !isempty(from_normalization_records)
     @test certificate.original_matrix == Q
     @test certificate.determinant_profile.classification == :laurent_monomial_unit
     @test certificate.determinant_profile.determinant == u * v

@@ -1,3 +1,4 @@
+using Dates
 using Test
 
 const TORICBUILDER_CACHE_STATUS_REPORT_SCRIPT =
@@ -66,10 +67,30 @@ function _bounded_route_row_is_structured(row; timeout_seconds)
     return false
 end
 
+function _bounded_route_row_has_issue147_peel_evidence(row; timeout_seconds)
+    _bounded_route_row_is_structured(row; timeout_seconds) || return false
+    row.route_status == :timed_out || return true
+    stages = _matching_stage_names(row, :timed_out)
+    length(stages) == 1 || return false
+    stage = only(stages)
+    stage != :certificate_construction && return true
+    details = row.error_details
+    details isa AbstractString || return false
+    return occursin("peel progress:", details) &&
+        occursin("current d=", details) &&
+        occursin("completed steps=", details) &&
+        (occursin("last-column nnz=", details) || occursin("max entry terms=", details))
+end
+
 @testset "ToricBuilder cache Q-block status report" begin
     @test isfile(TORICBUILDER_CACHE_STATUS_REPORT_SCRIPT)
 
     include(TORICBUILDER_CACHE_STATUS_REPORT_SCRIPT)
+    @test !isdefined(ToricBuilderCacheQBlockStatusReport, :_peel_column_stats)
+    @test !isdefined(ToricBuilderCacheQBlockStatusReport, :_last_column_or_nothing)
+    @test !isdefined(ToricBuilderCacheQBlockStatusReport, :_worker_laurent_column_peel_recursive)
+    @test !isdefined(ToricBuilderCacheQBlockStatusReport, :_worker_factor_laurent_sl_column_peel)
+    @test !isdefined(ToricBuilderCacheQBlockStatusReport, :_worker_laurent_gl_factorization_certificate)
     @eval ToricBuilderCacheQBlockStatusReport begin
         const _TEST_FORCE_WAIT_FOR_EXIT_FAILURE = Main.FORCE_WAIT_FOR_EXIT_FAILURE
 
@@ -85,6 +106,59 @@ end
                 open($(repr(progress_path)), "w") do io
                     println(io, "current_stage=normalization")
                     println(io, "stage_started_at=", time())
+                end
+                sleep(10)
+                """
+            elseif entry.mode == :peel_progress_timeout
+                """
+                open($(repr(progress_path)), "w") do io
+                    println(io, "current_stage=certificate_construction")
+                    println(io, "stage_started_at=", time())
+                    println(io, "stage.determinant_classification.status=pass")
+                    println(io, "stage.determinant_classification.elapsed_seconds=0.001")
+                    println(io, "stage.determinant_classification.error_details=none")
+                    println(io, "stage.normalization.status=pass")
+                    println(io, "stage.normalization.elapsed_seconds=0.002")
+                    println(io, "stage.normalization.error_details=none")
+                    println(io, "peel.current_dimension=21")
+                    println(io, "peel.completed_steps=9")
+                    println(io, "peel.last_completed_dimension=22")
+                    println(io, "peel.last_completed_elapsed_seconds=0.875")
+                    println(io, "peel.last_completed_left_factors=7")
+                    println(io, "peel.last_completed_right_factors=11")
+                    println(io, "peel.last_column_nnz=20")
+                    println(io, "peel.max_entry_terms=26")
+                end
+                sleep(10)
+                """
+            elseif entry.mode == :certificate_timeout_without_peel
+                """
+                open($(repr(progress_path)), "w") do io
+                    println(io, "current_stage=certificate_construction")
+                    println(io, "stage_started_at=", time())
+                    println(io, "stage.determinant_classification.status=pass")
+                    println(io, "stage.determinant_classification.elapsed_seconds=0.012")
+                    println(io, "stage.determinant_classification.error_details=none")
+                    println(io, "stage.normalization.status=pass")
+                    println(io, "stage.normalization.elapsed_seconds=0.034")
+                    println(io, "stage.normalization.error_details=none")
+                end
+                sleep(10)
+                """
+            elseif entry.mode == :partial_peel_progress_timeout
+                """
+                open($(repr(progress_path)), "w") do io
+                    println(io, "current_stage=certificate_construction")
+                    println(io, "stage_started_at=", time())
+                    println(io, "stage.determinant_classification.status=pass")
+                    println(io, "stage.determinant_classification.elapsed_seconds=0.001")
+                    println(io, "stage.determinant_classification.error_details=none")
+                    println(io, "stage.normalization.status=pass")
+                    println(io, "stage.normalization.elapsed_seconds=0.002")
+                    println(io, "stage.normalization.error_details=none")
+                    println(io, "peel.current_dimension=21")
+                    println(io, "peel.completed_steps=9")
+                    println(io, "peel.last_column_nnz=20")
                 end
                 sleep(10)
                 """
@@ -230,6 +304,15 @@ end
     @test by_id["case_011"].decomposed_base_matrix_count == :not_run
     @test by_id["case_011"].runtime_seconds == :not_run
 
+    @test by_id["case_009"].matrix_size == (62, 62)
+    @test by_id["case_009"].route_status == :not_exercised_in_default_report
+    @test by_id["case_009"].public_elementary_status == :not_run
+    @test by_id["case_009"].determinant_class == :not_run
+    @test by_id["case_009"].verified == false
+    @test by_id["case_009"].decomposed_base_matrix_count == :not_run
+    @test by_id["case_009"].runtime_seconds == :not_run
+    @test by_id["case_009"].error_details == "not_run"
+
     markdown = ToricBuilderCacheQBlockStatusReport.render_markdown(report)
     @test occursin("# ToricBuilder Cache Q-Block Status Report", markdown)
     @test occursin("Matrix size", markdown)
@@ -243,6 +326,7 @@ end
     @test occursin(r"\| case_006 \| 18x18 \| 99 \| default_contract \| gl_certificate_pass \| staged_boundary \| laurent_monomial_unit \| 212 \| [0-9]+\.[0-9]{3} \|", markdown)
     @test occursin(r"\| case_010 \| 6x6 \| 34 \| default_contract \| gl_certificate_pass \| staged_boundary \| laurent_monomial_unit \| [1-9][0-9]* \| [0-9]+\.[0-9]{3} \|", markdown)
     @test occursin("| case_011 | 288x288 | 14713 | optional_slow | not_exercised_in_default_report | not_run | not_run | not_run | not_run |", markdown)
+    @test occursin("| case_009 | 62x62 | 739 | default_contract | not_exercised_in_default_report | not_run | not_run | not_run | not_run |", markdown)
     @test hasproperty(by_id["case_001"], :stage_timings)
     @test by_id["case_001"].stage_timings.determinant_classification.status == :pass
     @test by_id["case_001"].stage_timings.normalization.status == :pass
@@ -255,6 +339,12 @@ end
     @test by_id["case_007"].stage_timings.normalization.status == :not_run
     @test by_id["case_007"].stage_timings.certificate_construction.status == :not_run
     @test by_id["case_007"].stage_timings.verification.status == :not_run
+
+    @test hasproperty(by_id["case_009"], :stage_timings)
+    @test by_id["case_009"].stage_timings.determinant_classification.status == :not_run
+    @test by_id["case_009"].stage_timings.normalization.status == :not_run
+    @test by_id["case_009"].stage_timings.certificate_construction.status == :not_run
+    @test by_id["case_009"].stage_timings.verification.status == :not_run
 
     @test occursin("## Stage Timing Details", markdown)
     @test occursin("Determinant classification", markdown)
@@ -422,11 +512,13 @@ end
         @test occursin("deserialize", invalid_stdout_row.error_details)
         @test invalid_stdout_row.stage_timings.determinant_classification.status == :route_error
 
+        synthetic_timeout_seconds = 2.0
+
         FORCE_WAIT_FOR_EXIT_FAILURE[] = true
         timeout_row = try
             ToricBuilderCacheQBlockStatusReport._bounded_exercised_row(
                 FakeBoundedEntry("case_kill_grace"; mode = :slow_timeout),
-                0.2,
+                synthetic_timeout_seconds,
             )
         finally
             FORCE_WAIT_FOR_EXIT_FAILURE[] = false
@@ -439,6 +531,73 @@ end
             stage in ToricBuilderCacheQBlockStatusReport.STAGE_NAMES
         ]
         @test :timed_out in kill_grace_stage_statuses
+
+        peel_timeout_row = ToricBuilderCacheQBlockStatusReport._bounded_exercised_row(
+            FakeBoundedEntry("case_peel_progress"; mode = :peel_progress_timeout),
+            synthetic_timeout_seconds,
+        )
+        @test peel_timeout_row.route_status == :timed_out
+        @test occursin("peel progress:", peel_timeout_row.error_details)
+        @test occursin("current d=21", peel_timeout_row.error_details)
+        @test occursin("completed steps=9", peel_timeout_row.error_details)
+        @test occursin("last completed d=22", peel_timeout_row.error_details)
+        @test occursin("last-column nnz=20", peel_timeout_row.error_details)
+        @test occursin("max entry terms=26", peel_timeout_row.error_details)
+        @test occursin("peel progress:", peel_timeout_row.evidence)
+        peel_timeout_markdown = ToricBuilderCacheQBlockStatusReport.render_markdown((;
+            title = "Synthetic Timeout Report",
+            generated_on = Dates.today(),
+            source_fixture = "synthetic",
+            exercised_case_ids = ("case_peel_progress",),
+            timeout_seconds = synthetic_timeout_seconds,
+            rows = [peel_timeout_row],
+        ))
+        @test occursin("| case_peel_progress | 5x5 | 25 | default_contract | timed_out |", peel_timeout_markdown)
+        @test occursin("peel progress:", peel_timeout_markdown)
+        @test occursin("current d=21", peel_timeout_markdown)
+        @test occursin("completed steps=9", peel_timeout_markdown)
+        @test occursin("last completed d=22", peel_timeout_markdown)
+        @test occursin("last-column nnz=20", peel_timeout_markdown)
+        @test occursin("max entry terms=26", peel_timeout_markdown)
+        @test _bounded_route_row_has_issue147_peel_evidence(peel_timeout_row; timeout_seconds = synthetic_timeout_seconds)
+
+        missing_peel_timeout_row = ToricBuilderCacheQBlockStatusReport._bounded_exercised_row(
+            FakeBoundedEntry("case_missing_peel_progress"; matrix = (30, 30), sparse_entry_count = 477, mode = :certificate_timeout_without_peel),
+            synthetic_timeout_seconds,
+        )
+        @test missing_peel_timeout_row.route_status == :timed_out
+        @test occursin("certificate_construction", missing_peel_timeout_row.error_details)
+        @test _bounded_route_row_is_structured(missing_peel_timeout_row; timeout_seconds = synthetic_timeout_seconds)
+        @test !_bounded_route_row_has_issue147_peel_evidence(missing_peel_timeout_row; timeout_seconds = synthetic_timeout_seconds)
+
+        partial_peel_timeout_row = ToricBuilderCacheQBlockStatusReport._bounded_exercised_row(
+            FakeBoundedEntry("case_partial_peel_progress"; mode = :partial_peel_progress_timeout),
+            synthetic_timeout_seconds,
+        )
+        @test partial_peel_timeout_row.route_status == :timed_out
+        @test occursin("peel progress:", partial_peel_timeout_row.error_details)
+        @test occursin("current d=21", partial_peel_timeout_row.error_details)
+        @test occursin("completed steps=9", partial_peel_timeout_row.error_details)
+        @test occursin("last-column nnz=20", partial_peel_timeout_row.error_details)
+        @test !occursin("nothing", partial_peel_timeout_row.error_details)
+        @test occursin("peel progress:", partial_peel_timeout_row.evidence)
+        partial_peel_timeout_markdown = ToricBuilderCacheQBlockStatusReport.render_markdown((;
+            title = "Synthetic Partial Timeout Report",
+            generated_on = Dates.today(),
+            source_fixture = "synthetic",
+            exercised_case_ids = ("case_partial_peel_progress",),
+            timeout_seconds = synthetic_timeout_seconds,
+            rows = [partial_peel_timeout_row],
+        ))
+        @test occursin(
+            "| case_partial_peel_progress | 5x5 | 25 | default_contract | timed_out |",
+            partial_peel_timeout_markdown,
+        )
+        @test occursin("peel progress:", partial_peel_timeout_markdown)
+        @test occursin("current d=21", partial_peel_timeout_markdown)
+        @test occursin("completed steps=9", partial_peel_timeout_markdown)
+        @test occursin("last-column nnz=20", partial_peel_timeout_markdown)
+        @test !occursin("nothing", partial_peel_timeout_markdown)
 
         bounded_worker_row = ToricBuilderCacheQBlockStatusReport._bounded_exercised_row(
             FakeBoundedEntry("case_success"; mode = :serialized_success),
