@@ -91,16 +91,22 @@ function _write_worker_progress(
         if peel_progress !== nothing
             println(io, "peel.current_dimension=", peel_progress.current_dimension)
             println(io, "peel.completed_steps=", peel_progress.completed_steps)
-            println(io, "peel.last_completed_dimension=", peel_progress.last_completed_dimension)
-            println(
-                io,
-                "peel.last_completed_elapsed_seconds=",
-                peel_progress.last_completed_elapsed_seconds,
-            )
-            println(io, "peel.last_completed_left_factors=", peel_progress.last_completed_left_factors)
-            println(io, "peel.last_completed_right_factors=", peel_progress.last_completed_right_factors)
-            println(io, "peel.last_column_nnz=", peel_progress.last_column_nnz)
-            println(io, "peel.max_entry_terms=", peel_progress.max_entry_terms)
+            peel_progress.last_completed_dimension !== nothing &&
+                println(io, "peel.last_completed_dimension=", peel_progress.last_completed_dimension)
+            peel_progress.last_completed_elapsed_seconds !== nothing &&
+                println(
+                    io,
+                    "peel.last_completed_elapsed_seconds=",
+                    peel_progress.last_completed_elapsed_seconds,
+                )
+            peel_progress.last_completed_left_factors !== nothing &&
+                println(io, "peel.last_completed_left_factors=", peel_progress.last_completed_left_factors)
+            peel_progress.last_completed_right_factors !== nothing &&
+                println(io, "peel.last_completed_right_factors=", peel_progress.last_completed_right_factors)
+            peel_progress.last_column_nnz !== nothing &&
+                println(io, "peel.last_column_nnz=", peel_progress.last_column_nnz)
+            peel_progress.max_entry_terms !== nothing &&
+                println(io, "peel.max_entry_terms=", peel_progress.max_entry_terms)
         end
     end
     mv(tmp, progress_path; force = true)
@@ -138,17 +144,9 @@ function _read_peel_progress(data::Dict{String, String})
         _maybe_parse_int(get(data, "peel.last_completed_right_factors", nothing))
     last_column_nnz = _maybe_parse_int(get(data, "peel.last_column_nnz", nothing))
     max_entry_terms = _maybe_parse_int(get(data, "peel.max_entry_terms", nothing))
-    required = (
-        current_dimension,
-        completed_steps,
-        last_completed_dimension,
-        last_completed_elapsed_seconds,
-        last_completed_left_factors,
-        last_completed_right_factors,
-        last_column_nnz,
-        max_entry_terms,
-    )
-    any(isnothing, required) && return nothing
+    current_dimension === nothing && return nothing
+    completed_steps === nothing && return nothing
+    (last_column_nnz === nothing && max_entry_terms === nothing) && return nothing
     return (;
         current_dimension,
         completed_steps,
@@ -163,24 +161,28 @@ end
 
 function _peel_progress_text(progress)
     progress === nothing && return nothing
-    return string(
+    parts = String[
         "peel progress: current d=",
-        progress.current_dimension,
+        string(progress.current_dimension),
         ", completed steps=",
-        progress.completed_steps,
-        ", last completed d=",
-        progress.last_completed_dimension,
-        " (elapsed ",
-        _runtime_text(progress.last_completed_elapsed_seconds),
-        "s, left factors=",
-        progress.last_completed_left_factors,
-        ", right factors=",
-        progress.last_completed_right_factors,
-        "), last-column nnz=",
-        progress.last_column_nnz,
-        ", max entry terms=",
-        progress.max_entry_terms,
-    )
+        string(progress.completed_steps),
+    ]
+    if progress.last_completed_dimension !== nothing
+        push!(parts, ", last completed d=", string(progress.last_completed_dimension))
+        detail_parts = String[]
+        progress.last_completed_elapsed_seconds !== nothing &&
+            push!(detail_parts, "elapsed $(_runtime_text(progress.last_completed_elapsed_seconds))s")
+        progress.last_completed_left_factors !== nothing &&
+            push!(detail_parts, "left factors=$(progress.last_completed_left_factors)")
+        progress.last_completed_right_factors !== nothing &&
+            push!(detail_parts, "right factors=$(progress.last_completed_right_factors)")
+        isempty(detail_parts) || push!(parts, " (", join(detail_parts, ", "), ")")
+    end
+    progress.last_column_nnz !== nothing &&
+        push!(parts, ", last-column nnz=", string(progress.last_column_nnz))
+    progress.max_entry_terms !== nothing &&
+        push!(parts, ", max entry terms=", string(progress.max_entry_terms))
+    return join(parts)
 end
 
 function _read_worker_progress(progress_path)
