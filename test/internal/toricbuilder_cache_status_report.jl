@@ -512,11 +512,13 @@ end
         @test occursin("deserialize", invalid_stdout_row.error_details)
         @test invalid_stdout_row.stage_timings.determinant_classification.status == :route_error
 
+        synthetic_timeout_seconds = 2.0
+
         FORCE_WAIT_FOR_EXIT_FAILURE[] = true
         timeout_row = try
             ToricBuilderCacheQBlockStatusReport._bounded_exercised_row(
                 FakeBoundedEntry("case_kill_grace"; mode = :slow_timeout),
-                0.2,
+                synthetic_timeout_seconds,
             )
         finally
             FORCE_WAIT_FOR_EXIT_FAILURE[] = false
@@ -532,7 +534,7 @@ end
 
         peel_timeout_row = ToricBuilderCacheQBlockStatusReport._bounded_exercised_row(
             FakeBoundedEntry("case_peel_progress"; mode = :peel_progress_timeout),
-            0.2,
+            synthetic_timeout_seconds,
         )
         @test peel_timeout_row.route_status == :timed_out
         @test occursin("peel progress:", peel_timeout_row.error_details)
@@ -547,7 +549,7 @@ end
             generated_on = Dates.today(),
             source_fixture = "synthetic",
             exercised_case_ids = ("case_peel_progress",),
-            timeout_seconds = 0.2,
+            timeout_seconds = synthetic_timeout_seconds,
             rows = [peel_timeout_row],
         ))
         @test occursin("| case_peel_progress | 5x5 | 25 | default_contract | timed_out |", peel_timeout_markdown)
@@ -557,20 +559,20 @@ end
         @test occursin("last completed d=22", peel_timeout_markdown)
         @test occursin("last-column nnz=20", peel_timeout_markdown)
         @test occursin("max entry terms=26", peel_timeout_markdown)
-        @test _bounded_route_row_has_issue147_peel_evidence(peel_timeout_row; timeout_seconds = 0.2)
+        @test _bounded_route_row_has_issue147_peel_evidence(peel_timeout_row; timeout_seconds = synthetic_timeout_seconds)
 
         missing_peel_timeout_row = ToricBuilderCacheQBlockStatusReport._bounded_exercised_row(
             FakeBoundedEntry("case_missing_peel_progress"; matrix = (30, 30), sparse_entry_count = 477, mode = :certificate_timeout_without_peel),
-            0.2,
+            synthetic_timeout_seconds,
         )
         @test missing_peel_timeout_row.route_status == :timed_out
         @test occursin("certificate_construction", missing_peel_timeout_row.error_details)
-        @test _bounded_route_row_is_structured(missing_peel_timeout_row; timeout_seconds = 0.2)
-        @test !_bounded_route_row_has_issue147_peel_evidence(missing_peel_timeout_row; timeout_seconds = 0.2)
+        @test _bounded_route_row_is_structured(missing_peel_timeout_row; timeout_seconds = synthetic_timeout_seconds)
+        @test !_bounded_route_row_has_issue147_peel_evidence(missing_peel_timeout_row; timeout_seconds = synthetic_timeout_seconds)
 
         partial_peel_timeout_row = ToricBuilderCacheQBlockStatusReport._bounded_exercised_row(
             FakeBoundedEntry("case_partial_peel_progress"; mode = :partial_peel_progress_timeout),
-            0.2,
+            synthetic_timeout_seconds,
         )
         @test partial_peel_timeout_row.route_status == :timed_out
         @test occursin("peel progress:", partial_peel_timeout_row.error_details)
@@ -584,7 +586,7 @@ end
             generated_on = Dates.today(),
             source_fixture = "synthetic",
             exercised_case_ids = ("case_partial_peel_progress",),
-            timeout_seconds = 0.2,
+            timeout_seconds = synthetic_timeout_seconds,
             rows = [partial_peel_timeout_row],
         ))
         @test occursin(
