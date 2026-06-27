@@ -69,7 +69,13 @@ function _stage_timings_from_dict(timings::Dict{Symbol, Any})
     )
 end
 
-function _write_worker_progress(progress_path, current_stage::Symbol, stage_started_at::Float64, timings)
+function _write_worker_progress(
+    progress_path,
+    current_stage::Symbol,
+    stage_started_at::Float64,
+    timings;
+    peel_progress = nothing,
+)
     progress_path === nothing && return nothing
     tmp = string(progress_path, ".tmp")
     open(tmp, "w") do io
@@ -82,14 +88,106 @@ function _write_worker_progress(progress_path, current_stage::Symbol, stage_star
             println(io, "stage.", stage, ".elapsed_seconds=", timing.elapsed_seconds)
             println(io, "stage.", stage, ".error_details=", replace(timing.error_details, '\n' => "\\n"))
         end
+        if peel_progress !== nothing
+            println(io, "peel.current_dimension=", peel_progress.current_dimension)
+            println(io, "peel.completed_steps=", peel_progress.completed_steps)
+            println(io, "peel.last_completed_dimension=", peel_progress.last_completed_dimension)
+            println(
+                io,
+                "peel.last_completed_elapsed_seconds=",
+                peel_progress.last_completed_elapsed_seconds,
+            )
+            println(io, "peel.last_completed_left_factors=", peel_progress.last_completed_left_factors)
+            println(io, "peel.last_completed_right_factors=", peel_progress.last_completed_right_factors)
+            println(io, "peel.last_column_nnz=", peel_progress.last_column_nnz)
+            println(io, "peel.max_entry_terms=", peel_progress.max_entry_terms)
+        end
     end
     mv(tmp, progress_path; force = true)
     return nothing
 end
 
+function _maybe_parse_int(raw)
+    raw === nothing && return nothing
+    return try
+        parse(Int, raw)
+    catch err
+        err isa ArgumentError || rethrow()
+        nothing
+    end
+end
+
+function _maybe_parse_float(raw)
+    raw === nothing && return nothing
+    return try
+        parse(Float64, raw)
+    catch err
+        err isa ArgumentError || rethrow()
+        nothing
+    end
+end
+
+function _read_peel_progress(data::Dict{String, String})
+    current_dimension = _maybe_parse_int(get(data, "peel.current_dimension", nothing))
+    completed_steps = _maybe_parse_int(get(data, "peel.completed_steps", nothing))
+    last_completed_dimension = _maybe_parse_int(get(data, "peel.last_completed_dimension", nothing))
+    last_completed_elapsed_seconds =
+        _maybe_parse_float(get(data, "peel.last_completed_elapsed_seconds", nothing))
+    last_completed_left_factors = _maybe_parse_int(get(data, "peel.last_completed_left_factors", nothing))
+    last_completed_right_factors =
+        _maybe_parse_int(get(data, "peel.last_completed_right_factors", nothing))
+    last_column_nnz = _maybe_parse_int(get(data, "peel.last_column_nnz", nothing))
+    max_entry_terms = _maybe_parse_int(get(data, "peel.max_entry_terms", nothing))
+    required = (
+        current_dimension,
+        completed_steps,
+        last_completed_dimension,
+        last_completed_elapsed_seconds,
+        last_completed_left_factors,
+        last_completed_right_factors,
+        last_column_nnz,
+        max_entry_terms,
+    )
+    any(isnothing, required) && return nothing
+    return (;
+        current_dimension,
+        completed_steps,
+        last_completed_dimension,
+        last_completed_elapsed_seconds,
+        last_completed_left_factors,
+        last_completed_right_factors,
+        last_column_nnz,
+        max_entry_terms,
+    )
+end
+
+function _peel_progress_text(progress)
+    progress === nothing && return nothing
+    return string(
+        "peel progress: current d=",
+        progress.current_dimension,
+        ", completed steps=",
+        progress.completed_steps,
+        ", last completed d=",
+        progress.last_completed_dimension,
+        " (elapsed ",
+        _runtime_text(progress.last_completed_elapsed_seconds),
+        "s, left factors=",
+        progress.last_completed_left_factors,
+        ", right factors=",
+        progress.last_completed_right_factors,
+        "), last-column nnz=",
+        progress.last_column_nnz,
+        ", max entry terms=",
+        progress.max_entry_terms,
+    )
+end
+
 function _read_worker_progress(progress_path)
-    progress_path === nothing && return (; current_stage = :determinant_classification, timings = Dict{Symbol, Any}())
-    isfile(progress_path) || return (; current_stage = :determinant_classification, timings = Dict{Symbol, Any}())
+    progress_path === nothing &&
+        return (; current_stage = :determinant_classification, timings = Dict{Symbol, Any}(), peel_progress = nothing)
+    isfile(progress_path) ||
+        return (; current_stage = :determinant_classification, timings = Dict{Symbol, Any}(), peel_progress = nothing)
     data = Dict{String, String}()
     for line in eachline(progress_path)
         key, value = split(line, "="; limit = 2)
@@ -111,6 +209,22 @@ function _read_worker_progress(progress_path)
         current_stage = Symbol(get(data, "current_stage", "determinant_classification")),
         stage_started_at = parse(Float64, get(data, "stage_started_at", string(time()))),
         timings,
+        peel_progress = _read_peel_progress(data),
+    )
+end
+
+function _write_peel_worker_progress(
+    progress_path,
+    stage_started_at::Float64,
+    timings::Dict{Symbol, Any},
+    progress,
+)
+    return _write_worker_progress(
+        progress_path,
+        :certificate_construction,
+        stage_started_at,
+        timings;
+        peel_progress = progress,
     )
 end
 
@@ -355,9 +469,24 @@ function _worker_exercised_row(case_id::AbstractString, progress_path)
         return _stage_failure_row(entry, timings, normalization_result, start_ns; profile)
     normalization = normalization_result.value
 
-    certificate_result = _record_worker_stage!(timings, :certificate_construction, progress_path) do
-        laurent_gl_factorization_certificate(A)
-    end
+    certificate_stage_started_at = time()
+    _write_worker_progress(progress_path, :certificate_construction, certificate_stage_started_at, timings)
+    progress_callback = progress -> _write_peel_worker_progress(
+        progress_path,
+        certificate_stage_started_at,
+        timings,
+        progress,
+    )
+    certificate_result = _record_stage!(
+        timings,
+        :certificate_construction,
+        () -> Suslin._laurent_gl_factorization_certificate_from_normalization(
+            A,
+            normalization;
+            progress_callback,
+        ),
+    )
+    _write_worker_progress(progress_path, :certificate_construction, certificate_stage_started_at, timings)
     certificate_result.status == :pass ||
         return _stage_failure_row(entry, timings, certificate_result, start_ns; profile)
     certificate = certificate_result.value
@@ -421,6 +550,8 @@ end
 function _timed_out_row(entry, timeout_seconds, runtime_seconds, progress; cleanup_details = nothing)
     timings = copy(progress.timings)
     current_stage = progress.current_stage
+    peel_progress_text =
+        hasproperty(progress, :peel_progress) ? _peel_progress_text(progress.peel_progress) : nothing
     stage_elapsed =
         hasproperty(progress, :stage_started_at) ? max(round(time() - progress.stage_started_at; digits = 3), 0.0) :
         runtime_seconds
@@ -428,10 +559,16 @@ function _timed_out_row(entry, timeout_seconds, runtime_seconds, progress; clean
     if cleanup_details !== nothing
         stage_error_details = string(stage_error_details, "; ", cleanup_details)
     end
+    if peel_progress_text !== nothing
+        stage_error_details = string(stage_error_details, "; ", peel_progress_text)
+    end
     row_error_details = string(stage_error_details, " while running ", current_stage)
     evidence = "Bounded worker exceeded the configured process-level budget."
     if cleanup_details !== nothing
         evidence = string(evidence, " Cleanup warning: ", cleanup_details)
+    end
+    if peel_progress_text !== nothing
+        evidence = string(evidence, " ", peel_progress_text)
     end
     timings[current_stage] = _stage_timing(
         :timed_out;

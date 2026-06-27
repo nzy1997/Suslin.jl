@@ -1,3 +1,4 @@
+using Dates
 using Test
 
 const TORICBUILDER_CACHE_STATUS_REPORT_SCRIPT =
@@ -70,6 +71,9 @@ end
     @test isfile(TORICBUILDER_CACHE_STATUS_REPORT_SCRIPT)
 
     include(TORICBUILDER_CACHE_STATUS_REPORT_SCRIPT)
+    @test !isdefined(ToricBuilderCacheQBlockStatusReport, :_worker_laurent_column_peel_recursive)
+    @test !isdefined(ToricBuilderCacheQBlockStatusReport, :_worker_factor_laurent_sl_column_peel)
+    @test !isdefined(ToricBuilderCacheQBlockStatusReport, :_worker_laurent_gl_factorization_certificate)
     @eval ToricBuilderCacheQBlockStatusReport begin
         const _TEST_FORCE_WAIT_FOR_EXIT_FAILURE = Main.FORCE_WAIT_FOR_EXIT_FAILURE
 
@@ -85,6 +89,28 @@ end
                 open($(repr(progress_path)), "w") do io
                     println(io, "current_stage=normalization")
                     println(io, "stage_started_at=", time())
+                end
+                sleep(10)
+                """
+            elseif entry.mode == :peel_progress_timeout
+                """
+                open($(repr(progress_path)), "w") do io
+                    println(io, "current_stage=certificate_construction")
+                    println(io, "stage_started_at=", time())
+                    println(io, "stage.determinant_classification.status=pass")
+                    println(io, "stage.determinant_classification.elapsed_seconds=0.001")
+                    println(io, "stage.determinant_classification.error_details=none")
+                    println(io, "stage.normalization.status=pass")
+                    println(io, "stage.normalization.elapsed_seconds=0.002")
+                    println(io, "stage.normalization.error_details=none")
+                    println(io, "peel.current_dimension=21")
+                    println(io, "peel.completed_steps=9")
+                    println(io, "peel.last_completed_dimension=22")
+                    println(io, "peel.last_completed_elapsed_seconds=0.875")
+                    println(io, "peel.last_completed_left_factors=7")
+                    println(io, "peel.last_completed_right_factors=11")
+                    println(io, "peel.last_column_nnz=20")
+                    println(io, "peel.max_entry_terms=26")
                 end
                 sleep(10)
                 """
@@ -439,6 +465,34 @@ end
             stage in ToricBuilderCacheQBlockStatusReport.STAGE_NAMES
         ]
         @test :timed_out in kill_grace_stage_statuses
+
+        peel_timeout_row = ToricBuilderCacheQBlockStatusReport._bounded_exercised_row(
+            FakeBoundedEntry("case_peel_progress"; mode = :peel_progress_timeout),
+            0.2,
+        )
+        @test peel_timeout_row.route_status == :timed_out
+        @test occursin("peel progress:", peel_timeout_row.error_details)
+        @test occursin("current d=21", peel_timeout_row.error_details)
+        @test occursin("completed steps=9", peel_timeout_row.error_details)
+        @test occursin("last completed d=22", peel_timeout_row.error_details)
+        @test occursin("last-column nnz=20", peel_timeout_row.error_details)
+        @test occursin("max entry terms=26", peel_timeout_row.error_details)
+        @test occursin("peel progress:", peel_timeout_row.evidence)
+        peel_timeout_markdown = ToricBuilderCacheQBlockStatusReport.render_markdown((;
+            title = "Synthetic Timeout Report",
+            generated_on = Dates.today(),
+            source_fixture = "synthetic",
+            exercised_case_ids = ("case_peel_progress",),
+            timeout_seconds = 0.2,
+            rows = [peel_timeout_row],
+        ))
+        @test occursin("| case_peel_progress | 5x5 | 25 | default_contract | timed_out |", peel_timeout_markdown)
+        @test occursin("peel progress:", peel_timeout_markdown)
+        @test occursin("current d=21", peel_timeout_markdown)
+        @test occursin("completed steps=9", peel_timeout_markdown)
+        @test occursin("last completed d=22", peel_timeout_markdown)
+        @test occursin("last-column nnz=20", peel_timeout_markdown)
+        @test occursin("max entry terms=26", peel_timeout_markdown)
 
         bounded_worker_row = ToricBuilderCacheQBlockStatusReport._bounded_exercised_row(
             FakeBoundedEntry("case_success"; mode = :serialized_success),
