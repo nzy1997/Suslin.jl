@@ -43,7 +43,7 @@ include(joinpath(@__DIR__, "..", "fixtures", "toricbuilder_case008_d21_column_bo
     @test unsupported.ring_profile.kind == :laurent_polynomial
     @test unsupported.ring_profile.generators == ("x", "y")
     @test occursin("unsupported exact unimodular column reduction", unsupported.message)
-    for stage in (:unit_entry, :laurent_unit_creation, :laurent_normalization, :witness_unit, :monicity_normalization)
+    for stage in (:unit_entry, :laurent_unit_creation, :laurent_witness_unit, :laurent_normalization, :witness_unit, :monicity_normalization)
         @test stage in unsupported.attempted_stages
     end
 
