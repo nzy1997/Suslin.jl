@@ -37,10 +37,13 @@ struct LaurentGLFactorizationCertificate
     end
 end
 
-function laurent_gl_factorization_certificate(A)
-    normalization = normalize_laurent_gl_matrix(A)
+function _laurent_gl_factorization_certificate_from_normalization(
+    A,
+    normalization;
+    progress_callback = nothing,
+)
     core = normalization.normalized_matrix
-    core_factorization = _factor_laurent_sl_column_peel(core)
+    core_factorization = _factor_laurent_sl_column_peel(core; progress_callback)
     core_factors = core_factorization.factors
     R = base_ring(A)
     reconstructed_product = normalization.correction.factor * _factor_product(core_factors, R, nrows(A))
@@ -70,6 +73,19 @@ function laurent_gl_factorization_certificate(A)
         certificate.reconstructed_product,
         verification,
     )
+end
+
+function _laurent_gl_factorization_certificate(A; progress_callback = nothing)
+    normalization = normalize_laurent_gl_matrix(A)
+    return _laurent_gl_factorization_certificate_from_normalization(
+        A,
+        normalization;
+        progress_callback,
+    )
+end
+
+function laurent_gl_factorization_certificate(A)
+    return _laurent_gl_factorization_certificate(A)
 end
 
 function verify_laurent_gl_factorization_certificate(certificate)::Bool
