@@ -8,4 +8,5 @@
 !/refs/README.md
 !/refs/*.pdf
 !/refs/arXiv-*
+/.worktrees/
 .DS_Store
