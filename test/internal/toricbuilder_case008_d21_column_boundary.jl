@@ -39,6 +39,17 @@ const TORICBUILDER_CASE008_D21_COLUMN_BOUNDARY_PATH =
     @test !Suslin.is_unimodular_column(negative.failing_column, negative.ring)
     @test ToricBuilderCase008D21ColumnBoundary.validate_boundary_fixture(negative) == :not_unimodular
 
+    corrupted_snapshot = merge(
+        fixture,
+        (; failing_input_matrix = begin
+            matrix = copy(fixture.failing_input_matrix)
+            matrix[1, 1] = zero(fixture.ring)
+            matrix
+        end),
+    )
+    @test ToricBuilderCase008D21ColumnBoundary.validate_boundary_fixture(corrupted_snapshot) ==
+          :wrong_snapshot
+
     wrong_dimension = merge(fixture, (; first_failing_peel_dimension = 20))
     @test ToricBuilderCase008D21ColumnBoundary.validate_boundary_fixture(wrong_dimension) == :wrong_peel_dimension
 
