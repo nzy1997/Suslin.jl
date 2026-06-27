@@ -304,6 +304,15 @@ end
     @test by_id["case_011"].decomposed_base_matrix_count == :not_run
     @test by_id["case_011"].runtime_seconds == :not_run
 
+    @test by_id["case_009"].matrix_size == (62, 62)
+    @test by_id["case_009"].route_status == :not_exercised_in_default_report
+    @test by_id["case_009"].public_elementary_status == :not_run
+    @test by_id["case_009"].determinant_class == :not_run
+    @test by_id["case_009"].verified == false
+    @test by_id["case_009"].decomposed_base_matrix_count == :not_run
+    @test by_id["case_009"].runtime_seconds == :not_run
+    @test by_id["case_009"].error_details == "not_run"
+
     markdown = ToricBuilderCacheQBlockStatusReport.render_markdown(report)
     @test occursin("# ToricBuilder Cache Q-Block Status Report", markdown)
     @test occursin("Matrix size", markdown)
@@ -317,6 +326,7 @@ end
     @test occursin(r"\| case_006 \| 18x18 \| 99 \| default_contract \| gl_certificate_pass \| staged_boundary \| laurent_monomial_unit \| 212 \| [0-9]+\.[0-9]{3} \|", markdown)
     @test occursin(r"\| case_010 \| 6x6 \| 34 \| default_contract \| gl_certificate_pass \| staged_boundary \| laurent_monomial_unit \| [1-9][0-9]* \| [0-9]+\.[0-9]{3} \|", markdown)
     @test occursin("| case_011 | 288x288 | 14713 | optional_slow | not_exercised_in_default_report | not_run | not_run | not_run | not_run |", markdown)
+    @test occursin("| case_009 | 62x62 | 739 | default_contract | not_exercised_in_default_report | not_run | not_run | not_run | not_run |", markdown)
     @test hasproperty(by_id["case_001"], :stage_timings)
     @test by_id["case_001"].stage_timings.determinant_classification.status == :pass
     @test by_id["case_001"].stage_timings.normalization.status == :pass
@@ -329,6 +339,12 @@ end
     @test by_id["case_007"].stage_timings.normalization.status == :not_run
     @test by_id["case_007"].stage_timings.certificate_construction.status == :not_run
     @test by_id["case_007"].stage_timings.verification.status == :not_run
+
+    @test hasproperty(by_id["case_009"], :stage_timings)
+    @test by_id["case_009"].stage_timings.determinant_classification.status == :not_run
+    @test by_id["case_009"].stage_timings.normalization.status == :not_run
+    @test by_id["case_009"].stage_timings.certificate_construction.status == :not_run
+    @test by_id["case_009"].stage_timings.verification.status == :not_run
 
     @test occursin("## Stage Timing Details", markdown)
     @test occursin("Determinant classification", markdown)
