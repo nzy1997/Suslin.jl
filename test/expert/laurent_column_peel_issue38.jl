@@ -263,6 +263,9 @@ function _issue57_assert_core(core, expected_final_block)
     @test all(record -> record.completed_steps isa Int, progress_records)
     @test any(record -> record.last_column_nnz isa Int, progress_records)
     @test any(record -> record.max_entry_terms isa Int, progress_records)
+    fallback_stats = Suslin._laurent_column_peel_column_stats(Any[1, 0])
+    @test fallback_stats.last_column_nnz == 1
+    @test fallback_stats.max_entry_terms == 0
 
     @test certificate.final_block == expected_final_block
     @test length(certificate.factors) > 0
