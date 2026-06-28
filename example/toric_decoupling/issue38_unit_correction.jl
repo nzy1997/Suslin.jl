@@ -75,6 +75,24 @@ function _run_column_unit_correction(Q)
     return (; core, factors, correction, inverse_correction)
 end
 
+function _run_lazy_gl_certificate(Q)
+    certificate = laurent_gl_factorization_certificate(
+        Q;
+        determinant_strategy = :lazy,
+        correction_side = :row,
+    )
+    verified = verify_laurent_gl_factorization_certificate(certificate)
+
+    certificate.reconstructed_product == Q ||
+        error("lazy GL certificate does not reconstruct original Q")
+    verified || error("lazy GL certificate did not verify")
+
+    println(
+        "lazy_gl_certificate status=PASS det=$(certificate.overall_determinant) correction_side=$(certificate.correction_side) determinant_source=$(certificate.determinant_source) factors=$(length(certificate.elementary_factors)) verified=$(verified)",
+    )
+    return certificate
+end
+
 function main()
     entry = only(ToricBuilderIssue38Cases.catalog().cases)
     Q = entry.inputs.matrix
@@ -84,10 +102,11 @@ function main()
     _report_original_boundary(Q)
     row = _run_row_unit_correction(Q)
     column = _run_column_unit_correction(Q)
+    lazy = _run_lazy_gl_certificate(Q)
     println(
-        "issue38_unit_correction_example status=PASS row_factors=$(length(row.factors)) column_factors=$(length(column.factors))",
+        "issue38_unit_correction_example status=PASS row_factors=$(length(row.factors)) column_factors=$(length(column.factors)) lazy_factors=$(length(lazy.elementary_factors))",
     )
-    return (; Q, row, column)
+    return (; Q, row, column, lazy)
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
