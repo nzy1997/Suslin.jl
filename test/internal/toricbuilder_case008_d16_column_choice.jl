@@ -116,6 +116,8 @@ end
 
     supported = filter(candidate -> candidate.supported_by_current_reducer, report.candidates)
     supported_alternatives = filter(candidate -> candidate.column_index != 16, supported)
+    @test Tuple(candidate.column_index for candidate in supported) == (8, 9, 10)
+    @test Tuple(candidate.column_index for candidate in supported_alternatives) == (8, 9, 10)
     @info "case_008 d16 column-choice diagnostic" current_peel_column_index = 16 supported_columns = Tuple(candidate.column_index for candidate in supported) supported_alternative_columns = Tuple(candidate.column_index for candidate in supported_alternatives)
     @test all(candidate -> candidate.status == :supported, supported)
 
