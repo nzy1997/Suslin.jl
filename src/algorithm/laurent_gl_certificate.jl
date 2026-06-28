@@ -120,21 +120,8 @@ function _rewrite_left_elementary_factors_across_diagonal(factors, diagonal_fact
     R = base_ring(diagonal_factor)
     n = _require_square_matrix(diagonal_factor, "diagonal factor")
     rewritten = typeof(identity_matrix(R, n))[]
-    diagonal_entries = _laurent_diagonal_entries(diagonal_factor)
-    split_generator = any(entry != one(R) for entry in diagonal_entries) ? first(gens(R)) : nothing
     for factor in factors
-        rewritten_factor = _rewrite_left_elementary_factor_across_diagonal(factor, diagonal_factor)
-        if split_generator !== nothing && rewritten_factor == factor
-            row, col, coefficient = _elementary_factor_data(rewritten_factor)
-            leading_coefficient = coefficient * split_generator
-            trailing_coefficient = coefficient - leading_coefficient
-            if leading_coefficient != zero(R) && trailing_coefficient != zero(R)
-                push!(rewritten, elementary_matrix(n, row, col, leading_coefficient, R))
-                push!(rewritten, elementary_matrix(n, row, col, trailing_coefficient, R))
-                continue
-            end
-        end
-        push!(rewritten, rewritten_factor)
+        push!(rewritten, _rewrite_left_elementary_factor_across_diagonal(factor, diagonal_factor))
     end
     return rewritten
 end

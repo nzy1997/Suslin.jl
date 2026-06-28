@@ -17,6 +17,37 @@ function _issue158_product(factors, R, n::Int)
     return product
 end
 
+function _issue158_noncommuting_deferred_metadata()
+    R, (x, y) = suslin_laurent_polynomial_ring(GF(2), ["x", "y"])
+    deferred = matrix(R, [
+        x one(R);
+        zero(R) one(R)
+    ])
+    target = block_embedding(deferred, 3, [1, 2])
+    coefficient = y + one(R)
+    left_factor = elementary_matrix(3, 1, 3, coefficient, R)
+    input = elementary_matrix(3, 1, 3, -coefficient, R) * target
+    right_factors = Suslin._expected_column_peel_right_factors(target, 3, R)
+    step = Suslin.LaurentColumnPeelStep(
+        3,
+        input,
+        [input[row, 3] for row in 1:3],
+        typeof(left_factor)[left_factor],
+        target,
+        right_factors,
+        target,
+        deferred,
+    )
+    peel_certificate = Suslin.LaurentDeterminantDeferredPeelCertificate(
+        input,
+        Suslin.LaurentColumnPeelStep[step],
+        deferred,
+        :deferred_submatrix,
+        nothing,
+    )
+    return Suslin._normalize_laurent_determinant_deferred_submatrix(peel_certificate)
+end
+
 function _issue158_wrong_unrewritten_certificate(certificate)
     R = base_ring(certificate.original_matrix)
     n = nrows(certificate.original_matrix)
@@ -100,7 +131,20 @@ end
     @test certificate.verification.overall_ok
     @test Suslin._verify_laurent_gl_lazy_deferred_correction_certificate(certificate)
 
-    wrong = _issue158_wrong_unrewritten_certificate(certificate)
+    left_inverse = Suslin._inverse_elementary_sequence(metadata.peel_certificate.left_factors)
+    expected_rewritten_left = [
+        Suslin._rewrite_left_elementary_factor_across_diagonal(factor, certificate.correction.factor)
+        for factor in left_inverse
+    ]
+    @test certificate.rewritten_left_factors == expected_rewritten_left
+
+    noncommuting_metadata = _issue158_noncommuting_deferred_metadata()
+    noncommuting_certificate = Suslin._laurent_gl_lazy_deferred_correction_certificate(
+        noncommuting_metadata,
+    )
+    @test Suslin._verify_laurent_gl_lazy_deferred_correction_certificate(noncommuting_certificate)
+    wrong = _issue158_wrong_unrewritten_certificate(noncommuting_certificate)
+    @test wrong.reconstructed_product != wrong.original_matrix
     @test !Suslin._verify_laurent_gl_lazy_deferred_correction_certificate(wrong)
     @test !Suslin._laurent_gl_lazy_deferred_correction_certificate_verification(wrong).rewritten_left_factors_ok
 end
