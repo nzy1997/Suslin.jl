@@ -97,3 +97,50 @@ end
     @test !isempty(eager_probes)
     @test first(eager_probes).size == original_size
 end
+
+@testset "lazy Laurent peel determinant-one continuation" begin
+    entry = _issue155_fixture("determinant-one-triangular")
+    A = entry.inputs.matrix
+    original_size = (nrows(A), ncols(A))
+
+    progress_records = Any[]
+    probe_records = Any[]
+    certificate = Suslin._factor_laurent_gl_lazy_determinant_peel(
+        A;
+        progress_callback = record -> push!(progress_records, record),
+        determinant_probe = candidate -> begin
+            profile = Suslin.classify_laurent_determinant(candidate)
+            push!(probe_records, (;
+                size = (nrows(candidate), ncols(candidate)),
+                classification = profile.classification,
+                completed_before_probe = _issue155_max_completed_steps(progress_records),
+            ))
+            return profile
+        end,
+    )
+
+    @test Suslin._verify_laurent_column_peel_replay(certificate)
+    @test verify_factorization(A, certificate.factors)
+    @test length(certificate.peel_steps) == original_size[1] - 2
+    @test !isempty(probe_records)
+    @test first(probe_records).classification == :one
+    @test first(probe_records).size[1] < original_size[1]
+    @test first(probe_records).size[2] < original_size[2]
+    @test first(probe_records).completed_before_probe >= 1
+end
+
+@testset "lazy Laurent peel size guard" begin
+    entry = _issue155_fixture("determinant-one-triangular")
+    R = entry.ring.object
+    too_small = identity_matrix(R, 2)
+
+    err = try
+        Suslin._factor_laurent_gl_lazy_determinant_peel(too_small)
+        nothing
+    catch caught
+        caught
+    end
+
+    @test err isa ArgumentError
+    @test occursin("requires size at least 3", sprint(showerror, err))
+end
