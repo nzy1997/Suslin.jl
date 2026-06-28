@@ -23,6 +23,7 @@ export diagnose_sln_to_sl3_reduction
 export verify_sln_to_sl3_reduction
 export classify_laurent_determinant
 export LaurentGLFactorizationCertificate
+export LaurentLazyGLHoistCertificate
 export laurent_gl_factorization_certificate
 export normalize_laurent_object
 export normalize_laurent_gl_matrix

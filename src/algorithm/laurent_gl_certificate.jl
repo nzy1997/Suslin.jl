@@ -41,6 +41,7 @@ struct LaurentLazyGLHoistCertificate
     original_matrix
     deferred_metadata
     overall_determinant
+    determinant_source::Symbol
     correction_side::Symbol
     reconstruction_relation::Symbol
     correction
@@ -317,6 +318,7 @@ function _laurent_gl_lazy_deferred_correction_certificate(
         A,
         metadata,
         metadata.overall_determinant,
+        metadata.determinant_source,
         correction_side,
         reconstruction_relation,
         correction,
@@ -338,6 +340,7 @@ function _laurent_gl_lazy_deferred_correction_certificate(
         certificate.original_matrix,
         certificate.deferred_metadata,
         certificate.overall_determinant,
+        certificate.determinant_source,
         certificate.correction_side,
         certificate.reconstruction_relation,
         certificate.correction,
@@ -384,8 +387,39 @@ function _laurent_gl_factorization_certificate(A; progress_callback = nothing)
     )
 end
 
-function laurent_gl_factorization_certificate(A)
-    return _laurent_gl_factorization_certificate(A)
+function _laurent_gl_certificate_strategy(determinant_strategy::Symbol)::Symbol
+    determinant_strategy in (:eager, :lazy) && return determinant_strategy
+    throw(ArgumentError("determinant_strategy must be :eager or :lazy"))
+end
+
+function laurent_gl_factorization_certificate(
+    A;
+    determinant_strategy = :eager,
+    correction_side = nothing,
+    progress_callback = nothing,
+)
+    strategy = _laurent_gl_certificate_strategy(determinant_strategy)
+    if strategy == :eager
+        correction_side === nothing ||
+            throw(ArgumentError("correction_side is supported only with determinant_strategy = :lazy"))
+        return _laurent_gl_factorization_certificate(
+            A;
+            progress_callback,
+        )
+    end
+
+    side = correction_side === nothing ? :row : correction_side
+    return _laurent_gl_lazy_deferred_correction_certificate(
+        A;
+        correction_side = side,
+        progress_callback,
+    )
+end
+
+function verify_laurent_gl_factorization_certificate(
+    certificate::LaurentLazyGLHoistCertificate,
+)::Bool
+    return _laurent_gl_lazy_deferred_correction_certificate_verification(certificate).overall_ok
 end
 
 function verify_laurent_gl_factorization_certificate(certificate)::Bool
@@ -484,6 +518,7 @@ function _laurent_gl_lazy_deferred_correction_certificate_verification(certifica
     end
 
     metadata_ok = false
+    determinant_source_ok = false
     correction_ok = false
     normalized_core_ok = false
     normalized_factorization_ok = false
@@ -506,6 +541,9 @@ function _laurent_gl_lazy_deferred_correction_certificate_verification(certifica
                 metadata.supported &&
                 metadata.determinant_source == :deferred_submatrix &&
                 _verify_laurent_determinant_deferred_submatrix_normalization(metadata)
+            determinant_source_ok =
+                certificate.determinant_source == :deferred_submatrix &&
+                certificate.determinant_source == metadata.determinant_source
 
             expected_side = _laurent_gl_correction_side(certificate.correction_side)
             expected_relation = _laurent_gl_reconstruction_relation(expected_side)
@@ -602,7 +640,8 @@ function _laurent_gl_lazy_deferred_correction_certificate_verification(certifica
         end
     end
 
-    overall_ok = size_ok && metadata_ok && correction_ok && normalized_core_ok &&
+    overall_ok = size_ok && metadata_ok && determinant_source_ok &&
+        correction_ok && normalized_core_ok &&
         normalized_factorization_ok && correction_side_ok &&
         reconstruction_relation_ok && rewritten_left_factors_ok &&
         rewritten_right_factors_ok &&
@@ -612,6 +651,7 @@ function _laurent_gl_lazy_deferred_correction_certificate_verification(certifica
         overall_ok,
         size_ok,
         metadata_ok,
+        determinant_source_ok,
         correction_ok,
         normalized_core_ok,
         normalized_factorization_ok,
