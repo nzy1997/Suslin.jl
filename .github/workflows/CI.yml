@@ -82,7 +82,7 @@ jobs:
           flags: full-suite
           name: suslin-full-suite
           token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: true
+          fail_ci_if_error: false
   docs:
     name: Documentation
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_docs }}
