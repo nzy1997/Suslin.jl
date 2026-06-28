@@ -97,7 +97,7 @@ function case008_d16_preconditioning_search(
     coefficient_candidates = nothing,
     column_index = nothing,
     source_column_candidates = nothing,
-)
+)::NamedTuple
     validation = ToricBuilderCase008D16MatrixBoundary.validate_matrix_fixture(fixture)
     validation == :ok ||
         throw(ArgumentError("invalid case_008 d16 matrix fixture: $(validation)"))
