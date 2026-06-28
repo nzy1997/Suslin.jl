@@ -191,24 +191,29 @@ function _peel_progress_text(progress)
     return join(parts)
 end
 
-function _read_worker_progress(progress_path)
+function _read_worker_progress(
+    progress_path;
+    determinant_strategy = :eager,
+    correction_side = :not_run,
+    determinant_source = determinant_strategy == :lazy ? :not_reached : :not_run,
+)
     progress_path === nothing &&
         return (;
             current_stage = :determinant_classification,
             timings = Dict{Symbol, Any}(),
             peel_progress = nothing,
-            determinant_strategy = :eager,
-            correction_side = :not_run,
-            determinant_source = :not_run,
+            determinant_strategy,
+            correction_side,
+            determinant_source,
         )
     isfile(progress_path) ||
         return (;
             current_stage = :determinant_classification,
             timings = Dict{Symbol, Any}(),
             peel_progress = nothing,
-            determinant_strategy = :eager,
-            correction_side = :not_run,
-            determinant_source = :not_run,
+            determinant_strategy,
+            correction_side,
+            determinant_source,
         )
     data = Dict{String, String}()
     for line in eachline(progress_path)
@@ -1124,7 +1129,11 @@ function _bounded_exercised_row(
                 catch
                 end
                 exited_after_kill = _wait_for_exit_after_kill(proc)
-                progress = _read_worker_progress(progress_path)
+                progress = _read_worker_progress(
+                    progress_path;
+                    determinant_strategy,
+                    correction_side,
+                )
                 cleanup_details = exited_after_kill ? nothing : "worker did not exit after kill grace period"
                 return _timed_out_row(
                     entry,
@@ -1154,7 +1163,11 @@ function _bounded_exercised_row(
                     combined_details;
                     determinant_strategy,
                     correction_side,
-                    progress = _read_worker_progress(progress_path),
+                    progress = _read_worker_progress(
+                        progress_path;
+                        determinant_strategy,
+                        correction_side,
+                    ),
                 )
             end
         end
@@ -1165,7 +1178,11 @@ function _bounded_exercised_row(
             stderr_text;
             determinant_strategy,
             correction_side,
-            progress = _read_worker_progress(progress_path),
+            progress = _read_worker_progress(
+                progress_path;
+                determinant_strategy,
+                correction_side,
+            ),
         )
     finally
         for path in (stdout_path, stderr_path, progress_path, string(progress_path, ".tmp"), result_path)

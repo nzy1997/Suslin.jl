@@ -228,6 +228,11 @@ end
                 write(stderr, "fake deferred route error")
                 exit(7)
                 """
+            elseif entry.mode == :lazy_route_error_without_progress
+                """
+                write(stderr, "fake lazy route error before progress")
+                exit(7)
+                """
             elseif entry.mode == :serialized_success
                 result_writer = result_path === nothing ?
                     """
@@ -645,6 +650,18 @@ end
         @test lazy_deferred_route_error_row.determinant_source == :deferred_submatrix
         @test lazy_deferred_route_error_row.stage_timings.certificate_construction.status == :route_error
         @test lazy_deferred_route_error_row.stage_timings.determinant_classification.status == :not_run
+
+        lazy_no_progress_route_error_row = ToricBuilderCacheQBlockStatusReport._bounded_exercised_row(
+            FakeBoundedEntry("case_lazy_no_progress_route_error"; mode = :lazy_route_error_without_progress),
+            5.0;
+            determinant_strategy = :lazy,
+            correction_side = :column,
+        )
+        @test lazy_no_progress_route_error_row.route_status == :route_error
+        @test !lazy_no_progress_route_error_row.verified
+        @test lazy_no_progress_route_error_row.determinant_strategy == :lazy
+        @test lazy_no_progress_route_error_row.correction_side == :column
+        @test lazy_no_progress_route_error_row.determinant_source == :not_reached
 
         synthetic_timeout_seconds = 2.0
 
