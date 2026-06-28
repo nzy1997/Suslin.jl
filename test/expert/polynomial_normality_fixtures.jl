@@ -40,6 +40,17 @@ const SECTION2_LAYERS = Set([
     :conjugated_elementary,
 ])
 
+const EXPECTED_RING_COEFFICIENT = "QQ"
+const EXPECTED_RING_VARIABLES = ("x", "y")
+
+function _pn_name_tuple(values)
+    values isa Tuple || throw(ArgumentError("expected tuple for name metadata"))
+    return map(
+        name -> (name isa AbstractString ? name : name isa Symbol ? String(name) : throw(ArgumentError("ring names must be strings or symbols"))),
+        values,
+    )
+end
+
 function _pn_field(entry, field::Symbol)
     hasproperty(entry, field) || throw(ArgumentError("fixture entry missing field $(field)"))
     return getproperty(entry, field)
@@ -142,11 +153,16 @@ function _pn_require_ordinary_field_polynomial_ring(entry)
     ring_ctor = _pn_field(entry, :ring_constructor)
     _pn_field(ring_ctor, :function_name) == :polynomial_ring ||
         throw(ArgumentError("fixture $(entry.id) must use polynomial_ring metadata"))
+    ring_coefficient = _pn_field(ring_ctor, :coefficient)
+    ring_coefficient == EXPECTED_RING_COEFFICIENT ||
+        throw(ArgumentError("fixture $(entry.id) must use $(EXPECTED_RING_COEFFICIENT) coefficient in metadata"))
     ring_vars = _pn_field(ring_ctor, :variables)
     ring_gen_names = _pn_field(ring_meta, :generator_names)
+    ring_vars = _pn_name_tuple(ring_vars)
+    ring_gen_names = _pn_name_tuple(ring_gen_names)
     ring_generators = _pn_field(ring_meta, :generators)
-    ring_vars isa Tuple || throw(ArgumentError("fixture $(entry.id) ring constructor variables must be a tuple"))
-    ring_gen_names isa Tuple || throw(ArgumentError("fixture $(entry.id) ring generator names must be a tuple"))
+    ring_vars == _pn_name_tuple(EXPECTED_RING_VARIABLES) ||
+        throw(ArgumentError("fixture $(entry.id) must use ring variables $(EXPECTED_RING_VARIABLES)"))
     length(ring_vars) == length(ring_gen_names) ||
         throw(ArgumentError("fixture $(entry.id) ring constructor and metadata generator names must have same length"))
     ring_vars == ring_gen_names ||
@@ -287,6 +303,16 @@ function validate_polynomial_normality_fixture_catalog(catalog)
             continue
         end
         throw(ArgumentError("negative control $(entry.id) unexpectedly validated"))
+    end
+
+    section2_counts = Dict{Symbol,Int}(layer => 0 for layer in SECTION2_LAYERS)
+    for entry in catalog.cases
+        section2_counts[entry.section2_layer] = section2_counts[entry.section2_layer] + 1
+    end
+    for layer in SECTION2_LAYERS
+        layer_count = section2_counts[layer]
+        layer_count == 1 ||
+            throw(ArgumentError("fixture catalog must contain exactly one positive case with section2_layer $(layer), found $(layer_count)"))
     end
 
     return true
