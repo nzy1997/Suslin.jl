@@ -487,8 +487,8 @@ function boundary_fixture()
         ring = R,
         ring_description = entry.ring.description,
         expected_diagnostic = (;
-            status = :unsupported,
-            failure_code = :unsupported_laurent_column_family,
+            status = :supported,
+            failure_code = nothing,
         ),
     )
 end

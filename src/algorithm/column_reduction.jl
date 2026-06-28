@@ -685,6 +685,40 @@ function _reduce_via_witness_unit(column::AbstractVector, witness::AbstractVecto
     return _witness_unit_reduction_certificate_stage(column, witness, pivot_idx, R).factors
 end
 
+function _laurent_witness_solve_failure(err)::Bool
+    err isa ErrorException || return false
+    message = sprint(showerror, err)
+    return occursin("No exact solution exists for A * U = B", message) ||
+        occursin("not liftable to the given generating system", message)
+end
+
+function _laurent_unimodular_witness(column::AbstractVector, R; solver = solve_laurent_linear)
+    _is_laurent_polynomial_ring(R) || return nothing
+    row = matrix(R, 1, length(column), collect(column))
+    rhs = matrix(R, 1, 1, [one(R)])
+
+    solution = try
+        solver(row, rhs)
+    catch err
+        err isa InterruptException && rethrow()
+        _laurent_witness_solve_failure(err) && return nothing
+        rethrow()
+    end
+
+    row * solution == rhs || return nothing
+    return [solution[idx, 1] for idx in 1:nrows(solution)]
+end
+
+function _reduce_via_laurent_witness_unit_certificate(column::AbstractVector, R)
+    witness = _laurent_unimodular_witness(column, R)
+    witness === nothing && return nothing
+
+    witness_unit_idx = findfirst(is_unit, witness)
+    witness_unit_idx === nothing && return nothing
+
+    return _witness_unit_reduction_certificate_stage(column, witness, witness_unit_idx, R)
+end
+
 function _witness_unit_reduction_certificate_stage(column::AbstractVector, witness::AbstractVector, pivot_idx::Int, R)
     unit_creation_factors = _witness_unit_creation_factors(column, witness, pivot_idx, R)
     created_column_matrix = _apply_reduction_factors(unit_creation_factors, column, R)
@@ -1088,6 +1122,9 @@ function _reduce_laurent_unimodular_column_certificate(column::AbstractVector, R
 
     unit_creation = _reduce_via_laurent_unit_creation_certificate(column, R)
     unit_creation !== nothing && return unit_creation
+
+    witness_unit = _reduce_via_laurent_witness_unit_certificate(column, R)
+    witness_unit !== nothing && return witness_unit
 
     normalization = normalize_laurent_object(column)
     poly_column = normalization.normalized_object
@@ -2478,6 +2515,10 @@ function _diagnose_laurent_unimodular_column_reduction(column::AbstractVector, R
     push!(attempted, :laurent_unit_creation)
     unit_creation = _reduce_via_laurent_unit_creation_certificate(column, R)
     unit_creation !== nothing && return (; supported = true, stage = :laurent_unit_creation)
+
+    push!(attempted, :laurent_witness_unit)
+    witness_unit = _reduce_via_laurent_witness_unit_certificate(column, R)
+    witness_unit !== nothing && return (; supported = true, stage = :laurent_witness_unit)
 
     push!(attempted, :laurent_normalization)
     normalization = normalize_laurent_object(column)

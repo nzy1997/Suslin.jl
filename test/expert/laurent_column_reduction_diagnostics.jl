@@ -3,6 +3,7 @@ using Suslin
 using Oscar
 
 include(joinpath(@__DIR__, "..", "fixtures", "toricbuilder_case010_column_boundary.jl"))
+include(joinpath(@__DIR__, "..", "fixtures", "toricbuilder_case008_d21_column_boundary.jl"))
 
 @testset "Laurent column reduction diagnostics" begin
     fixture = ToricBuilderCase010ColumnBoundary.boundary_fixture()
@@ -18,8 +19,20 @@ include(joinpath(@__DIR__, "..", "fixtures", "toricbuilder_case010_column_bounda
     @test case010.ring_profile.generators == ("u", "v")
     @test :laurent_unit_creation in case010.attempted_stages
 
+    case008 = ToricBuilderCase008D21ColumnBoundary.boundary_fixture()
+    case008_d21 = Suslin.diagnose_unimodular_column_reduction(
+        case008.failing_column,
+        case008.ring,
+    )
+    @test case008_d21.status == :supported
+    @test case008_d21.failure_code === nothing
+    @test case008_d21.column_length == 21
+    @test case008_d21.ring_profile.kind == :laurent_polynomial
+    @test case008_d21.ring_profile.generators == ("u", "v")
+    @test :laurent_witness_unit in case008_d21.attempted_stages
+
     unsupported_ring, (x, y) = Suslin.suslin_laurent_polynomial_ring(GF(2), ["x", "y"])
-    unsupported_column = [x + y, x * y + x + one(unsupported_ring), x^2 + x * y + y^2 + one(unsupported_ring)]
+    unsupported_column = [x * y + x, x^2 + x + one(unsupported_ring), x * y + y^2 + one(unsupported_ring)]
     unsupported = Suslin.diagnose_unimodular_column_reduction(
         unsupported_column,
         unsupported_ring,
@@ -30,7 +43,7 @@ include(joinpath(@__DIR__, "..", "fixtures", "toricbuilder_case010_column_bounda
     @test unsupported.ring_profile.kind == :laurent_polynomial
     @test unsupported.ring_profile.generators == ("x", "y")
     @test occursin("unsupported exact unimodular column reduction", unsupported.message)
-    for stage in (:unit_entry, :laurent_unit_creation, :laurent_normalization, :witness_unit, :monicity_normalization)
+    for stage in (:unit_entry, :laurent_unit_creation, :laurent_witness_unit, :laurent_normalization, :witness_unit, :monicity_normalization)
         @test stage in unsupported.attempted_stages
     end
 

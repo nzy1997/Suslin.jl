@@ -27,8 +27,9 @@ const TORICBUILDER_CASE008_D21_COLUMN_BOUNDARY_PATH =
         fixture.failing_column,
         fixture.ring,
     )
-    @test diagnostic.status == :unsupported
-    @test diagnostic.failure_code == :unsupported_laurent_column_family
+    @test diagnostic.status == :supported
+    @test diagnostic.failure_code === nothing
+    @test :laurent_witness_unit in diagnostic.attempted_stages
     @test diagnostic.column_length == 21
     @test diagnostic.ring_profile.kind == :laurent_polynomial
     @test diagnostic.ring_profile.generators == ("u", "v")

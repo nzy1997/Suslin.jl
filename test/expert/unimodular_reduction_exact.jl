@@ -121,7 +121,7 @@ end
     @test !Suslin.is_unimodular_column(non_unimodular_normalized, R)
     @test Suslin._reduce_laurent_unimodular_column(non_unimodular_normalized, R) === nothing
 
-    unsupported_normalized = [x + y, x * y + x + one(R), x^2 + x * y + y^2 + one(R)]
+    unsupported_normalized = [x * y + x, x^2 + x + one(R), x * y + y^2 + one(R)]
     @test Suslin.is_unimodular_column(unsupported_normalized, R)
     @test Suslin._reduce_laurent_unimodular_column(unsupported_normalized, R) === nothing
 end

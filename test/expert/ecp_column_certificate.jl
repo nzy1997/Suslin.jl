@@ -169,12 +169,9 @@ end
 
     R, (x, y) = Suslin.suslin_laurent_polynomial_ring(GF(2), ["x", "y"])
     laurent_column = [
-        x^-1 + x^-2 * y^2,
-        x^-1 * y + x^-1 + x^-2,
-        one(R) + x^-1 * y + x^-2 * y + x^-2,
-        x^-1 + x^-2 * y,
-        x^-1 * y + x^-2 * y^2,
-        x^-2 * y + x^-1 * y^2,
+        x^-1 * y^-1 * (x + y^2),
+        x^-1 * y^-1 * (x * y + x + one(R)),
+        x^-1 * y^-1 * (x^2 + x * y + y + one(R)),
     ]
     laurent_cert = Suslin.ecp_column_reduction_certificate(laurent_column, R)
     @test any(stage -> stage.kind == :laurent_normalization, laurent_cert.stages)
