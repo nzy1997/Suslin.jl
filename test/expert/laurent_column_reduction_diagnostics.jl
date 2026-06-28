@@ -4,6 +4,7 @@ using Oscar
 
 include(joinpath(@__DIR__, "..", "fixtures", "toricbuilder_case010_column_boundary.jl"))
 include(joinpath(@__DIR__, "..", "fixtures", "toricbuilder_case008_d21_column_boundary.jl"))
+include(joinpath(@__DIR__, "..", "fixtures", "toricbuilder_case008_d16_column_boundary.jl"))
 
 function _diagnostic_stage_detail(diagnostic, stage::Symbol)
     idx = findfirst(detail -> detail.stage == stage, diagnostic.stage_details)
@@ -74,6 +75,23 @@ end
     @test case008_d21_witness !== nothing
     @test case008_d21_witness.outcome == :supported
     @test case008_d21_witness.witness_unit_index isa Integer
+
+    case008_d16_fixture = ToricBuilderCase008D16ColumnBoundary.boundary_fixture()
+    case008_d16 = Suslin.diagnose_unimodular_column_reduction(
+        case008_d16_fixture.failing_column,
+        case008_d16_fixture.ring,
+    )
+    @test case008_d16.status == :supported
+    @test case008_d16.failure_code === nothing
+    @test case008_d16.column_length == 16
+    @test :laurent_elementary_row_preconditioning in case008_d16.attempted_stages
+    case008_d16_preconditioned =
+        _diagnostic_stage_detail(case008_d16, :laurent_elementary_row_preconditioning)
+    @test case008_d16_preconditioned !== nothing
+    @test case008_d16_preconditioned.outcome == :supported
+    @test case008_d16_preconditioned.target_index isa Integer
+    @test case008_d16_preconditioned.source_index isa Integer
+    @test case008_d16_preconditioned.coefficient == one(case008_d16_fixture.ring)
 
     unsupported_ring, (x, y) = Suslin.suslin_laurent_polynomial_ring(GF(2), ["x", "y"])
     unsupported_column = [x * y + x, x^2 + x + one(unsupported_ring), x * y + y^2 + one(unsupported_ring)]

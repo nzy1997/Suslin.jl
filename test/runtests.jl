@@ -58,6 +58,7 @@ const TEST_GROUP_FILES = Dict(
         "expert/laurent_lazy_submatrix_normalization.jl",
         "expert/laurent_column_reduction_diagnostics.jl",
         "expert/case008_d21_laurent_column_reduction.jl",
+        "expert/case008_d16_laurent_column_reduction.jl",
         "expert/case010_laurent_column_reduction.jl",
         "expert/issue38_laurent_gl_certificate.jl",
         "expert/quillen_induction.jl",
