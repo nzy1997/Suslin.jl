@@ -104,6 +104,29 @@ end
     @test !replay_ok
 end
 
+@testset "determinant-deferred lazy Laurent peel certificate monomial-unit" begin
+    entry = _issue156_fixture("monomial-unit-row-column-cores")
+    A = entry.inputs.matrix
+    n = nrows(A)
+
+    deferred = Suslin._laurent_determinant_deferred_peel_certificate(A)
+
+    @test deferred.original_matrix == A
+    @test deferred.determinant_source == :deferred_submatrix
+    @test !isempty(deferred.peel_steps)
+    @test nrows(deferred.deferred_submatrix) < n
+    @test ncols(deferred.deferred_submatrix) < ncols(A)
+    @test det(deferred.deferred_submatrix) ==
+        entry.determinant_profile.expected_determinant
+    @test det(deferred.deferred_submatrix) != one(base_ring(deferred.deferred_submatrix))
+    @test Suslin._verify_laurent_determinant_deferred_peel_replay(deferred)
+    @test deferred.left_product * A * deferred.right_product == deferred.target_matrix
+    @test deferred.target_matrix == _issue156_blockdiag_deferred(deferred.deferred_submatrix, n)
+    @test deferred.verification.overall_ok
+    @test deferred.verification.relation_ok
+    @test deferred.verification.replay_metadata_ok
+end
+
 @testset "determinant-deferred lazy Laurent peel certificate min_steps" begin
     entry = _issue156_fixture("issue-38-q-block-lazy-determinant")
     A = entry.normalizations.row.core
