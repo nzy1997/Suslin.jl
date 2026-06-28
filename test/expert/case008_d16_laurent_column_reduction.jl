@@ -61,6 +61,12 @@ function _case008_d16_tamper_stage_coefficient(cert)
     )
 end
 
+function _case008_d16_diagnostic_stage_detail(diagnostic, stage::Symbol)
+    hasproperty(diagnostic, :stage_details) || return nothing
+    idx = findfirst(detail -> detail.stage == stage, diagnostic.stage_details)
+    return idx === nothing ? nothing : diagnostic.stage_details[idx]
+end
+
 @testset "case_008 d=16 Laurent column reduction" begin
     fixture = ToricBuilderCase008D16ColumnBoundary.boundary_fixture()
     R = fixture.ring
@@ -76,6 +82,7 @@ end
     certificate = Suslin.ecp_column_reduction_certificate(column, R)
     @test Suslin.verify_ecp_column_reduction(certificate)
     @test any(stage -> stage.kind == :laurent_elementary_row_preconditioning, certificate.stages)
+    @test !any(stage -> stage.kind == :case008_special_case, certificate.stages)
     @test _case008_d16_apply_factors(
         certificate.factors,
         certificate.original_column,
@@ -95,6 +102,8 @@ end
     @test diagnostic.ring_profile.kind == :laurent_polynomial
     @test diagnostic.ring_profile.generators == ("u", "v")
     @test :laurent_elementary_row_preconditioning in diagnostic.attempted_stages
+    @test !(:case008_special_case in diagnostic.attempted_stages)
+    @test _case008_d16_diagnostic_stage_detail(diagnostic, :case008_special_case) === nothing
 
     negative = ToricBuilderCase008D16ColumnBoundary.non_unimodular_negative_control(fixture)
     negative_diagnostic = Suslin.diagnose_unimodular_column_reduction(

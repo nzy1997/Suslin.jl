@@ -85,6 +85,7 @@ end
     @test case008_d16.failure_code === nothing
     @test case008_d16.column_length == 16
     @test :laurent_elementary_row_preconditioning in case008_d16.attempted_stages
+    @test !(:case008_special_case in case008_d16.attempted_stages)
     case008_d16_preconditioned =
         _diagnostic_stage_detail(case008_d16, :laurent_elementary_row_preconditioning)
     @test case008_d16_preconditioned !== nothing
@@ -92,6 +93,7 @@ end
     @test case008_d16_preconditioned.target_index isa Integer
     @test case008_d16_preconditioned.source_index isa Integer
     @test case008_d16_preconditioned.coefficient == one(case008_d16_fixture.ring)
+    @test _diagnostic_stage_detail(case008_d16, :case008_special_case) === nothing
 
     unsupported_ring, (x, y) = Suslin.suslin_laurent_polynomial_ring(GF(2), ["x", "y"])
     unsupported_column = [x * y + x, x^2 + x + one(unsupported_ring), x * y + y^2 + one(unsupported_ring)]
