@@ -76,4 +76,11 @@ end
     @test diagnostic.ring_profile.kind == :laurent_polynomial
     @test diagnostic.ring_profile.generators == ("u", "v")
     @test :laurent_witness_unit in diagnostic.attempted_stages
+
+    unexpected_solver_failure = (A, B) -> throw(ArgumentError("unexpected Laurent solver failure"))
+    @test_throws ArgumentError Suslin._laurent_unimodular_witness(
+        column,
+        R;
+        solver = unexpected_solver_failure,
+    )
 end

@@ -692,13 +692,13 @@ function _laurent_witness_solve_failure(err)::Bool
         occursin("not liftable to the given generating system", message)
 end
 
-function _laurent_unimodular_witness(column::AbstractVector, R)
+function _laurent_unimodular_witness(column::AbstractVector, R; solver = solve_laurent_linear)
     _is_laurent_polynomial_ring(R) || return nothing
     row = matrix(R, 1, length(column), collect(column))
     rhs = matrix(R, 1, 1, [one(R)])
 
     solution = try
-        solve_laurent_linear(row, rhs)
+        solver(row, rhs)
     catch err
         err isa InterruptException && rethrow()
         _laurent_witness_solve_failure(err) && return nothing
