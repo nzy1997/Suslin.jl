@@ -107,6 +107,9 @@ end
         wrong_metadata,
     )
     @test !wrong_verification.overall_ok
+    @test !wrong_verification.correction_side_ok
+    @test !wrong_verification.correction_ok
+    @test !wrong_verification.rewritten_left_factors_ok
     @test !Suslin._verify_laurent_gl_lazy_deferred_correction_certificate(wrong_metadata)
 
     err = try
