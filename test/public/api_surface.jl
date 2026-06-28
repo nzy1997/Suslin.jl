@@ -6,6 +6,8 @@ using Oscar
     @test isdefined(Suslin, :suslin_polynomial_ring)
     @test isdefined(Suslin, :suslin_laurent_polynomial_ring)
     @test isdefined(Suslin, :elementary_matrix)
+    @test isdefined(Suslin, :max_elementary_factor_monomial_degree)
+    @test isdefined(Suslin, :total_elementary_factor_offdiagonal_monomials)
     @test isdefined(Suslin, :elementary_preconditioning_step)
     @test isdefined(Suslin, :replay_elementary_preconditioning)
     @test isdefined(Suslin, :verify_elementary_preconditioning)
@@ -47,6 +49,8 @@ using Oscar
     @test Suslin.LaurentGLFactorizationCertificate === LaurentGLFactorizationCertificate
     @test Suslin.laurent_gl_factorization_certificate === laurent_gl_factorization_certificate
     @test Suslin.elementary_matrix === elementary_matrix
+    @test Suslin.max_elementary_factor_monomial_degree === max_elementary_factor_monomial_degree
+    @test Suslin.total_elementary_factor_offdiagonal_monomials === total_elementary_factor_offdiagonal_monomials
     @test Suslin.elementary_preconditioning_step === elementary_preconditioning_step
     @test Suslin.replay_elementary_preconditioning === replay_elementary_preconditioning
     @test Suslin.verify_elementary_preconditioning === verify_elementary_preconditioning
