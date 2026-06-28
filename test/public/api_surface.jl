@@ -17,6 +17,7 @@ using Oscar
     @test isdefined(Suslin, :elementary_factorization)
     @test isdefined(Suslin, :classify_laurent_determinant)
     @test isdefined(Suslin, :LaurentGLFactorizationCertificate)
+    @test isdefined(Suslin, :LaurentLazyGLHoistCertificate)
     @test isdefined(Suslin, :laurent_gl_factorization_certificate)
     @test isdefined(Suslin, :normalize_laurent_gl_matrix)
     @test isdefined(Suslin, :normalize_laurent_object)
@@ -47,6 +48,7 @@ using Oscar
     @test isdefined(Suslin, :verify_quillen_patch)
     @test Suslin.classify_laurent_determinant === classify_laurent_determinant
     @test Suslin.LaurentGLFactorizationCertificate === LaurentGLFactorizationCertificate
+    @test Suslin.LaurentLazyGLHoistCertificate === LaurentLazyGLHoistCertificate
     @test Suslin.laurent_gl_factorization_certificate === laurent_gl_factorization_certificate
     @test Suslin.elementary_matrix === elementary_matrix
     @test Suslin.max_elementary_factor_monomial_degree === max_elementary_factor_monomial_degree
@@ -96,4 +98,44 @@ using Oscar
 
     factors = elementary_factorization(A)
     @test verify_factorization(A, factors)
+
+    LR, (u,) = suslin_laurent_polynomial_ring(QQ, ["u"])
+    L = matrix(LR, [
+        one(LR) u       zero(LR);
+        zero(LR) one(LR) zero(LR);
+        zero(LR) zero(LR) one(LR)
+    ])
+
+    one_arg_certificate = laurent_gl_factorization_certificate(L)
+    @test one_arg_certificate isa LaurentGLFactorizationCertificate
+    @test verify_laurent_gl_factorization_certificate(one_arg_certificate)
+
+    lazy_keyword_certificate = laurent_gl_factorization_certificate(
+        L;
+        determinant_strategy = :lazy,
+        correction_side = :row,
+    )
+    @test lazy_keyword_certificate isa LaurentLazyGLHoistCertificate
+    @test lazy_keyword_certificate.determinant_source == :deferred_submatrix
+    @test lazy_keyword_certificate.correction_side == :row
+    @test verify_laurent_gl_factorization_certificate(lazy_keyword_certificate)
+
+    rejected_strategy = try
+        laurent_gl_factorization_certificate(L; determinant_strategy = :unsupported)
+        nothing
+    catch err
+        err
+    end
+    @test rejected_strategy isa ArgumentError
+    @test occursin(":eager", sprint(showerror, rejected_strategy))
+    @test occursin(":lazy", sprint(showerror, rejected_strategy))
+
+    rejected_side_without_lazy = try
+        laurent_gl_factorization_certificate(L; correction_side = :column)
+        nothing
+    catch err
+        err
+    end
+    @test rejected_side_without_lazy isa ArgumentError
+    @test occursin("determinant_strategy = :lazy", sprint(showerror, rejected_side_without_lazy))
 end
