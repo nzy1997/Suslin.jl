@@ -4,10 +4,16 @@ using Oscar
 
 include(joinpath(@__DIR__, "..", "fixtures", "toricbuilder_case010_column_boundary.jl"))
 include(joinpath(@__DIR__, "..", "fixtures", "toricbuilder_case008_d21_column_boundary.jl"))
+include(joinpath(@__DIR__, "..", "fixtures", "toricbuilder_case008_d16_column_boundary.jl"))
 
 function _diagnostic_stage_detail(diagnostic, stage::Symbol)
     idx = findfirst(detail -> detail.stage == stage, diagnostic.stage_details)
     return idx === nothing ? nothing : diagnostic.stage_details[idx]
+end
+
+function _diagnostic_supported_stage(diagnostic)
+    supported = filter(detail -> detail.outcome == :supported, diagnostic.stage_details)
+    return isempty(supported) ? nothing : only(supported).stage
 end
 
 function _test_diagnostic_stage_details_shape(diagnostic)
@@ -74,6 +80,52 @@ end
     @test case008_d21_witness !== nothing
     @test case008_d21_witness.outcome == :supported
     @test case008_d21_witness.witness_unit_index isa Integer
+
+    case008_d16_fixture = ToricBuilderCase008D16ColumnBoundary.boundary_fixture()
+    case008_d16 = Suslin.diagnose_unimodular_column_reduction(
+        case008_d16_fixture.failing_column,
+        case008_d16_fixture.ring,
+    )
+    @test case008_d16.status == :supported
+    @test case008_d16.failure_code === nothing
+    @test case008_d16.column_length == 16
+    @test :laurent_elementary_row_preconditioning in case008_d16.attempted_stages
+    @test !(:case008_special_case in case008_d16.attempted_stages)
+    case008_d16_preconditioned =
+        _diagnostic_stage_detail(case008_d16, :laurent_elementary_row_preconditioning)
+    @test case008_d16_preconditioned !== nothing
+    @test case008_d16_preconditioned.outcome == :supported
+    @test case008_d16_preconditioned.target_index isa Integer
+    @test case008_d16_preconditioned.source_index isa Integer
+    @test case008_d16_preconditioned.coefficient == one(case008_d16_fixture.ring)
+    case008_d16_cert = Suslin.ecp_column_reduction_certificate(
+        case008_d16_fixture.failing_column,
+        case008_d16_fixture.ring,
+    )
+    @test _diagnostic_supported_stage(case008_d16) == case008_d16_cert.stages[end].kind
+    @test _diagnostic_stage_detail(case008_d16, :case008_special_case) === nothing
+
+    R, (norm_x, norm_y) = Suslin.suslin_laurent_polynomial_ring(GF(2), ["x", "y"])
+    normalization_column = [
+        norm_x^-1 * norm_y^-1 * (norm_x + norm_y^2),
+        norm_x^-1 * norm_y^-1 * (norm_x * norm_y + norm_x + one(R)),
+        norm_x^-1 * norm_y^-1 * (norm_x^2 + norm_x * norm_y + norm_y + one(R)),
+        zero(R),
+        zero(R),
+        zero(R),
+    ]
+    normalization_cert = Suslin.ecp_column_reduction_certificate(normalization_column, R)
+    normalization_diagnostic =
+        Suslin.diagnose_unimodular_column_reduction(normalization_column, R)
+    @test normalization_cert.stages[end].kind == :laurent_normalization
+    @test normalization_diagnostic.status == :supported
+    normalization_detail =
+        _diagnostic_stage_detail(normalization_diagnostic, :laurent_normalization)
+    @test normalization_detail !== nothing
+    @test normalization_detail.outcome == :delegated_to_polynomial
+    @test normalization_detail.normalized_status == :supported
+    @test :laurent_normalization in normalization_diagnostic.attempted_stages
+    @test !(:laurent_elementary_row_preconditioning in normalization_diagnostic.attempted_stages)
 
     unsupported_ring, (x, y) = Suslin.suslin_laurent_polynomial_ring(GF(2), ["x", "y"])
     unsupported_column = [x * y + x, x^2 + x + one(unsupported_ring), x * y + y^2 + one(unsupported_ring)]
@@ -211,6 +263,9 @@ end
     @test laurent_witness !== nothing
     @test laurent_witness.outcome == :witness_unavailable
     @test laurent_witness.witness_unit_index === nothing
+    row_preconditioning =
+        _diagnostic_stage_detail(laurent_diagnostic, :laurent_elementary_row_preconditioning)
+    @test row_preconditioning === nothing
     normalization = _diagnostic_stage_detail(laurent_diagnostic, :laurent_normalization)
     @test normalization !== nothing
     @test normalization.outcome == :normalized_unimodularity_check_failed

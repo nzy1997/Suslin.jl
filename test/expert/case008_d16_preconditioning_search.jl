@@ -117,7 +117,17 @@ function case008_d16_preconditioning_search(
     )
 
     attempt_count = 1
-    _diagnose_preconditioned_column(M, R, bounds.column_index)
+    initial_column, initial_diagnostic = _diagnose_preconditioned_column(M, R, bounds.column_index)
+    if initial_diagnostic.status == :supported
+        return (;
+            status = :already_supported,
+            bounds,
+            attempt_count,
+            steps = (),
+            transformed_column = initial_column,
+            reducer_diagnostic = initial_diagnostic,
+        )
+    end
     frontier = [(matrix = M, steps = ())]
 
     for _depth in 1:bounds.max_depth
@@ -198,7 +208,7 @@ end
 
     result = case008_d16_preconditioning_search(fixture; max_depth = 1)
 
-    @test result.status in (:found, :not_found)
+    @test result.status in (:already_supported, :found, :not_found)
     @test result.bounds.max_depth == 1
     @test result.bounds.side == :right
     @test result.bounds.operation_family == :column_addition
@@ -208,7 +218,14 @@ end
     @test result.attempt_count > 0
     @test hasproperty(result.reducer_diagnostic, :status)
 
-    if result.status == :found
+    if result.status == :already_supported
+        @test result.steps == ()
+        @test result.transformed_column == fixture.current_peel_column
+        @test result.reducer_diagnostic.status == :supported
+        @test result.reducer_diagnostic.failure_code === nothing
+        @test :laurent_elementary_row_preconditioning in
+              result.reducer_diagnostic.attempted_stages
+    elseif result.status == :found
         final_matrix = Suslin.replay_elementary_preconditioning(
             fixture.failing_input_matrix,
             result.steps,
@@ -234,26 +251,31 @@ end
         @test result.status == :not_found
         @test result.steps == ()
         @test result.transformed_column == fixture.current_peel_column
-        @test result.reducer_diagnostic.status == :unsupported
-        @test result.reducer_diagnostic.failure_code == :unsupported_laurent_column_family
+        @test result.reducer_diagnostic.status == :supported
+        @test result.reducer_diagnostic.failure_code === nothing
+        @test :laurent_elementary_row_preconditioning in
+              result.reducer_diagnostic.attempted_stages
     end
 end
 
-@testset "case_008 d=16 preconditioning not-found bounds are explicit" begin
+@testset "case_008 d=16 preconditioning search short-circuits supported column" begin
     fixture = ToricBuilderCase008D16MatrixBoundary.matrix_fixture()
-    not_found = case008_d16_preconditioning_search(fixture; max_depth = 0)
+    already_supported = case008_d16_preconditioning_search(fixture; max_depth = 0)
 
-    @test not_found.status == :not_found
-    @test not_found.bounds.max_depth == 0
-    @test not_found.bounds.side == :right
-    @test not_found.bounds.operation_family == :column_addition
-    @test not_found.bounds.column_index == 16
-    @test not_found.bounds.source_column_candidates == Tuple(1:15)
-    @test not_found.bounds.coefficient_candidates == (one(fixture.ring),)
-    @test not_found.attempt_count == 1
-    @test not_found.steps == ()
-    @test not_found.transformed_column == fixture.current_peel_column
-    @test not_found.reducer_diagnostic.status == :unsupported
+    @test already_supported.status == :already_supported
+    @test already_supported.bounds.max_depth == 0
+    @test already_supported.bounds.side == :right
+    @test already_supported.bounds.operation_family == :column_addition
+    @test already_supported.bounds.column_index == 16
+    @test already_supported.bounds.source_column_candidates == Tuple(1:15)
+    @test already_supported.bounds.coefficient_candidates == (one(fixture.ring),)
+    @test already_supported.attempt_count == 1
+    @test already_supported.steps == ()
+    @test already_supported.transformed_column == fixture.current_peel_column
+    @test already_supported.reducer_diagnostic.status == :supported
+    @test already_supported.reducer_diagnostic.failure_code === nothing
+    @test :laurent_elementary_row_preconditioning in
+          already_supported.reducer_diagnostic.attempted_stages
 end
 
 @testset "preconditioning search negative controls reject tampering" begin

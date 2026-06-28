@@ -10,15 +10,15 @@ const SOURCE_MATRIX_DIMENSIONS = (30, 30)
 const SOURCE_COLUMN_TRANSFORMATION_DIMENSIONS = (60, 60)
 const EXPECTED_RING_DESCRIPTION = "GF(2)[u^+/-1, v^+/-1]"
 const EXPECTED_DIAGNOSTIC = (;
-    status = :unsupported,
-    failure_code = :unsupported_laurent_column_family,
+    status = :supported,
+    failure_code = nothing,
     laurent_witness_outcome = :witness_without_unit,
     laurent_witness_unit_index = nothing,
-    laurent_normalization_outcome = :normalized_not_unimodular,
-    normalized_column_length = 16,
-    normalized_ring_kind = :polynomial,
-    normalized_status = :precondition_failed,
-    normalized_failure_code = :not_unimodular,
+    laurent_row_preconditioning_outcome = :supported,
+    laurent_row_preconditioning_target_index = 1,
+    laurent_row_preconditioning_source_index = 10,
+    laurent_row_preconditioning_coefficient = 1,
+    laurent_row_preconditioning_transformed_stage = :witness_unit,
 )
 const REQUIRED_BOUNDARY_FIELDS = (
     :case_id,
@@ -169,13 +169,13 @@ function _diagnostic_stage_profile_matches(diagnostic, expected)::Bool
     witness.outcome == expected.laurent_witness_outcome || return false
     witness.witness_unit_index === expected.laurent_witness_unit_index || return false
 
-    normalization = _diagnostic_stage_detail(diagnostic, :laurent_normalization)
-    normalization === nothing && return false
-    normalization.outcome == expected.laurent_normalization_outcome || return false
-    normalization.normalized_column_length == expected.normalized_column_length || return false
-    normalization.normalized_ring_kind == expected.normalized_ring_kind || return false
-    normalization.normalized_status == expected.normalized_status || return false
-    normalization.normalized_failure_code == expected.normalized_failure_code || return false
+    preconditioning = _diagnostic_stage_detail(diagnostic, :laurent_elementary_row_preconditioning)
+    preconditioning === nothing && return false
+    preconditioning.outcome == expected.laurent_row_preconditioning_outcome || return false
+    preconditioning.target_index == expected.laurent_row_preconditioning_target_index || return false
+    preconditioning.source_index == expected.laurent_row_preconditioning_source_index || return false
+    preconditioning.coefficient == expected.laurent_row_preconditioning_coefficient || return false
+    preconditioning.transformed_stage == expected.laurent_row_preconditioning_transformed_stage || return false
 
     return true
 end
