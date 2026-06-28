@@ -87,6 +87,28 @@ end
     @test occursin(":row", sprint(showerror, invalid_side_err))
     @test occursin(":column", sprint(showerror, invalid_side_err))
 
+    string_strategy_err = _issue160_caught_error(() ->
+        laurent_gl_factorization_certificate(Q; determinant_strategy = "lazy"))
+    @test string_strategy_err isa ArgumentError
+    @test occursin(":eager", sprint(showerror, string_strategy_err))
+    @test occursin(":lazy", sprint(showerror, string_strategy_err))
+
+    nothing_strategy_err = _issue160_caught_error(() ->
+        laurent_gl_factorization_certificate(Q; determinant_strategy = nothing))
+    @test nothing_strategy_err isa ArgumentError
+    @test occursin(":eager", sprint(showerror, nothing_strategy_err))
+    @test occursin(":lazy", sprint(showerror, nothing_strategy_err))
+
+    string_side_err = _issue160_caught_error(() ->
+        laurent_gl_factorization_certificate(
+            Q;
+            determinant_strategy = :lazy,
+            correction_side = "row",
+        ))
+    @test string_side_err isa ArgumentError
+    @test occursin(":row", sprint(showerror, string_side_err))
+    @test occursin(":column", sprint(showerror, string_side_err))
+
     original_err = _issue160_caught_error(() -> elementary_factorization(Q))
     @test original_err isa ArgumentError
     @test occursin("Laurent GL_n normalization boundary", sprint(showerror, original_err))

@@ -153,7 +153,9 @@ function _rewrite_right_elementary_factors_across_diagonal(factors, diagonal_fac
     return rewritten
 end
 
-function _laurent_gl_correction_side(correction_side::Symbol)::Symbol
+function _laurent_gl_correction_side(correction_side)::Symbol
+    correction_side isa Symbol ||
+        throw(ArgumentError("correction_side must be :row or :column"))
     correction_side == :row && return :left
     correction_side == :column && return :right
     throw(ArgumentError("correction_side must be :row or :column"))
@@ -387,7 +389,9 @@ function _laurent_gl_factorization_certificate(A; progress_callback = nothing)
     )
 end
 
-function _laurent_gl_certificate_strategy(determinant_strategy::Symbol)::Symbol
+function _laurent_gl_certificate_strategy(determinant_strategy)::Symbol
+    determinant_strategy isa Symbol ||
+        throw(ArgumentError("determinant_strategy must be :eager or :lazy"))
     determinant_strategy in (:eager, :lazy) && return determinant_strategy
     throw(ArgumentError("determinant_strategy must be :eager or :lazy"))
 end
