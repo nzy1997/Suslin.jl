@@ -103,3 +103,25 @@ end
     end
     @test !replay_ok
 end
+
+@testset "determinant-deferred lazy Laurent peel certificate min_steps" begin
+    entry = _issue156_fixture("issue-38-q-block-lazy-determinant")
+    A = entry.normalizations.row.core
+    n = nrows(A)
+
+    deferred = Suslin._laurent_determinant_deferred_peel_certificate(A; min_steps = 2)
+
+    @test deferred.original_matrix == A
+    @test deferred.determinant_source == :deferred_submatrix
+    @test length(deferred.peel_steps) == 2
+    @test nrows(deferred.deferred_submatrix) < n
+    @test ncols(deferred.deferred_submatrix) < ncols(A)
+    @test deferred.deferred_submatrix == last(deferred.peel_steps).next_block
+    @test deferred.left_product * A * deferred.right_product == deferred.target_matrix
+    @test deferred.target_matrix ==
+        block_embedding(deferred.deferred_submatrix, n, collect(1:nrows(deferred.deferred_submatrix)))
+    @test Suslin._verify_laurent_determinant_deferred_peel_replay(deferred)
+    @test deferred.verification.overall_ok
+    @test deferred.verification.relation_ok
+    @test deferred.verification.replay_metadata_ok
+end
