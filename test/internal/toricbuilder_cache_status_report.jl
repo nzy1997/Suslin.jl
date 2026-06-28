@@ -236,9 +236,9 @@ end
                     determinant = "1",
                     normalization_status = :pass,
                     gl_certificate_status = :pass,
-                    determinant_strategy = determinant_strategy,
-                    correction_side = determinant_strategy == :lazy ? correction_side : :not_run,
-                    determinant_source = determinant_strategy == :lazy ? :deferred_submatrix : :not_run,
+                    determinant_strategy = $(repr(determinant_strategy)),
+                    correction_side = $(repr(determinant_strategy == :lazy ? correction_side : :not_run)),
+                    determinant_source = $(repr(determinant_strategy == :lazy ? :deferred_submatrix : :not_run)),
                     verified = true,
                     factor_count = 3,
                     decomposed_base_matrix_count = 3,
@@ -278,9 +278,9 @@ end
                     determinant = "1",
                     normalization_status = :pass,
                     gl_certificate_status = :pass,
-                    determinant_strategy = determinant_strategy,
-                    correction_side = determinant_strategy == :lazy ? correction_side : :not_run,
-                    determinant_source = determinant_strategy == :lazy ? :deferred_submatrix : :not_run,
+                    determinant_strategy = $(repr(determinant_strategy)),
+                    correction_side = $(repr(determinant_strategy == :lazy ? correction_side : :not_run)),
+                    determinant_source = $(repr(determinant_strategy == :lazy ? :deferred_submatrix : :not_run)),
                     verified = true,
                     factor_count = 3,
                     decomposed_base_matrix_count = 3,
@@ -768,6 +768,22 @@ end
         for path in (lazy_progress_path, string(lazy_progress_path, ".tmp"))
             isfile(path) && rm(path; force = true)
         end
+
+        lazy_failure_progress_path = tempname()
+        lazy_failure_row = try
+            ToricBuilderCacheQBlockStatusReport._worker_exercised_row(
+                "case_010",
+                lazy_failure_progress_path;
+                determinant_strategy = :lazy,
+                correction_side = :diagonal,
+            )
+        finally
+            for path in (lazy_failure_progress_path, string(lazy_failure_progress_path, ".tmp"))
+                isfile(path) && rm(path; force = true)
+            end
+        end
+        @test lazy_failure_row.route_status != :gl_certificate_pass
+        @test lazy_failure_row.determinant_source == :deferred_submatrix
 
         lazy_report = ToricBuilderCacheQBlockStatusReport.build_report(;
             exercised_case_ids = ("case_010",),

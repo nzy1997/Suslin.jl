@@ -465,8 +465,8 @@ function _lazy_gl_certificate_with_progress(
     progress_path = nothing,
     stage_started_at = time(),
     timings = Dict{Symbol, Any}(),
+    determinant_source_ref = Ref(:not_reached),
 )
-    determinant_source = Ref(:not_reached)
     progress_callback = progress -> _write_peel_worker_progress(
         progress_path,
         stage_started_at,
@@ -474,14 +474,14 @@ function _lazy_gl_certificate_with_progress(
         progress;
         determinant_strategy = :lazy,
         correction_side,
-        determinant_source = determinant_source[],
+        determinant_source = determinant_source_ref[],
     )
     deferred_certificate = Suslin._laurent_determinant_deferred_peel_certificate(
         A;
         progress_callback,
     )
     metadata = Suslin._normalize_laurent_determinant_deferred_submatrix(deferred_certificate)
-    determinant_source[] = metadata.determinant_source
+    determinant_source_ref[] = metadata.determinant_source
     _write_worker_progress(
         progress_path,
         :certificate_construction,
@@ -489,7 +489,7 @@ function _lazy_gl_certificate_with_progress(
         timings;
         determinant_strategy = :lazy,
         correction_side,
-        determinant_source = determinant_source[],
+        determinant_source = determinant_source_ref[],
     )
     return Suslin._laurent_gl_lazy_deferred_correction_certificate(
         metadata;
@@ -505,10 +505,16 @@ function _exercised_row(entry; determinant_strategy = :eager, correction_side = 
     stage_timings = Dict{Symbol, Any}()
 
     if determinant_strategy == :lazy
+        determinant_source_ref = Ref(:not_reached)
         certificate_result = _record_stage!(
             stage_timings,
             :certificate_construction,
-            () -> _lazy_gl_certificate_with_progress(A; correction_side, timings = stage_timings),
+            () -> _lazy_gl_certificate_with_progress(
+                A;
+                correction_side,
+                timings = stage_timings,
+                determinant_source_ref,
+            ),
         )
         certificate_result.status == :pass ||
             return _stage_failure_row(
@@ -519,7 +525,7 @@ function _exercised_row(entry; determinant_strategy = :eager, correction_side = 
                 public_status,
                 determinant_strategy,
                 correction_side,
-                determinant_source = :not_reached,
+                determinant_source = determinant_source_ref[],
             )
         certificate = certificate_result.value
 
@@ -696,6 +702,7 @@ function _worker_exercised_row(
     A = ToricBuilderCacheQBlocks.materialize_matrix(entry)
 
     if determinant_strategy == :lazy
+        determinant_source_ref = Ref(:not_reached)
         certificate_stage_started_at = time()
         _write_worker_progress(
             progress_path,
@@ -704,7 +711,7 @@ function _worker_exercised_row(
             timings;
             determinant_strategy = :lazy,
             correction_side,
-            determinant_source = :not_reached,
+            determinant_source = determinant_source_ref[],
         )
         certificate_result = _record_stage!(
             timings,
@@ -715,10 +722,11 @@ function _worker_exercised_row(
                 progress_path,
                 stage_started_at = certificate_stage_started_at,
                 timings,
+                determinant_source_ref,
             ),
         )
         determinant_source =
-            certificate_result.status == :pass ? certificate_result.value.determinant_source : :not_reached
+            certificate_result.status == :pass ? certificate_result.value.determinant_source : determinant_source_ref[]
         _write_worker_progress(
             progress_path,
             :certificate_construction,
@@ -1043,63 +1051,6 @@ function _worker_route_error_row(
     ), _row_route_metadata(; determinant_strategy, correction_side, determinant_source))
 end
 
-function _synthetic_bounded_worker_success_row(
-    entry,
-    runtime_seconds;
-    determinant_strategy = :eager,
-    correction_side = :not_run,
-)
-    factor_count = 3
-    determinant_source = determinant_strategy == :lazy ? :deferred_submatrix : :not_run
-    return merge((;
-        case_id = entry.id,
-        matrix_size = entry.dimensions.matrix,
-        sparse_entry_count = entry.sparse_entry_count,
-        expected_test_level = entry.expected_test_level,
-        route_status = :gl_certificate_pass,
-        public_elementary_status = :not_run,
-        determinant_class = :laurent_monomial_unit,
-        determinant = "1",
-        normalization_status = :pass,
-        gl_certificate_status = :pass,
-        verified = true,
-        factor_count,
-        decomposed_base_matrix_count = factor_count,
-        runtime_seconds,
-        error_details = "none",
-        evidence = "fake bounded worker success",
-        stage_timings = (;
-            determinant_classification = _stage_timing(:pass; elapsed_seconds = 0.001),
-            normalization = _stage_timing(:pass; elapsed_seconds = 0.002),
-            certificate_construction = _stage_timing(:pass; elapsed_seconds = 0.003),
-            verification = _stage_timing(:pass; elapsed_seconds = 0.004),
-        ),
-    ), _row_route_metadata(;
-        determinant_strategy,
-        correction_side = determinant_strategy == :lazy ? correction_side : :not_run,
-        determinant_source,
-    ))
-end
-
-function _bounded_worker_mode_fallback_row(
-    entry,
-    runtime_seconds,
-    stderr_text;
-    determinant_strategy = :eager,
-    correction_side = :not_run,
-)
-    hasproperty(entry, :mode) || return nothing
-    occursin("UndefVarError: `determinant_strategy` not defined", stderr_text) || return nothing
-    entry.mode in (:serialized_success, :noisy_serialized_success) ||
-        return nothing
-    return _synthetic_bounded_worker_success_row(
-        entry,
-        runtime_seconds;
-        determinant_strategy,
-        correction_side,
-    )
-end
-
 function _wait_for_exit_after_kill(proc; grace_seconds = 1.0, poll_seconds = 0.05)
     deadline = time() + grace_seconds
     while process_running(proc)
@@ -1175,14 +1126,6 @@ function _bounded_exercised_row(
                 deserialize_error = "deserialize failed: $(sprint(showerror, err))"
                 combined_details =
                     isempty(stderr_text) ? deserialize_error : string(stderr_text, "\n", deserialize_error)
-                fallback_row = _bounded_worker_mode_fallback_row(
-                    entry,
-                    runtime_seconds,
-                    combined_details;
-                    determinant_strategy,
-                    correction_side,
-                )
-                fallback_row === nothing || return fallback_row
                 return _worker_route_error_row(
                     entry,
                     runtime_seconds,
@@ -1193,14 +1136,6 @@ function _bounded_exercised_row(
             end
         end
         stderr_text = isfile(stderr_path) ? read(stderr_path, String) : ""
-        fallback_row = _bounded_worker_mode_fallback_row(
-            entry,
-            runtime_seconds,
-            stderr_text;
-            determinant_strategy,
-            correction_side,
-        )
-        fallback_row === nothing || return fallback_row
         return _worker_route_error_row(
             entry,
             runtime_seconds,
