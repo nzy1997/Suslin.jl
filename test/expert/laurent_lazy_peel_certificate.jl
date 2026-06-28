@@ -148,3 +148,60 @@ end
     @test deferred.verification.relation_ok
     @test deferred.verification.replay_metadata_ok
 end
+
+@testset "determinant-deferred lazy Laurent peel replay rejects malformed metadata" begin
+    entry = _issue156_fixture("determinant-one-triangular")
+    A = entry.inputs.matrix
+    R = base_ring(A)
+    n = nrows(A)
+    deferred = Suslin._laurent_determinant_deferred_peel_certificate(A)
+
+    empty_embedded = Suslin._embed_laurent_deferred_peel_factors(
+        typeof(identity_matrix(R, n))[],
+        R,
+        n,
+        n,
+    )
+    @test isempty(empty_embedded)
+
+    bad_step = (;
+        input_matrix = A,
+        dimension = n,
+        next_block = deferred.deferred_submatrix,
+    )
+    malformed_step_certificate = (;
+        original_matrix = A,
+        peel_steps = [bad_step],
+        deferred_submatrix = deferred.deferred_submatrix,
+        determinant_source = :deferred_submatrix,
+        left_factors = deferred.left_factors,
+        right_factors = deferred.right_factors,
+        left_product = deferred.left_product,
+        right_product = deferred.right_product,
+        target_matrix = deferred.target_matrix,
+    )
+    malformed_step_replay = Suslin._laurent_determinant_deferred_peel_verification(
+        malformed_step_certificate,
+    )
+    @test !malformed_step_replay.overall_ok
+    @test !malformed_step_replay.steps_ok
+    @test !malformed_step_replay.replay_metadata_ok
+
+    malformed_relation_certificate = (;
+        original_matrix = A,
+        peel_steps = deferred.peel_steps,
+        deferred_submatrix = deferred.deferred_submatrix,
+        determinant_source = :deferred_submatrix,
+        left_factors = deferred.left_factors,
+        right_factors = deferred.right_factors,
+        left_product = nothing,
+        right_product = deferred.right_product,
+        target_matrix = deferred.target_matrix,
+    )
+    malformed_relation_replay = Suslin._laurent_determinant_deferred_peel_verification(
+        malformed_relation_certificate,
+    )
+    @test !malformed_relation_replay.overall_ok
+    @test !malformed_relation_replay.replay_metadata_ok
+    @test !malformed_relation_replay.relation_ok
+end
