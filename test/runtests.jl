@@ -56,6 +56,7 @@ const TEST_GROUP_FILES = Dict(
         "expert/laurent_lazy_peel_no_initial_det.jl",
         "expert/laurent_lazy_peel_certificate.jl",
         "expert/laurent_lazy_submatrix_normalization.jl",
+        "expert/laurent_lazy_correction_hoist.jl",
         "expert/laurent_column_reduction_diagnostics.jl",
         "expert/case008_d21_laurent_column_reduction.jl",
         "expert/case010_laurent_column_reduction.jl",
