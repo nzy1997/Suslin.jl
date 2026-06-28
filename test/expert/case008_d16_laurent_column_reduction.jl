@@ -117,4 +117,11 @@ end
         negative.failing_column,
         negative.ring,
     )
+
+    nonreducible_spec_column = [
+        idx == 1 ? first(gens(R)) + last(gens(R)) : zero(R)
+        for idx in 1:length(column)
+    ]
+    @test !isempty(Suslin._laurent_row_preconditioning_specs(nonreducible_spec_column, R))
+    @test Suslin._laurent_row_preconditioning_candidate(nonreducible_spec_column, R) === nothing
 end
