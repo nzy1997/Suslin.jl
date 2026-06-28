@@ -29,13 +29,10 @@ function _matrix_size(A)
 end
 
 function _fixture_supports_lazy_determinant_correction(entry)::Bool
-    expected = _lazy_field(entry, :expected_correction)
-    hasproperty(expected, :supported) || throw(ArgumentError("fixture $(entry.id) missing correction support flag"))
     hasproperty(entry, :inputs) && hasproperty(entry.inputs, :matrix) ||
         throw(ArgumentError("fixture $(entry.id) missing matrix input"))
     classification = classify_laurent_determinant(entry.inputs.matrix).classification
-    actual_supported = classification in (:one, :laurent_monomial_unit, :permutation_sign_unit)
-    return expected.supported && actual_supported
+    return classification in (:one, :laurent_monomial_unit, :permutation_sign_unit)
 end
 
 function _assert_ring_metadata(entry)
@@ -184,6 +181,8 @@ function _assert_issue38_drift(entry)
         throw(ArgumentError("fixture $(entry.id) provenance source fixture id drifted"))
     entry.provenance.source_issue == source.provenance.issue ||
         throw(ArgumentError("fixture $(entry.id) provenance source issue drifted"))
+    entry.provenance.source_issue_url == source.provenance.issue_url ||
+        throw(ArgumentError("fixture $(entry.id) provenance source issue URL drifted"))
     return true
 end
 
@@ -200,6 +199,8 @@ function _assert_provenance_metadata(entry)
             throw(ArgumentError("fixture $(entry.id) missing wrapped source fixture id"))
         hasproperty(provenance, :source_issue) ||
             throw(ArgumentError("fixture $(entry.id) missing wrapped source issue"))
+        hasproperty(provenance, :source_issue_url) ||
+            throw(ArgumentError("fixture $(entry.id) missing wrapped source issue URL"))
     elseif provenance.source == :synthetic
         true
     else

@@ -97,6 +97,7 @@ function _issue38_entry()
             issue = "#154",
             source_fixture_id = issue38.id,
             source_issue = issue38.provenance.issue,
+            source_issue_url = issue38.provenance.issue_url,
             description = "reuse ToricBuilder Issue #38 Q-block fixture without copying matrix data",
         ),
         consumer_test_ids = ("issue-154-lazy-laurent-determinant-fixtures",),
