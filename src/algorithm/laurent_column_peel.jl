@@ -227,10 +227,18 @@ function _factor_laurent_gl_lazy_determinant_peel(
     )
     _emit_laurent_column_peel_progress(progress_callback, step.next_block, completed_steps, last_completed)
 
-    deferred_profile = determinant_probe(step.next_block)
-    deferred_profile.classification == :one || throw(ArgumentError(
-        "lazy Laurent determinant correction after initial peel is not implemented for deferred determinant classification $(deferred_profile.classification)",
-    ))
+    deferred_certificate = LaurentDeterminantDeferredPeelCertificate(
+        A,
+        LaurentColumnPeelStep[step],
+        step.next_block,
+        :deferred_submatrix,
+        nothing,
+    )
+    deferred_metadata = _normalize_laurent_determinant_deferred_submatrix(
+        deferred_certificate;
+        determinant_probe,
+    )
+    deferred_metadata.determinant_classification == :one || return deferred_metadata
 
     next_factors, next_steps, final_block, final_target, final_local, final_2x2 =
         _laurent_column_peel_recursive(
@@ -327,6 +335,179 @@ function _verify_laurent_determinant_deferred_peel_replay(certificate)::Bool
     return _laurent_determinant_deferred_peel_verification(certificate).overall_ok
 end
 
+function _is_supported_deferred_laurent_determinant_class(classification::Symbol)::Bool
+    return classification == :one || classification == :laurent_monomial_unit
+end
+
+function _scoped_deferred_correction(correction)
+    return merge(correction, (; scope = :deferred_submatrix))
+end
+
+function _deferred_laurent_determinant_boundary(certificate, determinant_profile)
+    classification = determinant_profile.classification
+    reason = classification == :non_unit ?
+        :non_unit_deferred_determinant :
+        :unsupported_deferred_unit_class
+    deferred = certificate.deferred_submatrix
+    return (;
+        kind = :unsupported_deferred_laurent_determinant,
+        determinant_source = certificate.determinant_source,
+        overall_determinant = determinant_profile.determinant,
+        determinant_classification = classification,
+        deferred_submatrix_size = (nrows(deferred), ncols(deferred)),
+        supported = false,
+        reason,
+    )
+end
+
+function _normalize_laurent_determinant_deferred_submatrix(
+    certificate;
+    determinant_probe = classify_laurent_determinant,
+)
+    _verify_laurent_determinant_deferred_peel_replay(certificate) ||
+        error("invalid determinant-deferred Laurent peel certificate replay")
+
+    deferred = certificate.deferred_submatrix
+    R = base_ring(deferred)
+    n = nrows(deferred)
+    determinant_profile = determinant_probe(deferred)
+    classification = determinant_profile.classification
+    determinant = determinant_profile.determinant
+
+    deferred_correction = nothing
+    deferred_diagonal_correction = nothing
+    normalized_deferred_core = nothing
+    staged_boundary = nothing
+
+    if classification == :one
+        deferred_correction = _scoped_deferred_correction(
+            _identity_correction(R, n, determinant),
+        )
+        normalized_deferred_core = deferred
+    elseif classification == :laurent_monomial_unit
+        deferred_correction = _scoped_deferred_correction(
+            _left_diagonal_determinant_correction(R, n, determinant),
+        )
+        deferred_diagonal_correction = deferred_correction
+        normalized_deferred_core = deferred_correction.inverse_factor * deferred
+    else
+        staged_boundary = _deferred_laurent_determinant_boundary(
+            certificate,
+            determinant_profile,
+        )
+    end
+
+    metadata = (;
+        peel_certificate = certificate,
+        deferred_submatrix = deferred,
+        determinant_source = certificate.determinant_source,
+        determinant_profile,
+        overall_determinant = determinant,
+        determinant_classification = classification,
+        supported = _is_supported_deferred_laurent_determinant_class(classification),
+        deferred_correction,
+        deferred_diagonal_correction,
+        normalized_deferred_core,
+        staged_boundary,
+        verification = nothing,
+    )
+    verification = _laurent_determinant_deferred_submatrix_normalization_verification(metadata)
+    verification.overall_ok ||
+        error("internal deferred Laurent submatrix normalization metadata verification failed")
+    return merge(metadata, (; verification))
+end
+
+function _verify_laurent_determinant_deferred_submatrix_normalization(metadata)::Bool
+    return _laurent_determinant_deferred_submatrix_normalization_verification(metadata).overall_ok
+end
+
+function _laurent_determinant_deferred_submatrix_normalization_verification(metadata)
+    certificate_ok = try
+        _verify_laurent_determinant_deferred_peel_replay(metadata.peel_certificate)
+    catch err
+        err isa InterruptException && rethrow()
+        false
+    end
+
+    determinant_ok = false
+    correction_ok = false
+    normalized_core_det_ok = false
+    boundary_ok = false
+
+    try
+        deferred = metadata.peel_certificate.deferred_submatrix
+        R = base_ring(deferred)
+        n = nrows(deferred)
+        profile = classify_laurent_determinant(deferred)
+        classification = profile.classification
+        determinant_ok =
+            metadata.deferred_submatrix == deferred &&
+            metadata.determinant_source == :deferred_submatrix &&
+            metadata.overall_determinant == profile.determinant &&
+            metadata.determinant_classification == classification &&
+            metadata.determinant_profile == profile &&
+            metadata.supported == _is_supported_deferred_laurent_determinant_class(classification)
+
+        if metadata.supported
+            correction = metadata.deferred_correction
+            identity = identity_matrix(R, n)
+            correction_ok =
+                metadata.staged_boundary === nothing &&
+                correction !== nothing &&
+                correction.scope == :deferred_submatrix &&
+                correction.determinant == metadata.overall_determinant &&
+                nrows(correction.factor) == n &&
+                ncols(correction.factor) == n &&
+                nrows(correction.inverse_factor) == n &&
+                ncols(correction.inverse_factor) == n &&
+                correction.factor * correction.inverse_factor == identity &&
+                correction.inverse_factor * correction.factor == identity
+
+            if classification == :one
+                correction_ok = correction_ok &&
+                    correction.kind == :identity &&
+                    metadata.deferred_diagonal_correction === nothing &&
+                    metadata.normalized_deferred_core == deferred
+            elseif classification == :laurent_monomial_unit
+                correction_ok = correction_ok &&
+                    correction.kind == :left_diagonal_determinant_correction &&
+                    metadata.deferred_diagonal_correction == correction &&
+                    correction.factor * metadata.normalized_deferred_core == deferred
+            end
+
+            normalized_core_det_ok =
+                metadata.normalized_deferred_core !== nothing &&
+                det(metadata.normalized_deferred_core) == one(R)
+        else
+            boundary = metadata.staged_boundary
+            boundary_ok =
+                metadata.deferred_correction === nothing &&
+                metadata.deferred_diagonal_correction === nothing &&
+                metadata.normalized_deferred_core === nothing &&
+                boundary !== nothing &&
+                boundary.kind == :unsupported_deferred_laurent_determinant &&
+                boundary.determinant_source == :deferred_submatrix &&
+                boundary.overall_determinant == metadata.overall_determinant &&
+                boundary.determinant_classification == metadata.determinant_classification &&
+                boundary.deferred_submatrix_size == (n, n) &&
+                boundary.supported == false
+        end
+    catch err
+        err isa InterruptException && rethrow()
+    end
+
+    supported_ok = metadata.supported ? (correction_ok && normalized_core_det_ok) : boundary_ok
+    overall_ok = certificate_ok && determinant_ok && supported_ok
+    return (;
+        overall_ok,
+        certificate_ok,
+        determinant_ok,
+        correction_ok,
+        normalized_core_det_ok,
+        boundary_ok,
+    )
+end
+
 function _laurent_column_peel_recursive(
     current;
     progress_callback = nothing,
@@ -385,13 +566,16 @@ function _laurent_column_peel_step(current)
     R = base_ring(current)
     d = nrows(current)
     last_column = [current[row, d] for row in 1:d]
-    left_factors = reduce_unimodular_column(last_column, R)
+    target_column = _column_peel_target_column(R, d)
+    left_factors = matrix(R, d, 1, last_column) == target_column ?
+        typeof(identity_matrix(R, d))[] :
+        reduce_unimodular_column(last_column, R)
     left_product = _factor_product(left_factors, R, d)
     after_left = left_product * current
     recorded_column = matrix(R, d, 1, last_column)
-    left_product * recorded_column == _column_peel_target_column(R, d) ||
+    left_product * recorded_column == target_column ||
         throw(ArgumentError("Laurent column-peel left factors failed to send the last column to e_d"))
-    after_left[:, d:d] == _column_peel_target_column(R, d) ||
+    after_left[:, d:d] == target_column ||
         throw(ArgumentError("Laurent column-peel left product failed to normalize the last column"))
     right_factors = _expected_column_peel_right_factors(after_left, d, R)
     right_product = _factor_product(right_factors, R, d)
