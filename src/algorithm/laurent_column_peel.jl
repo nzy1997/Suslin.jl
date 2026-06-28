@@ -9,6 +9,45 @@ struct LaurentColumnPeelStep
     next_block
 end
 
+struct LaurentDeterminantDeferredPeelCertificate
+    original_matrix
+    peel_steps::Vector{LaurentColumnPeelStep}
+    deferred_submatrix
+    determinant_source::Symbol
+    left_factors::Vector
+    right_factors::Vector
+    left_product
+    right_product
+    target_matrix
+    verification
+
+    function LaurentDeterminantDeferredPeelCertificate(
+        original_matrix,
+        peel_steps::Vector{LaurentColumnPeelStep},
+        deferred_submatrix,
+        determinant_source::Symbol,
+        verification,
+    )
+        replay = _laurent_determinant_deferred_peel_replay_data(
+            original_matrix,
+            peel_steps,
+            deferred_submatrix,
+        )
+        return new(
+            original_matrix,
+            collect(peel_steps),
+            deferred_submatrix,
+            determinant_source,
+            replay.left_factors,
+            replay.right_factors,
+            replay.left_product,
+            replay.right_product,
+            replay.target_matrix,
+            verification,
+        )
+    end
+end
+
 struct LaurentColumnPeelFactorization
     original_matrix
     final_block
@@ -234,6 +273,60 @@ function _factor_laurent_gl_lazy_determinant_peel(
     )
 end
 
+function _laurent_determinant_deferred_peel_certificate(
+    A;
+    min_steps::Int = 1,
+    progress_callback = nothing,
+)
+    _validate_laurent_column_peel_input_shape_and_ring(A)
+    min_steps >= 1 || throw(ArgumentError("determinant-deferred Laurent peel requires at least one peel step"))
+    n = nrows(A)
+    n - min_steps >= 2 || throw(ArgumentError("determinant-deferred Laurent peel must leave a deferred submatrix of size at least 2"))
+
+    steps = LaurentColumnPeelStep[]
+    current = A
+    completed_steps = 0
+    last_completed = _laurent_column_peel_empty_last_completed()
+    _emit_laurent_column_peel_progress(progress_callback, current, completed_steps, last_completed)
+
+    for _ in 1:min_steps
+        step_started_at = time()
+        step = _laurent_column_peel_step(current)
+        step_elapsed = round(time() - step_started_at; digits = 3)
+        push!(steps, step)
+        completed_steps += 1
+        last_completed = (;
+            dimension = step.dimension,
+            elapsed_seconds = step_elapsed,
+            left_factors = length(step.left_factors),
+            right_factors = length(step.right_factors),
+        )
+        current = step.next_block
+        _emit_laurent_column_peel_progress(progress_callback, current, completed_steps, last_completed)
+    end
+
+    certificate = LaurentDeterminantDeferredPeelCertificate(
+        A,
+        steps,
+        current,
+        :deferred_submatrix,
+        nothing,
+    )
+    verification = _laurent_determinant_deferred_peel_verification(certificate)
+    verification.overall_ok || error("internal determinant-deferred Laurent peel verification failed")
+    return LaurentDeterminantDeferredPeelCertificate(
+        certificate.original_matrix,
+        certificate.peel_steps,
+        certificate.deferred_submatrix,
+        certificate.determinant_source,
+        verification,
+    )
+end
+
+function _verify_laurent_determinant_deferred_peel_replay(certificate)::Bool
+    return _laurent_determinant_deferred_peel_verification(certificate).overall_ok
+end
+
 function _laurent_column_peel_recursive(
     current;
     progress_callback = nothing,
@@ -405,6 +498,62 @@ function _embed_upper_left_factors(factors, R, d::Int)
     return [block_embedding(factor, d, collect(1:(d - 1))) for factor in collected]
 end
 
+function _embed_laurent_deferred_peel_factors(factors, R, original_dimension::Int, factor_dimension::Int)
+    collected = collect(factors)
+    if isempty(collected)
+        return typeof(identity_matrix(R, original_dimension))[]
+    end
+    factor_dimension == original_dimension && return collected
+    return [block_embedding(factor, original_dimension, collect(1:factor_dimension)) for factor in collected]
+end
+
+function _laurent_determinant_deferred_target(deferred_submatrix, original_dimension::Int)
+    return block_embedding(deferred_submatrix, original_dimension, collect(1:nrows(deferred_submatrix)))
+end
+
+function _laurent_determinant_deferred_peel_replay_data(original_matrix, peel_steps, deferred_submatrix)
+    R = base_ring(original_matrix)
+    original_dimension = nrows(original_matrix)
+    left_factors = typeof(identity_matrix(R, original_dimension))[]
+    right_factors = typeof(identity_matrix(R, original_dimension))[]
+    steps = collect(peel_steps)
+
+    for step in Iterators.reverse(steps)
+        append!(
+            left_factors,
+            _embed_laurent_deferred_peel_factors(
+                step.left_factors,
+                R,
+                original_dimension,
+                step.dimension,
+            ),
+        )
+    end
+
+    for step in steps
+        append!(
+            right_factors,
+            _embed_laurent_deferred_peel_factors(
+                step.right_factors,
+                R,
+                original_dimension,
+                step.dimension,
+            ),
+        )
+    end
+
+    left_product = _factor_product(left_factors, R, original_dimension)
+    right_product = _factor_product(right_factors, R, original_dimension)
+    target_matrix = _laurent_determinant_deferred_target(deferred_submatrix, original_dimension)
+    return (;
+        left_factors,
+        right_factors,
+        left_product,
+        right_product,
+        target_matrix,
+    )
+end
+
 function _laurent_column_peel_generator(R)
     ring_gens = collect(gens(R))
     isempty(ring_gens) && throw(ArgumentError("Laurent column-peel factorization requires a Laurent generator"))
@@ -540,6 +689,76 @@ function _laurent_column_peel_verification(certificate)
     )
 end
 
+function _laurent_determinant_deferred_peel_verification(certificate)
+    R = base_ring(certificate.original_matrix)
+    n = nrows(certificate.original_matrix)
+    size_ok = nrows(certificate.original_matrix) == ncols(certificate.original_matrix) >= 3
+    determinant_source_ok = certificate.determinant_source == :deferred_submatrix
+    step_chain_ok = _laurent_determinant_deferred_step_chain_ok(
+        certificate.peel_steps,
+        certificate.original_matrix,
+        certificate.deferred_submatrix,
+    )
+    steps_ok = try
+        all(step -> _is_valid_laurent_column_peel_step_data(
+                step.dimension,
+                step.input_matrix,
+                step.last_column,
+                step.left_factors,
+                step.after_left_matrix,
+                step.right_factors,
+                step.peeled_matrix,
+                step.next_block,
+            ),
+            certificate.peel_steps,
+        )
+    catch err
+        err isa InterruptException && rethrow()
+        false
+    end
+    deferred_shape_ok = nrows(certificate.deferred_submatrix) == ncols(certificate.deferred_submatrix) &&
+        nrows(certificate.deferred_submatrix) >= 2 &&
+        nrows(certificate.deferred_submatrix) < n
+    replay = try
+        _laurent_determinant_deferred_peel_replay_data(
+            certificate.original_matrix,
+            certificate.peel_steps,
+            certificate.deferred_submatrix,
+        )
+    catch err
+        err isa InterruptException && rethrow()
+        nothing
+    end
+    replay_metadata_ok = replay !== nothing &&
+        _factor_sequences_equal(certificate.left_factors, replay.left_factors) &&
+        _factor_sequences_equal(certificate.right_factors, replay.right_factors) &&
+        certificate.left_product == replay.left_product &&
+        certificate.right_product == replay.right_product &&
+        certificate.target_matrix == replay.target_matrix
+    target_ok = replay !== nothing &&
+        certificate.target_matrix == _laurent_determinant_deferred_target(certificate.deferred_submatrix, n)
+    relation_ok = try
+        certificate.left_product * certificate.original_matrix * certificate.right_product ==
+            certificate.target_matrix
+    catch err
+        err isa InterruptException && rethrow()
+        false
+    end
+    overall_ok = size_ok && determinant_source_ok && step_chain_ok && steps_ok &&
+        deferred_shape_ok && replay_metadata_ok && target_ok && relation_ok
+    return (;
+        overall_ok,
+        size_ok,
+        determinant_source_ok,
+        step_chain_ok,
+        steps_ok,
+        deferred_shape_ok,
+        replay_metadata_ok,
+        target_ok,
+        relation_ok,
+    )
+end
+
 function _laurent_column_peel_step_chain_ok(steps, original_matrix)::Bool
     collected = collect(steps)
     current = original_matrix
@@ -552,4 +771,19 @@ function _laurent_column_peel_step_chain_ok(steps, original_matrix)::Bool
     end
 
     return nrows(current) == 2 && ncols(current) == 2
+end
+
+function _laurent_determinant_deferred_step_chain_ok(steps, original_matrix, deferred_submatrix)::Bool
+    collected = collect(steps)
+    isempty(collected) && return false
+    current = original_matrix
+
+    for step in collected
+        step.input_matrix == current || return false
+        step.dimension == nrows(current) || return false
+        step.dimension == ncols(current) || return false
+        current = step.next_block
+    end
+
+    return current == deferred_submatrix
 end
