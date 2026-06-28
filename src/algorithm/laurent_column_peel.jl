@@ -64,8 +64,11 @@ function _validate_laurent_column_peel_input_shape_and_ring(A)
     return nrows(A)
 end
 
-function _validate_laurent_column_peel_input_determinant_one(A)
-    profile = classify_laurent_determinant(A)
+function _validate_laurent_column_peel_input_determinant_one(
+    A;
+    determinant_probe = classify_laurent_determinant,
+)
+    profile = determinant_probe(A)
     profile.classification == :one || throw(ArgumentError("Laurent column-peel factorization requires determinant-one input"))
     return nrows(A)
 end
@@ -113,7 +116,11 @@ function _emit_laurent_column_peel_progress(progress_callback, current, complete
     return nothing
 end
 
-function _factor_laurent_sl_column_peel(A; progress_callback = nothing)
+function _factor_laurent_sl_column_peel(
+    A;
+    progress_callback = nothing,
+    determinant_probe = classify_laurent_determinant,
+)
     _validate_laurent_column_peel_input_shape_and_ring(A)
     _emit_laurent_column_peel_progress(
         progress_callback,
@@ -121,7 +128,7 @@ function _factor_laurent_sl_column_peel(A; progress_callback = nothing)
         0,
         _laurent_column_peel_empty_last_completed(),
     )
-    _validate_laurent_column_peel_input_determinant_one(A)
+    _validate_laurent_column_peel_input_determinant_one(A; determinant_probe)
     factors, steps, final_block, final_target, final_local, final_2x2 =
         _laurent_column_peel_recursive(
             A;
@@ -145,6 +152,75 @@ function _factor_laurent_sl_column_peel(A; progress_callback = nothing)
     )
     verification = _laurent_column_peel_verification(certificate)
     verification.overall_ok || error("internal Laurent column-peel verification failed")
+    return LaurentColumnPeelFactorization(
+        certificate.original_matrix,
+        certificate.final_block,
+        certificate.final_local_target,
+        certificate.final_local_factors,
+        certificate.final_factors,
+        certificate.factors,
+        certificate.product,
+        certificate.peel_steps,
+        verification,
+    )
+end
+
+function _factor_laurent_gl_lazy_determinant_peel(
+    A;
+    determinant_probe = classify_laurent_determinant,
+    progress_callback = nothing,
+)
+    _validate_laurent_column_peel_input_shape_and_ring(A)
+    n = nrows(A)
+    n >= 3 || throw(ArgumentError("Lazy Laurent determinant peel requires size at least 3 so one peel step can complete before determinant classification"))
+    empty_last_completed = _laurent_column_peel_empty_last_completed()
+    _emit_laurent_column_peel_progress(progress_callback, A, 0, empty_last_completed)
+
+    step_started_at = time()
+    step = _laurent_column_peel_step(A)
+    step_elapsed = round(time() - step_started_at; digits = 3)
+    completed_steps = 1
+    last_completed = (;
+        dimension = n,
+        elapsed_seconds = step_elapsed,
+        left_factors = length(step.left_factors),
+        right_factors = length(step.right_factors),
+    )
+    _emit_laurent_column_peel_progress(progress_callback, step.next_block, completed_steps, last_completed)
+
+    deferred_profile = determinant_probe(step.next_block)
+    deferred_profile.classification == :one || throw(ArgumentError(
+        "lazy Laurent determinant correction after initial peel is not implemented for deferred determinant classification $(deferred_profile.classification)",
+    ))
+
+    next_factors, next_steps, final_block, final_target, final_local, final_2x2 =
+        _laurent_column_peel_recursive(
+            step.next_block;
+            progress_callback,
+            completed_steps,
+            last_completed,
+            emit_current = false,
+        )
+    R = base_ring(A)
+    factors = vcat(
+        _inverse_elementary_sequence(step.left_factors),
+        _embed_upper_left_factors(next_factors, R, n),
+        _inverse_elementary_sequence(step.right_factors),
+    )
+    product = _factor_product(factors, R, n)
+    certificate = LaurentColumnPeelFactorization(
+        A,
+        final_block,
+        final_target,
+        final_local,
+        final_2x2,
+        factors,
+        product,
+        vcat(LaurentColumnPeelStep[step], next_steps),
+        nothing,
+    )
+    verification = _laurent_column_peel_verification(certificate)
+    verification.overall_ok || error("internal lazy Laurent column-peel verification failed")
     return LaurentColumnPeelFactorization(
         certificate.original_matrix,
         certificate.final_block,
