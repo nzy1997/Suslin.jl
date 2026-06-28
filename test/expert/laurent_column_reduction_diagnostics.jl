@@ -11,6 +11,11 @@ function _diagnostic_stage_detail(diagnostic, stage::Symbol)
     return idx === nothing ? nothing : diagnostic.stage_details[idx]
 end
 
+function _diagnostic_supported_stage(diagnostic)
+    supported = filter(detail -> detail.outcome == :supported, diagnostic.stage_details)
+    return isempty(supported) ? nothing : only(supported).stage
+end
+
 function _test_diagnostic_stage_details_shape(diagnostic)
     hasproperty(diagnostic, :stage_details) || return
     stage_details = diagnostic.stage_details
@@ -93,7 +98,34 @@ end
     @test case008_d16_preconditioned.target_index isa Integer
     @test case008_d16_preconditioned.source_index isa Integer
     @test case008_d16_preconditioned.coefficient == one(case008_d16_fixture.ring)
+    case008_d16_cert = Suslin.ecp_column_reduction_certificate(
+        case008_d16_fixture.failing_column,
+        case008_d16_fixture.ring,
+    )
+    @test _diagnostic_supported_stage(case008_d16) == case008_d16_cert.stages[end].kind
     @test _diagnostic_stage_detail(case008_d16, :case008_special_case) === nothing
+
+    R, (norm_x, norm_y) = Suslin.suslin_laurent_polynomial_ring(GF(2), ["x", "y"])
+    normalization_column = [
+        norm_x^-1 * norm_y^-1 * (norm_x + norm_y^2),
+        norm_x^-1 * norm_y^-1 * (norm_x * norm_y + norm_x + one(R)),
+        norm_x^-1 * norm_y^-1 * (norm_x^2 + norm_x * norm_y + norm_y + one(R)),
+        zero(R),
+        zero(R),
+        zero(R),
+    ]
+    normalization_cert = Suslin.ecp_column_reduction_certificate(normalization_column, R)
+    normalization_diagnostic =
+        Suslin.diagnose_unimodular_column_reduction(normalization_column, R)
+    @test normalization_cert.stages[end].kind == :laurent_normalization
+    @test normalization_diagnostic.status == :supported
+    normalization_detail =
+        _diagnostic_stage_detail(normalization_diagnostic, :laurent_normalization)
+    @test normalization_detail !== nothing
+    @test normalization_detail.outcome == :delegated_to_polynomial
+    @test normalization_detail.normalized_status == :supported
+    @test :laurent_normalization in normalization_diagnostic.attempted_stages
+    @test !(:laurent_elementary_row_preconditioning in normalization_diagnostic.attempted_stages)
 
     unsupported_ring, (x, y) = Suslin.suslin_laurent_polynomial_ring(GF(2), ["x", "y"])
     unsupported_column = [x * y + x, x^2 + x + one(unsupported_ring), x * y + y^2 + one(unsupported_ring)]
@@ -224,7 +256,6 @@ end
         :unit_entry,
         :laurent_unit_creation,
         :laurent_witness_unit,
-        :laurent_elementary_row_preconditioning,
         :laurent_normalization,
     ]
     laurent_diagnostic = (; stage_details = tuple(laurent_details...))
@@ -234,8 +265,7 @@ end
     @test laurent_witness.witness_unit_index === nothing
     row_preconditioning =
         _diagnostic_stage_detail(laurent_diagnostic, :laurent_elementary_row_preconditioning)
-    @test row_preconditioning !== nothing
-    @test row_preconditioning.outcome == :no_row_preconditioning_candidate
+    @test row_preconditioning === nothing
     normalization = _diagnostic_stage_detail(laurent_diagnostic, :laurent_normalization)
     @test normalization !== nothing
     @test normalization.outcome == :normalized_unimodularity_check_failed

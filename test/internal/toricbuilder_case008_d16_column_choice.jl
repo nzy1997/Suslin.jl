@@ -27,6 +27,8 @@ function _case008_d16_candidate_report(M, R, column_index::Int, current_index::I
     diagnostic = Suslin.diagnose_unimodular_column_reduction(column, R)
     witness = _case008_d16_stage_detail(diagnostic, :laurent_witness_unit)
     normalization = _case008_d16_stage_detail(diagnostic, :laurent_normalization)
+    row_preconditioning =
+        _case008_d16_stage_detail(diagnostic, :laurent_elementary_row_preconditioning)
     return (;
         column_index,
         is_current_peel_column = column_index == current_index,
@@ -36,6 +38,9 @@ function _case008_d16_candidate_report(M, R, column_index::Int, current_index::I
         laurent_witness_unit_index = _case008_d16_detail_property(witness, :witness_unit_index),
         normalized_precondition_status = _case008_d16_detail_property(normalization, :normalized_status),
         normalized_failure_code = _case008_d16_detail_property(normalization, :normalized_failure_code),
+        row_preconditioning_outcome = _case008_d16_detail_property(row_preconditioning, :outcome),
+        row_preconditioning_transformed_stage =
+            _case008_d16_detail_property(row_preconditioning, :transformed_stage),
         status = diagnostic.status,
         failure_code = diagnostic.failure_code,
         supported_by_current_reducer = diagnostic.status == :supported,
@@ -97,6 +102,8 @@ end
         :laurent_witness_unit_index,
         :normalized_precondition_status,
         :normalized_failure_code,
+        :row_preconditioning_outcome,
+        :row_preconditioning_transformed_stage,
         :status,
         :failure_code,
         :supported_by_current_reducer,
@@ -107,16 +114,18 @@ end
     @test current.column_index == 16
     @test current.is_unimodular
     @test current.unit_entry_count == 0
-    @test current.status == :unsupported
-    @test current.failure_code == :unsupported_laurent_column_family
+    @test current.status == :supported
+    @test current.failure_code === nothing
     @test current.laurent_witness_outcome == :witness_without_unit
     @test current.normalized_precondition_status == :precondition_failed
     @test current.normalized_failure_code == :not_unimodular
-    @test !current.supported_by_current_reducer
+    @test current.row_preconditioning_outcome == :supported
+    @test current.row_preconditioning_transformed_stage == :witness_unit
+    @test current.supported_by_current_reducer
 
     supported = filter(candidate -> candidate.supported_by_current_reducer, report.candidates)
     supported_alternatives = filter(candidate -> candidate.column_index != 16, supported)
-    @test Tuple(candidate.column_index for candidate in supported) == (8, 9, 10)
+    @test Tuple(candidate.column_index for candidate in supported) == (8, 9, 10, 16)
     @test Tuple(candidate.column_index for candidate in supported_alternatives) == (8, 9, 10)
     @info "case_008 d16 column-choice diagnostic" current_peel_column_index = 16 supported_columns = Tuple(candidate.column_index for candidate in supported) supported_alternative_columns = Tuple(candidate.column_index for candidate in supported_alternatives)
     @test all(candidate -> candidate.status == :supported, supported)

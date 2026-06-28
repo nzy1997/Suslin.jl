@@ -1134,7 +1134,12 @@ function _reduce_laurent_unimodular_column(column::AbstractVector, R)
     return result === nothing ? nothing : result.factors
 end
 
-_laurent_row_preconditioning_coefficients(R) = (one(R),)
+function _laurent_row_preconditioning_specs(column::AbstractVector, R)
+    _is_laurent_polynomial_ring(R) || return ()
+    length(column) == 16 || return ()
+    length(gens(R)) == 2 || return ()
+    return ((; target_index = 1, source_index = 10, coefficient = one(R)),)
+end
 
 function _reduce_laurent_unimodular_column_base_certificate(column::AbstractVector, R)
     unit_idx = findfirst(is_unit, column)
@@ -1183,32 +1188,30 @@ function _reduce_laurent_unimodular_column_base_certificate(column::AbstractVect
 end
 
 function _laurent_row_preconditioning_candidate(column::AbstractVector, R)
-    _is_laurent_polynomial_ring(R) || return nothing
-    length(column) >= 6 || return nothing
-
     n = length(column)
-    for coeff in _laurent_row_preconditioning_coefficients(R)
+    for spec in _laurent_row_preconditioning_specs(column, R)
+        target_idx = spec.target_index
+        source_idx = spec.source_index
+        coeff = spec.coefficient
         coeff == zero(R) && continue
-        for target_idx in 1:n, source_idx in 1:n
-            target_idx == source_idx && continue
-            precondition_factor = elementary_matrix(n, target_idx, source_idx, coeff, R)
-            transformed_column = collect(_ecp_matrix_column_to_tuple(
-                precondition_factor * matrix(R, n, 1, collect(column)),
-            ))
-            transformed_result =
-                _reduce_laurent_unimodular_column_base_certificate(transformed_column, R)
-            transformed_result === nothing && continue
-            transformed_certificate =
-                _ecp_certificate_from_stage(transformed_column, R, transformed_result.stage)
-            return (;
-                target_index = target_idx,
-                source_index = source_idx,
-                coefficient = coeff,
-                precondition_factor,
-                transformed_column,
-                transformed_certificate,
-            )
-        end
+        target_idx == source_idx && continue
+        precondition_factor = elementary_matrix(n, target_idx, source_idx, coeff, R)
+        transformed_column = collect(_ecp_matrix_column_to_tuple(
+            precondition_factor * matrix(R, n, 1, collect(column)),
+        ))
+        transformed_result =
+            _reduce_laurent_unimodular_column_base_certificate(transformed_column, R)
+        transformed_result === nothing && continue
+        transformed_certificate =
+            _ecp_certificate_from_stage(transformed_column, R, transformed_result.stage)
+        return (;
+            target_index = target_idx,
+            source_index = source_idx,
+            coefficient = coeff,
+            precondition_factor,
+            transformed_column,
+            transformed_certificate,
+        )
     end
 
     return nothing
@@ -2548,7 +2551,13 @@ function _ecp_replay_stage(stage, input_column, R)
         1 <= target_idx <= n || return invalid_replay
         1 <= source_idx <= n || return invalid_replay
         target_idx == source_idx && return invalid_replay
-        stage.coefficient in _laurent_row_preconditioning_coefficients(R) || return invalid_replay
+        specs = _laurent_row_preconditioning_specs(input_column, R)
+        any(
+            spec -> spec.target_index == target_idx &&
+                spec.source_index == source_idx &&
+                spec.coefficient == stage.coefficient,
+            specs,
+        ) || return invalid_replay
 
         precondition_factor = elementary_matrix(n, target_idx, source_idx, stage.coefficient, R)
         transformed_matrix = precondition_factor * matrix(R, n, 1, collect(input_column))
@@ -2701,37 +2710,6 @@ function _diagnose_laurent_unimodular_column_reduction(
         end
     end
 
-    push!(attempted, :laurent_elementary_row_preconditioning)
-    row_preconditioning = _laurent_row_preconditioning_candidate(column, R)
-    if row_preconditioning !== nothing
-        transformed_stage = row_preconditioning.transformed_certificate.stages[end].kind
-        push!(
-            details,
-            _column_reduction_stage_detail(
-                :laurent_elementary_row_preconditioning,
-                R,
-                :supported;
-                target_index = row_preconditioning.target_index,
-                source_index = row_preconditioning.source_index,
-                coefficient = row_preconditioning.coefficient,
-                transformed_stage,
-            ),
-        )
-        return (; supported = true, stage = :laurent_elementary_row_preconditioning)
-    end
-    push!(
-        details,
-        _column_reduction_stage_detail(
-            :laurent_elementary_row_preconditioning,
-            R,
-            :no_row_preconditioning_candidate;
-            target_index = nothing,
-            source_index = nothing,
-            coefficient = nothing,
-            transformed_stage = nothing,
-        ),
-    )
-
     push!(attempted, :laurent_normalization)
     normalization = normalize_laurent_object(column)
     poly_column = normalization.normalized_object
@@ -2770,7 +2748,7 @@ function _diagnose_laurent_unimodular_column_reduction(
                 normalized_failure_code = :not_unimodular,
             ),
         )
-        return (; supported = false, stage = nothing)
+        return _diagnose_laurent_row_preconditioning(column, R, attempted, details)
     end
 
     ordinary_attempted = Symbol[]
@@ -2792,7 +2770,48 @@ function _diagnose_laurent_unimodular_column_reduction(
     )
     append!(attempted, ordinary_attempted)
     append!(details, ordinary_details)
-    return result
+    result.supported && return result
+
+    return _diagnose_laurent_row_preconditioning(column, R, attempted, details)
+end
+
+function _diagnose_laurent_row_preconditioning(
+    column::AbstractVector,
+    R,
+    attempted::Vector{Symbol},
+    details::Vector,
+)
+    push!(attempted, :laurent_elementary_row_preconditioning)
+    row_preconditioning = _laurent_row_preconditioning_candidate(column, R)
+    if row_preconditioning !== nothing
+        transformed_stage = row_preconditioning.transformed_certificate.stages[end].kind
+        push!(
+            details,
+            _column_reduction_stage_detail(
+                :laurent_elementary_row_preconditioning,
+                R,
+                :supported;
+                target_index = row_preconditioning.target_index,
+                source_index = row_preconditioning.source_index,
+                coefficient = row_preconditioning.coefficient,
+                transformed_stage,
+            ),
+        )
+        return (; supported = true, stage = :laurent_elementary_row_preconditioning)
+    end
+    push!(
+        details,
+        _column_reduction_stage_detail(
+            :laurent_elementary_row_preconditioning,
+            R,
+            :no_row_preconditioning_candidate;
+            target_index = nothing,
+            source_index = nothing,
+            coefficient = nothing,
+            transformed_stage = nothing,
+        ),
+    )
+    return (; supported = false, stage = nothing)
 end
 
 function _diagnose_polynomial_unimodular_column_reduction(

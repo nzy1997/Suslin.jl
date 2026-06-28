@@ -16,11 +16,11 @@ column, so the implementation cannot depend on it directly.
 
 ## Approaches
 
-1. Certified row-preconditioned Laurent column stage. Search bounded elementary
-   row additions on the input column itself, using coefficient `1`, and accept a
-   candidate only when the transformed column reduces through the existing
-   certified Laurent reducer. This keeps the stage algebraic and replayable.
-   This is the chosen approach.
+1. Certified row-preconditioned Laurent column stage. Try a finite, predicate
+   backed elementary row addition on the input column itself and accept it only
+   when the transformed column reduces through the existing certified Laurent
+   reducer. This keeps the stage algebraic and replayable without broadening to
+   arbitrary Laurent columns. This is the chosen approach.
 2. Full matrix preconditioning replay. Reconstruct or pass the source matrix
    column found by issue #168. This does not fit the requested public interface,
    which only passes the column and ring.
@@ -30,12 +30,13 @@ column, so the implementation cannot depend on it directly.
 ## Design
 
 Add a Laurent-only stage named `:laurent_elementary_row_preconditioning`.
-It runs after the current direct Laurent stages fail and before normalization
-returns unsupported. The stage tries elementary factors
-`elementary_matrix(n, target, source, one(R), R)` for `target != source`.
-For each transformed column it invokes the existing Laurent base reducer that
-does not recursively include this new stage. A candidate is accepted only when
-the transformed column has a verified base certificate.
+It runs after the existing Laurent base path fails, including Laurent
+normalization. The finite candidate spec is currently the d=16, two-generator
+Laurent predicate `(target_index = 1, source_index = 10, coefficient = one(R))`.
+The stage forms `elementary_matrix(n, target, source, coefficient, R)` and
+invokes the existing Laurent base reducer, which does not recursively include
+this new stage. A candidate is accepted only when the transformed column has a
+verified base certificate.
 
 The final factor sequence is:
 
@@ -50,11 +51,12 @@ factor and `S` is the certified reducer for the transformed column.
 
 The stage stores the input column, target/source indices, coefficient,
 precondition factor, transformed column, transformed certificate, composed
-factors, and output column. `_ecp_replay_stage` recomputes the elementary
-precondition factor, replays the transformed certificate, recomposes the factors,
-and checks exact equality against the stored fields. Tampering with either a
-factor or a stored stage field must make `verify_ecp_column_reduction` return
-`false`.
+factors, and output column. `_ecp_replay_stage` first checks that the stored
+target/source/coefficient is one of the finite specs for the original input
+column, then recomputes the elementary precondition factor, replays the
+transformed certificate, recomposes the factors, and checks exact equality
+against the stored fields. Tampering with either a factor or a stored stage
+field must make `verify_ecp_column_reduction` return `false`.
 
 ## Diagnostics
 
@@ -62,9 +64,12 @@ factor or a stored stage field must make `verify_ecp_column_reduction` return
 `:laurent_elementary_row_preconditioning`. On success it reports
 `status == :supported`, `failure_code === nothing`, and a stage detail with
 `outcome == :supported`, `target_index`, `source_index`, `coefficient`, and the
-transformed certificate stage kind. Non-unimodular columns still stop in
-precondition validation with `status == :precondition_failed` and do not attempt
-the new stage.
+transformed certificate stage kind. Diagnostics follow the same base-first order
+as certificate construction: normalization support is reported as
+`:laurent_normalization`, and row preconditioning is attempted only after the
+base path returns unsupported. Non-unimodular columns still stop in precondition
+validation with `status == :precondition_failed` and do not attempt the new
+stage.
 
 ## Tests
 

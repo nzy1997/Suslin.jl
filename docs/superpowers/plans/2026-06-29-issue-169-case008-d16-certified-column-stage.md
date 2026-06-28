@@ -6,6 +6,12 @@
 
 **Architecture:** Add a Laurent-only row-preconditioning stage that composes one elementary row addition with an existing verified transformed-column reduction. Certificate replay recomputes the precondition factor and transformed certificate exactly.
 
+**Post-review adjustment:** The final implementation uses a finite d=16,
+two-generator Laurent candidate spec instead of a broad row-addition search, and
+diagnostics attempt row preconditioning only after the existing Laurent base path
+including normalization has failed. This keeps the stage predicate-backed and
+aligns diagnostic ordering with certificate construction.
+
 **Tech Stack:** Julia, Oscar, existing Suslin column reduction and ECP certificate helpers.
 
 ## Global Constraints
