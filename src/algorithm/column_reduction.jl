@@ -133,6 +133,7 @@ function _column_reduction_diagnostic(
     column_length::Int,
     attempted_stages,
     message::AbstractString,
+    stage_details = (),
 )
     return (;
         status,
@@ -141,6 +142,7 @@ function _column_reduction_diagnostic(
         column_length,
         attempted_stages = tuple(attempted_stages...),
         message = String(message),
+        stage_details = tuple(stage_details...),
     )
 end
 
@@ -164,6 +166,19 @@ function _column_reduction_ring_profile(R)
         ()
     end
     return (; kind, coefficient_ring, generators = generator_names)
+end
+
+function _column_reduction_ring_kind(R)
+    return _column_reduction_ring_profile(R).kind
+end
+
+function _column_reduction_stage_detail(stage::Symbol, R, outcome::Symbol; kwargs...)
+    return (;
+        stage,
+        ring_kind = _column_reduction_ring_kind(R),
+        outcome,
+        kwargs...,
+    )
 end
 
 function _diagnose_unimodular_column_preconditions(v::AbstractVector, R, ring_profile, column_length::Int)
@@ -248,9 +263,10 @@ end
 
 function _diagnose_unimodular_column_reduction_validated(column::AbstractVector, R, ring_profile, column_length::Int)
     attempted = Symbol[]
+    details = Any[]
     result = _is_laurent_polynomial_ring(R) ?
-        _diagnose_laurent_unimodular_column_reduction(column, R, attempted) :
-        _diagnose_polynomial_unimodular_column_reduction(column, R, attempted)
+        _diagnose_laurent_unimodular_column_reduction(column, R, attempted, details) :
+        _diagnose_polynomial_unimodular_column_reduction(column, R, attempted, details)
 
     if result.supported
         return _column_reduction_diagnostic(
@@ -260,6 +276,7 @@ function _diagnose_unimodular_column_reduction_validated(column::AbstractVector,
             column_length,
             attempted,
             "exact unimodular column reduction is supported by $(result.stage)",
+            details,
         )
     end
 
@@ -273,6 +290,7 @@ function _diagnose_unimodular_column_reduction_validated(column::AbstractVector,
         column_length,
         attempted,
         _unsupported_unimodular_column_reduction_message(column, R),
+        details,
     )
 end
 
@@ -2507,41 +2525,177 @@ function _ecp_public_staged_reduction_certificate(
     )
 end
 
-function _diagnose_laurent_unimodular_column_reduction(column::AbstractVector, R, attempted::Vector{Symbol})
+function _diagnose_laurent_unimodular_column_reduction(
+    column::AbstractVector,
+    R,
+    attempted::Vector{Symbol},
+    details::Vector,
+)
     push!(attempted, :unit_entry)
     unit_idx = findfirst(is_unit, column)
-    unit_idx !== nothing && return (; supported = true, stage = :unit_entry)
+    if unit_idx !== nothing
+        push!(details, _column_reduction_stage_detail(:unit_entry, R, :supported; pivot_index = unit_idx))
+        return (; supported = true, stage = :unit_entry)
+    end
+    push!(details, _column_reduction_stage_detail(:unit_entry, R, :no_unit_entry; pivot_index = nothing))
 
     push!(attempted, :laurent_unit_creation)
     unit_creation = _reduce_via_laurent_unit_creation_certificate(column, R)
-    unit_creation !== nothing && return (; supported = true, stage = :laurent_unit_creation)
+    if unit_creation !== nothing
+        push!(
+            details,
+            _column_reduction_stage_detail(
+                :laurent_unit_creation,
+                R,
+                :supported;
+                pivot_index = unit_creation.stage.pivot_index,
+                source_index = unit_creation.stage.source_index,
+            ),
+        )
+        return (; supported = true, stage = :laurent_unit_creation)
+    end
+    push!(details, _column_reduction_stage_detail(:laurent_unit_creation, R, :no_unit_creation_candidate))
 
     push!(attempted, :laurent_witness_unit)
-    witness_unit = _reduce_via_laurent_witness_unit_certificate(column, R)
-    witness_unit !== nothing && return (; supported = true, stage = :laurent_witness_unit)
+    witness = _laurent_unimodular_witness(column, R)
+    if witness === nothing
+        push!(
+            details,
+            _column_reduction_stage_detail(
+                :laurent_witness_unit,
+                R,
+                :witness_unavailable;
+                witness_unit_index = nothing,
+            ),
+        )
+    else
+        witness_unit_idx = findfirst(is_unit, witness)
+        if witness_unit_idx === nothing
+            push!(
+                details,
+                _column_reduction_stage_detail(
+                    :laurent_witness_unit,
+                    R,
+                    :witness_without_unit;
+                    witness_unit_index = nothing,
+                ),
+            )
+        else
+            _witness_unit_reduction_certificate_stage(column, witness, witness_unit_idx, R)
+            push!(
+                details,
+                _column_reduction_stage_detail(
+                    :laurent_witness_unit,
+                    R,
+                    :supported;
+                    witness_unit_index = witness_unit_idx,
+                ),
+            )
+            return (; supported = true, stage = :laurent_witness_unit)
+        end
+    end
 
     push!(attempted, :laurent_normalization)
     normalization = normalize_laurent_object(column)
     poly_column = normalization.normalized_object
     P = normalization.metadata.polynomial_ring
-    return _diagnose_polynomial_unimodular_column_reduction(poly_column, P, attempted)
+
+    normalized_unimodular = try
+        is_unimodular_column(poly_column, P)
+    catch err
+        err isa InterruptException && rethrow()
+        push!(
+            details,
+            _column_reduction_stage_detail(
+                :laurent_normalization,
+                R,
+                :normalized_unimodularity_check_failed;
+                normalized_column_length = length(poly_column),
+                normalized_ring_kind = _column_reduction_ring_kind(P),
+                normalized_status = :precondition_failed,
+                normalized_failure_code = :unimodularity_check_failed,
+                normalized_message = _column_reduction_error_message(err),
+            ),
+        )
+        return (; supported = false, stage = nothing)
+    end
+
+    if !normalized_unimodular
+        push!(
+            details,
+            _column_reduction_stage_detail(
+                :laurent_normalization,
+                R,
+                :normalized_not_unimodular;
+                normalized_column_length = length(poly_column),
+                normalized_ring_kind = _column_reduction_ring_kind(P),
+                normalized_status = :precondition_failed,
+                normalized_failure_code = :not_unimodular,
+            ),
+        )
+        return (; supported = false, stage = nothing)
+    end
+
+    ordinary_attempted = Symbol[]
+    ordinary_details = Any[]
+    result = _diagnose_polynomial_unimodular_column_reduction(poly_column, P, ordinary_attempted, ordinary_details)
+    normalized_status = result.supported ? :supported : :unsupported
+    normalized_failure_code = result.supported ? nothing : :unsupported_polynomial_column_family
+    push!(
+        details,
+        _column_reduction_stage_detail(
+            :laurent_normalization,
+            R,
+            :delegated_to_polynomial;
+            normalized_column_length = length(poly_column),
+            normalized_ring_kind = _column_reduction_ring_kind(P),
+            normalized_status,
+            normalized_failure_code,
+        ),
+    )
+    append!(attempted, ordinary_attempted)
+    append!(details, ordinary_details)
+    return result
 end
 
-function _diagnose_polynomial_unimodular_column_reduction(column::AbstractVector, R, attempted::Vector{Symbol})
-    small = _diagnose_exact_small_column_reduction(column, R, attempted)
+function _diagnose_polynomial_unimodular_column_reduction(
+    column::AbstractVector,
+    R,
+    attempted::Vector{Symbol},
+    details::Vector,
+)
+    small = _diagnose_exact_small_column_reduction(column, R, attempted, details)
     small.supported && return small
 
     if length(column) > 3
         push!(attempted, :three_entry_block)
         block = _reduce_via_supported_three_block_certificate(column, R)
-        block !== nothing && return (; supported = true, stage = :three_entry_block)
+        if block !== nothing
+            push!(
+                details,
+                _column_reduction_stage_detail(
+                    :three_entry_block,
+                    R,
+                    :supported;
+                    block_indices = block.stage.indices,
+                    pivot_index = block.stage.indices[end],
+                ),
+            )
+            return (; supported = true, stage = :three_entry_block)
+        end
+        push!(details, _column_reduction_stage_detail(:three_entry_block, R, :no_supported_three_block))
     end
 
     return (; supported = false, stage = nothing)
 end
 
-function _diagnose_exact_small_column_reduction(column::AbstractVector, R, attempted::Vector{Symbol})
-    supported = _diagnose_supported_unimodular_column_reduction(column, R, attempted)
+function _diagnose_exact_small_column_reduction(
+    column::AbstractVector,
+    R,
+    attempted::Vector{Symbol},
+    details::Vector,
+)
+    supported = _diagnose_supported_unimodular_column_reduction(column, R, attempted, details)
     supported.supported && return supported
 
     if _has_at_least_two_generators(R)
@@ -2552,16 +2706,37 @@ function _diagnose_exact_small_column_reduction(column::AbstractVector, R, attem
             err isa InterruptException && rethrow()
             nothing
         end
-        normalized !== nothing && return (; supported = true, stage = :monicity_normalization)
+        if normalized !== nothing
+            push!(
+                details,
+                _column_reduction_stage_detail(
+                    :monicity_normalization,
+                    R,
+                    :supported;
+                    normalized_column_length = length(column),
+                ),
+            )
+            return (; supported = true, stage = :monicity_normalization)
+        end
+        push!(details, _column_reduction_stage_detail(:monicity_normalization, R, :no_monicity_normalization))
     end
 
     return (; supported = false, stage = nothing)
 end
 
-function _diagnose_supported_unimodular_column_reduction(column::AbstractVector, R, attempted::Vector{Symbol})
+function _diagnose_supported_unimodular_column_reduction(
+    column::AbstractVector,
+    R,
+    attempted::Vector{Symbol},
+    details::Vector,
+)
     push!(attempted, :unit_entry)
     unit_idx = findfirst(is_unit, column)
-    unit_idx !== nothing && return (; supported = true, stage = :unit_entry)
+    if unit_idx !== nothing
+        push!(details, _column_reduction_stage_detail(:unit_entry, R, :supported; pivot_index = unit_idx))
+        return (; supported = true, stage = :unit_entry)
+    end
+    push!(details, _column_reduction_stage_detail(:unit_entry, R, :no_unit_entry; pivot_index = nothing))
 
     push!(attempted, :witness_unit)
     witness = try
@@ -2570,9 +2745,41 @@ function _diagnose_supported_unimodular_column_reduction(column::AbstractVector,
         err isa InterruptException && rethrow()
         nothing
     end
-    witness === nothing && return (; supported = false, stage = nothing)
+    if witness === nothing
+        push!(
+            details,
+            _column_reduction_stage_detail(
+                :witness_unit,
+                R,
+                :witness_unavailable;
+                witness_unit_index = nothing,
+            ),
+        )
+        return (; supported = false, stage = nothing)
+    end
     witness_unit_idx = findfirst(is_unit, witness)
-    witness_unit_idx !== nothing && return (; supported = true, stage = :witness_unit)
+    if witness_unit_idx !== nothing
+        push!(
+            details,
+            _column_reduction_stage_detail(
+                :witness_unit,
+                R,
+                :supported;
+                witness_unit_index = witness_unit_idx,
+            ),
+        )
+        return (; supported = true, stage = :witness_unit)
+    end
+
+    push!(
+        details,
+        _column_reduction_stage_detail(
+            :witness_unit,
+            R,
+            :witness_without_unit;
+            witness_unit_index = nothing,
+        ),
+    )
 
     return (; supported = false, stage = nothing)
 end

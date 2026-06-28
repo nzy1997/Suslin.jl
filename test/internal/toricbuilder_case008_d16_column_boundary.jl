@@ -5,6 +5,18 @@ using Oscar
 const TORICBUILDER_CASE008_D16_COLUMN_BOUNDARY_PATH =
     joinpath(@__DIR__, "..", "fixtures", "toricbuilder_case008_d16_column_boundary.jl")
 
+function _case008_d16_stage_detail(diagnostic, stage::Symbol)
+    idx = findfirst(detail -> detail.stage == stage, diagnostic.stage_details)
+    return idx === nothing ? nothing : diagnostic.stage_details[idx]
+end
+
+function _test_case008_d16_stage_details_shape(diagnostic)
+    hasproperty(diagnostic, :stage_details) || return
+    stage_details = diagnostic.stage_details
+    @test stage_details isa Tuple
+    @test all(detail -> detail isa NamedTuple, stage_details)
+end
+
 @testset "ToricBuilder case_008 d=16 Laurent column boundary" begin
     @test isfile(TORICBUILDER_CASE008_D16_COLUMN_BOUNDARY_PATH)
 
@@ -31,6 +43,22 @@ const TORICBUILDER_CASE008_D16_COLUMN_BOUNDARY_PATH =
     @test diagnostic.column_length == 16
     @test diagnostic.ring_profile.kind == :laurent_polynomial
     @test diagnostic.ring_profile.generators == ("u", "v")
+    @test hasproperty(diagnostic, :stage_details)
+    _test_case008_d16_stage_details_shape(diagnostic)
+    @test length(diagnostic.stage_details) == length(diagnostic.attempted_stages)
+
+    witness_detail = _case008_d16_stage_detail(diagnostic, :laurent_witness_unit)
+    @test witness_detail !== nothing
+    @test witness_detail.outcome == :witness_without_unit
+    @test witness_detail.witness_unit_index === nothing
+
+    normalization_detail = _case008_d16_stage_detail(diagnostic, :laurent_normalization)
+    @test normalization_detail !== nothing
+    @test normalization_detail.outcome == :normalized_not_unimodular
+    @test normalization_detail.normalized_column_length == 16
+    @test normalization_detail.normalized_ring_kind == :polynomial
+    @test normalization_detail.normalized_status == :precondition_failed
+    @test normalization_detail.normalized_failure_code == :not_unimodular
 
     @test ToricBuilderCase008D16ColumnBoundary.validate_boundary_fixture(fixture) == :ok
 
