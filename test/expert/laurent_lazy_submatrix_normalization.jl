@@ -131,3 +131,14 @@ end
     @test det(metadata.normalized_deferred_core) == one(base_ring(metadata.normalized_deferred_core))
     @test metadata.staged_boundary === nothing
 end
+
+@testset "deferred Laurent submatrix normalization verifier rejects malformed metadata" begin
+    malformed = (; peel_certificate = (;), supported = false)
+    verification = Suslin._laurent_determinant_deferred_submatrix_normalization_verification(malformed)
+
+    @test !verification.overall_ok
+    @test !verification.certificate_ok
+    @test !verification.determinant_ok
+    @test !verification.boundary_ok
+    @test !Suslin._verify_laurent_determinant_deferred_submatrix_normalization(malformed)
+end
