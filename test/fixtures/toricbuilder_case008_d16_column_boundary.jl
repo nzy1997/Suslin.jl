@@ -12,6 +12,12 @@ const EXPECTED_RING_DESCRIPTION = "GF(2)[u^+/-1, v^+/-1]"
 const EXPECTED_DIAGNOSTIC = (;
     status = :unsupported,
     failure_code = :unsupported_laurent_column_family,
+    laurent_witness_outcome = :witness_without_unit,
+    laurent_witness_unit_index = nothing,
+    laurent_normalization_outcome = :normalized_not_unimodular,
+    normalized_column_length = 16,
+    normalized_status = :precondition_failed,
+    normalized_failure_code = :not_unimodular,
 )
 const REQUIRED_BOUNDARY_FIELDS = (
     :case_id,
@@ -146,7 +152,30 @@ function _diagnostic_matches_expected(column, R, expected)::Bool
     diagnostic = Suslin.diagnose_unimodular_column_reduction(column, R)
     return diagnostic.status == expected.status &&
         diagnostic.failure_code == expected.failure_code &&
-        diagnostic.column_length == FIRST_FAILING_PEEL_DIMENSION
+        diagnostic.column_length == FIRST_FAILING_PEEL_DIMENSION &&
+        _diagnostic_stage_profile_matches(diagnostic, expected)
+end
+
+function _diagnostic_stage_detail(diagnostic, stage::Symbol)
+    hasproperty(diagnostic, :stage_details) || return nothing
+    idx = findfirst(detail -> detail.stage == stage, diagnostic.stage_details)
+    return idx === nothing ? nothing : diagnostic.stage_details[idx]
+end
+
+function _diagnostic_stage_profile_matches(diagnostic, expected)::Bool
+    witness = _diagnostic_stage_detail(diagnostic, :laurent_witness_unit)
+    witness === nothing && return false
+    witness.outcome == expected.laurent_witness_outcome || return false
+    witness.witness_unit_index === expected.laurent_witness_unit_index || return false
+
+    normalization = _diagnostic_stage_detail(diagnostic, :laurent_normalization)
+    normalization === nothing && return false
+    normalization.outcome == expected.laurent_normalization_outcome || return false
+    normalization.normalized_column_length == expected.normalized_column_length || return false
+    normalization.normalized_status == expected.normalized_status || return false
+    normalization.normalized_failure_code == expected.normalized_failure_code || return false
+
+    return true
 end
 
 function validate_boundary_fixture(fixture)::Symbol
