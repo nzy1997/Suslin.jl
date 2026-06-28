@@ -213,6 +213,21 @@ end
                 end
                 sleep(10)
                 """
+            elseif entry.mode == :lazy_deferred_route_error
+                """
+                open($(repr(progress_path)), "w") do io
+                    println(io, "current_stage=certificate_construction")
+                    println(io, "stage_started_at=", time())
+                    println(io, "determinant_strategy=lazy")
+                    println(io, "correction_side=$(correction_side)")
+                    println(io, "determinant_source=deferred_submatrix")
+                    println(io, "stage.certificate_construction.status=route_error")
+                    println(io, "stage.certificate_construction.elapsed_seconds=0.125")
+                    println(io, "stage.certificate_construction.error_details=fake deferred route error")
+                end
+                write(stderr, "fake deferred route error")
+                exit(7)
+                """
             elseif entry.mode == :serialized_success
                 result_writer = result_path === nothing ?
                     """
@@ -616,6 +631,20 @@ end
         @test occursin("fake worker stderr", invalid_stdout_row.error_details)
         @test occursin("deserialize", invalid_stdout_row.error_details)
         @test invalid_stdout_row.stage_timings.determinant_classification.status == :route_error
+
+        lazy_deferred_route_error_row = ToricBuilderCacheQBlockStatusReport._bounded_exercised_row(
+            FakeBoundedEntry("case_lazy_deferred_route_error"; mode = :lazy_deferred_route_error),
+            5.0;
+            determinant_strategy = :lazy,
+            correction_side = :column,
+        )
+        @test lazy_deferred_route_error_row.route_status == :route_error
+        @test !lazy_deferred_route_error_row.verified
+        @test lazy_deferred_route_error_row.determinant_strategy == :lazy
+        @test lazy_deferred_route_error_row.correction_side == :column
+        @test lazy_deferred_route_error_row.determinant_source == :deferred_submatrix
+        @test lazy_deferred_route_error_row.stage_timings.certificate_construction.status == :route_error
+        @test lazy_deferred_route_error_row.stage_timings.determinant_classification.status == :not_run
 
         synthetic_timeout_seconds = 2.0
 

@@ -1027,13 +1027,27 @@ function _worker_route_error_row(
     stderr_text;
     determinant_strategy = :eager,
     correction_side = :not_run,
+    progress = nothing,
 )
     error_details = isempty(stderr_text) ? "bounded worker exited nonzero" : stderr_text
-    timings = Dict{Symbol, Any}(
-        :determinant_classification =>
-            _stage_timing(:route_error; elapsed_seconds = runtime_seconds, error_details),
-    )
-    determinant_source = determinant_strategy == :lazy ? :not_reached : :not_run
+    if progress === nothing
+        current_stage = :determinant_classification
+        timings = Dict{Symbol, Any}()
+        route_determinant_strategy = determinant_strategy
+        route_correction_side = correction_side
+        route_determinant_source = determinant_strategy == :lazy ? :not_reached : :not_run
+    else
+        current_stage = progress.current_stage
+        timings = copy(progress.timings)
+        route_determinant_strategy = hasproperty(progress, :determinant_strategy) ?
+            progress.determinant_strategy : determinant_strategy
+        route_correction_side = hasproperty(progress, :correction_side) ?
+            progress.correction_side : correction_side
+        route_determinant_source = hasproperty(progress, :determinant_source) ?
+            progress.determinant_source :
+            (route_determinant_strategy == :lazy ? :not_reached : :not_run)
+    end
+    timings[current_stage] = _stage_timing(:route_error; elapsed_seconds = runtime_seconds, error_details)
     return merge((;
         case_id = entry.id,
         matrix_size = entry.dimensions.matrix,
@@ -1052,7 +1066,11 @@ function _worker_route_error_row(
         error_details,
         evidence = "Bounded worker exited before producing a report row.",
         stage_timings = _stage_timings_from_dict(timings),
-    ), _row_route_metadata(; determinant_strategy, correction_side, determinant_source))
+    ), _row_route_metadata(;
+        determinant_strategy = route_determinant_strategy,
+        correction_side = route_correction_side,
+        determinant_source = route_determinant_source,
+    ))
 end
 
 function _wait_for_exit_after_kill(proc; grace_seconds = 1.0, poll_seconds = 0.05)
@@ -1136,6 +1154,7 @@ function _bounded_exercised_row(
                     combined_details;
                     determinant_strategy,
                     correction_side,
+                    progress = _read_worker_progress(progress_path),
                 )
             end
         end
@@ -1146,6 +1165,7 @@ function _bounded_exercised_row(
             stderr_text;
             determinant_strategy,
             correction_side,
+            progress = _read_worker_progress(progress_path),
         )
     finally
         for path in (stdout_path, stderr_path, progress_path, string(progress_path, ".tmp"), result_path)
