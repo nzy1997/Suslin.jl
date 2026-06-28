@@ -38,8 +38,8 @@ end
         fixture.failing_column,
         fixture.ring,
     )
-    @test diagnostic.status == :unsupported
-    @test diagnostic.failure_code == :unsupported_laurent_column_family
+    @test diagnostic.status == :supported
+    @test diagnostic.failure_code === nothing
     @test diagnostic.column_length == 16
     @test diagnostic.ring_profile.kind == :laurent_polynomial
     @test diagnostic.ring_profile.generators == ("u", "v")
@@ -52,13 +52,14 @@ end
     @test witness_detail.outcome == :witness_without_unit
     @test witness_detail.witness_unit_index === nothing
 
-    normalization_detail = _case008_d16_stage_detail(diagnostic, :laurent_normalization)
-    @test normalization_detail !== nothing
-    @test normalization_detail.outcome == :normalized_not_unimodular
-    @test normalization_detail.normalized_column_length == 16
-    @test normalization_detail.normalized_ring_kind == :polynomial
-    @test normalization_detail.normalized_status == :precondition_failed
-    @test normalization_detail.normalized_failure_code == :not_unimodular
+    preconditioning_detail =
+        _case008_d16_stage_detail(diagnostic, :laurent_elementary_row_preconditioning)
+    @test preconditioning_detail !== nothing
+    @test preconditioning_detail.outcome == :supported
+    @test preconditioning_detail.target_index == 1
+    @test preconditioning_detail.source_index == 10
+    @test preconditioning_detail.coefficient == one(fixture.ring)
+    @test preconditioning_detail.transformed_stage == :witness_unit
 
     @test ToricBuilderCase008D16ColumnBoundary.validate_boundary_fixture(fixture) == :ok
 

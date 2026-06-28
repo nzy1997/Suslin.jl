@@ -224,6 +224,7 @@ end
         :unit_entry,
         :laurent_unit_creation,
         :laurent_witness_unit,
+        :laurent_elementary_row_preconditioning,
         :laurent_normalization,
     ]
     laurent_diagnostic = (; stage_details = tuple(laurent_details...))
@@ -231,6 +232,10 @@ end
     @test laurent_witness !== nothing
     @test laurent_witness.outcome == :witness_unavailable
     @test laurent_witness.witness_unit_index === nothing
+    row_preconditioning =
+        _diagnostic_stage_detail(laurent_diagnostic, :laurent_elementary_row_preconditioning)
+    @test row_preconditioning !== nothing
+    @test row_preconditioning.outcome == :no_row_preconditioning_candidate
     normalization = _diagnostic_stage_detail(laurent_diagnostic, :laurent_normalization)
     @test normalization !== nothing
     @test normalization.outcome == :normalized_unimodularity_check_failed
