@@ -126,12 +126,14 @@ function catalog()
     ring = _ring_metadata(R, (x, y), ("x", "y"), "GF(2)[x^+/-1, y^+/-1]")
 
     determinant_one = matrix(R, [
-        one(R) x;
-        zero(R) one(R)
+        one(R) x       zero(R);
+        zero(R) one(R) y;
+        zero(R) zero(R) one(R)
     ])
     monomial_unit = matrix(R, [
-        x^-1 * y one(R);
-        zero(R) one(R)
+        x^-1 * y one(R) zero(R);
+        zero(R) one(R) y;
+        zero(R) zero(R) one(R)
     ])
     non_unit = matrix(R, [
         x + one(R) zero(R);

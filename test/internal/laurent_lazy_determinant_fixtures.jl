@@ -38,6 +38,24 @@ function _fixture_supports_lazy_determinant_correction(entry)::Bool
     return expected.supported && actual_supported
 end
 
+function _assert_ring_metadata(entry)
+    ring = _lazy_field(entry, :ring)
+    hasproperty(ring, :description) || throw(ArgumentError("fixture $(entry.id) missing ring description"))
+    hasproperty(ring, :object) || throw(ArgumentError("fixture $(entry.id) missing ring object"))
+    hasproperty(ring, :generators) || throw(ArgumentError("fixture $(entry.id) missing ring generators"))
+    hasproperty(ring, :variables) || throw(ArgumentError("fixture $(entry.id) missing ring variables"))
+
+    Suslin._require_laurent_polynomial_ring(ring.object; label = "fixture $(entry.id) ring")
+    isempty(ring.description) && throw(ArgumentError("fixture $(entry.id) ring description must not be empty"))
+    length(ring.generators) == length(ring.variables) ||
+        throw(ArgumentError("fixture $(entry.id) ring generator metadata length mismatch"))
+    Tuple(string.(ring.generators)) == ring.variables ||
+        throw(ArgumentError("fixture $(entry.id) ring variables do not match generators"))
+    base_ring(entry.inputs.matrix) == ring.object ||
+        throw(ArgumentError("fixture $(entry.id) matrix base ring does not match metadata"))
+    return true
+end
+
 function _assert_negative_control_metadata(entry)
     negative_control = _lazy_field(entry, :negative_control)
     hasproperty(negative_control, :kind) || throw(ArgumentError("fixture $(entry.id) missing negative control kind"))
@@ -52,6 +70,43 @@ function _assert_negative_control_metadata(entry)
     return true
 end
 
+function _assert_expected_correction_metadata(entry, actual_profile)
+    expected = _lazy_field(entry, :expected_correction)
+    hasproperty(expected, :supported) || throw(ArgumentError("fixture $(entry.id) missing correction support flag"))
+    hasproperty(expected, :kind) || throw(ArgumentError("fixture $(entry.id) missing correction kind"))
+    hasproperty(expected, :supports) || throw(ArgumentError("fixture $(entry.id) missing correction support targets"))
+    hasproperty(expected, :unsupported_reason) || throw(ArgumentError("fixture $(entry.id) missing correction unsupported reason"))
+
+    classification = actual_profile.classification
+    supported = classification in (:one, :laurent_monomial_unit, :permutation_sign_unit)
+    expected.supported == supported ||
+        throw(ArgumentError("fixture $(entry.id) supported-correction flag does not match determinant classification"))
+
+    if classification == :one
+        expected.kind == :identity ||
+            throw(ArgumentError("fixture $(entry.id) determinant-one correction kind must be identity"))
+        expected.supports == (:row_core, :column_core) ||
+            throw(ArgumentError("fixture $(entry.id) determinant-one correction supports changed"))
+        expected.unsupported_reason === nothing ||
+            throw(ArgumentError("fixture $(entry.id) supported correction must not record an unsupported reason"))
+    elseif classification == :laurent_monomial_unit
+        expected.kind == :monomial_unit_diagonal ||
+            throw(ArgumentError("fixture $(entry.id) monomial-unit correction kind changed"))
+        expected.supports == (:row_core, :column_core) ||
+            throw(ArgumentError("fixture $(entry.id) monomial-unit correction supports changed"))
+        expected.unsupported_reason === nothing ||
+            throw(ArgumentError("fixture $(entry.id) supported correction must not record an unsupported reason"))
+    else
+        expected.kind == :unsupported ||
+            throw(ArgumentError("fixture $(entry.id) unsupported correction kind changed"))
+        isempty(expected.supports) ||
+            throw(ArgumentError("fixture $(entry.id) unsupported correction must not list support targets"))
+        expected.unsupported_reason == classification ||
+            throw(ArgumentError("fixture $(entry.id) unsupported reason does not match determinant classification"))
+    end
+    return true
+end
+
 function _assert_determinant_profile(entry)
     actual_profile = classify_laurent_determinant(entry.inputs.matrix)
     actual_profile.determinant == entry.determinant_profile.expected_determinant ||
@@ -60,8 +115,11 @@ function _assert_determinant_profile(entry)
         throw(ArgumentError("fixture $(entry.id) determinant class does not match metadata"))
     det(entry.inputs.matrix) == entry.determinant_profile.expected_determinant ||
         throw(ArgumentError("fixture $(entry.id) exact determinant does not match metadata"))
-    entry.expected_correction.supported == (actual_profile.classification in (:one, :laurent_monomial_unit, :permutation_sign_unit)) ||
-        throw(ArgumentError("fixture $(entry.id) supported-correction flag does not match determinant classification"))
+    entry.determinant_profile.monomial_exponents == actual_profile.monomial_exponents ||
+        throw(ArgumentError("fixture $(entry.id) monomial exponents do not match metadata"))
+    entry.determinant_profile.monomial_coefficient == actual_profile.monomial_coefficient ||
+        throw(ArgumentError("fixture $(entry.id) monomial coefficient does not match metadata"))
+    _assert_expected_correction_metadata(entry, actual_profile)
     return actual_profile
 end
 
@@ -122,6 +180,31 @@ function _assert_issue38_drift(entry)
         throw(ArgumentError("fixture $(entry.id) row core drifted from the Issue #38 source fixture"))
     entry.normalizations.column.core == source.normalizations.column.core ||
         throw(ArgumentError("fixture $(entry.id) column core drifted from the Issue #38 source fixture"))
+    entry.provenance.source_fixture_id == source.id ||
+        throw(ArgumentError("fixture $(entry.id) provenance source fixture id drifted"))
+    entry.provenance.source_issue == source.provenance.issue ||
+        throw(ArgumentError("fixture $(entry.id) provenance source issue drifted"))
+    return true
+end
+
+function _assert_provenance_metadata(entry)
+    provenance = _lazy_field(entry, :provenance)
+    hasproperty(provenance, :source) || throw(ArgumentError("fixture $(entry.id) missing provenance source"))
+    hasproperty(provenance, :issue) || throw(ArgumentError("fixture $(entry.id) missing provenance issue"))
+    hasproperty(provenance, :description) || throw(ArgumentError("fixture $(entry.id) missing provenance description"))
+    provenance.issue == "#154" || throw(ArgumentError("fixture $(entry.id) must trace to Issue #154"))
+    isempty(provenance.description) && throw(ArgumentError("fixture $(entry.id) provenance description must not be empty"))
+
+    if provenance.source == :wrapped_fixture
+        hasproperty(provenance, :source_fixture_id) ||
+            throw(ArgumentError("fixture $(entry.id) missing wrapped source fixture id"))
+        hasproperty(provenance, :source_issue) ||
+            throw(ArgumentError("fixture $(entry.id) missing wrapped source issue"))
+    elseif provenance.source == :synthetic
+        true
+    else
+        throw(ArgumentError("fixture $(entry.id) unsupported provenance source $(provenance.source)"))
+    end
     return true
 end
 
@@ -132,6 +215,8 @@ function validate_laurent_lazy_determinant_fixture(entry)
     isempty(entry.consumer_test_ids) && throw(ArgumentError("fixture $(entry.id) must record at least one consumer test id"))
     _matrix_size(entry.inputs.matrix) == entry.dimensions.matrix ||
         throw(ArgumentError("fixture $(entry.id) matrix dimensions do not match metadata"))
+    _assert_ring_metadata(entry)
+    _assert_provenance_metadata(entry)
     _assert_negative_control_metadata(entry)
     actual_profile = _assert_determinant_profile(entry)
     if actual_profile.classification in (:one, :laurent_monomial_unit, :permutation_sign_unit)
