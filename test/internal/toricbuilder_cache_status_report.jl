@@ -41,7 +41,23 @@ function _stage_has_stable_error(row, stage::Symbol)
     return details isa AbstractString && details != "none" && details != "not_run"
 end
 
+function _row_lazy_metadata_is_structured(row)
+    hasproperty(row, :determinant_strategy) || return false
+    hasproperty(row, :correction_side) || return false
+    hasproperty(row, :determinant_source) || return false
+    row.determinant_strategy == :lazy || return true
+    row.correction_side in (:row, :column) || return false
+    row.determinant_source in (:deferred_submatrix, :not_reached, :not_run) || return false
+    if row.route_status == :gl_certificate_pass
+        row.verified == true || return false
+        row.determinant_source == :deferred_submatrix || return false
+    end
+    row.route_status == :timed_out && row.verified == true && return false
+    return true
+end
+
 function _bounded_route_row_is_structured(row; timeout_seconds)
+    _row_lazy_metadata_is_structured(row) || return false
     if row.route_status == :gl_certificate_pass
         return row.verified == true && row.error_details == "none"
     elseif row.route_status == :certified_algorithm_boundary
@@ -94,7 +110,13 @@ end
     @eval ToricBuilderCacheQBlockStatusReport begin
         const _TEST_FORCE_WAIT_FOR_EXIT_FAILURE = Main.FORCE_WAIT_FOR_EXIT_FAILURE
 
-        function _worker_command(entry::Main.FakeBoundedEntry, progress_path, result_path = nothing)
+        function _worker_command(
+            entry::Main.FakeBoundedEntry,
+            progress_path,
+            result_path = nothing;
+            determinant_strategy = :eager,
+            correction_side = :not_run,
+        )
             project_path = dirname(Base.active_project())
             script = if entry.mode == :invalid_stdout
                 """
@@ -162,6 +184,35 @@ end
                 end
                 sleep(10)
                 """
+            elseif entry.mode == :lazy_timeout_not_reached
+                """
+                open($(repr(progress_path)), "w") do io
+                    println(io, "current_stage=certificate_construction")
+                    println(io, "stage_started_at=", time())
+                    println(io, "determinant_strategy=lazy")
+                    println(io, "correction_side=$(correction_side)")
+                    println(io, "determinant_source=not_reached")
+                    println(io, "peel.current_dimension=62")
+                    println(io, "peel.completed_steps=0")
+                    println(io, "peel.last_column_nnz=19")
+                end
+                sleep(10)
+                """
+            elseif entry.mode == :lazy_timeout_deferred
+                """
+                open($(repr(progress_path)), "w") do io
+                    println(io, "current_stage=certificate_construction")
+                    println(io, "stage_started_at=", time())
+                    println(io, "determinant_strategy=lazy")
+                    println(io, "correction_side=$(correction_side)")
+                    println(io, "determinant_source=deferred_submatrix")
+                    println(io, "peel.current_dimension=61")
+                    println(io, "peel.completed_steps=1")
+                    println(io, "peel.last_completed_dimension=62")
+                    println(io, "peel.last_column_nnz=23")
+                end
+                sleep(10)
+                """
             elseif entry.mode == :serialized_success
                 result_writer = result_path === nothing ?
                     """
@@ -185,6 +236,9 @@ end
                     determinant = "1",
                     normalization_status = :pass,
                     gl_certificate_status = :pass,
+                    determinant_strategy = determinant_strategy,
+                    correction_side = determinant_strategy == :lazy ? correction_side : :not_run,
+                    determinant_source = determinant_strategy == :lazy ? :deferred_submatrix : :not_run,
                     verified = true,
                     factor_count = 3,
                     decomposed_base_matrix_count = 3,
@@ -224,6 +278,9 @@ end
                     determinant = "1",
                     normalization_status = :pass,
                     gl_certificate_status = :pass,
+                    determinant_strategy = determinant_strategy,
+                    correction_side = determinant_strategy == :lazy ? correction_side : :not_run,
+                    determinant_source = determinant_strategy == :lazy ? :deferred_submatrix : :not_run,
                     verified = true,
                     factor_count = 3,
                     decomposed_base_matrix_count = 3,
@@ -270,6 +327,9 @@ end
     @test by_id["case_001"].verified == true
     @test by_id["case_001"].factor_count > 0
     @test by_id["case_001"].runtime_seconds > 0
+    @test by_id["case_001"].determinant_strategy == :eager
+    @test by_id["case_001"].correction_side == :not_run
+    @test by_id["case_001"].determinant_source == :not_run
 
     @test by_id["case_002"].route_status == :gl_certificate_pass
     @test by_id["case_002"].public_elementary_status == :staged_boundary
@@ -312,6 +372,9 @@ end
     @test by_id["case_009"].decomposed_base_matrix_count == :not_run
     @test by_id["case_009"].runtime_seconds == :not_run
     @test by_id["case_009"].error_details == "not_run"
+    @test by_id["case_009"].determinant_strategy == :not_run
+    @test by_id["case_009"].correction_side == :not_run
+    @test by_id["case_009"].determinant_source == :not_run
 
     markdown = ToricBuilderCacheQBlockStatusReport.render_markdown(report)
     @test occursin("# ToricBuilder Cache Q-Block Status Report", markdown)
@@ -361,11 +424,32 @@ end
     @test parsed_timeout.exercised == ["case_007"]
     @test parsed_timeout.timeout_seconds == 1.5
 
+    parsed_lazy = ToricBuilderCacheQBlockStatusReport._parse_args([
+        "--exercise=case_009",
+        "--timeout-seconds=1.5",
+        "--determinant-strategy=lazy",
+        "--correction-side=column",
+        "--output=/tmp/qblock-lazy.md",
+    ])
+    @test parsed_lazy.determinant_strategy == :lazy
+    @test parsed_lazy.correction_side == :column
+
     @test_throws ArgumentError ToricBuilderCacheQBlockStatusReport._parse_args([
         "--timeout-seconds=0",
     ])
     @test_throws ArgumentError ToricBuilderCacheQBlockStatusReport._parse_args([
         "--timeout-seconds=not-a-number",
+    ])
+    @test_throws ArgumentError ToricBuilderCacheQBlockStatusReport._parse_args([
+        "--determinant-strategy=unsupported",
+    ])
+    @test_throws ArgumentError ToricBuilderCacheQBlockStatusReport._parse_args([
+        "--determinant-strategy=eager",
+        "--correction-side=row",
+    ])
+    @test_throws ArgumentError ToricBuilderCacheQBlockStatusReport._parse_args([
+        "--determinant-strategy=lazy",
+        "--correction-side=diagonal",
     ])
 
     @test_throws ArgumentError ToricBuilderCacheQBlockStatusReport.build_report(;
@@ -607,6 +691,54 @@ end
         @test bounded_worker_row.route_status == :gl_certificate_pass
         @test bounded_worker_row.error_details == "none"
 
+        lazy_success_row = ToricBuilderCacheQBlockStatusReport._bounded_exercised_row(
+            FakeBoundedEntry("case_lazy_success"; mode = :serialized_success),
+            5.0;
+            determinant_strategy = :lazy,
+            correction_side = :column,
+        )
+        @test lazy_success_row.route_status == :gl_certificate_pass
+        @test lazy_success_row.verified
+        @test lazy_success_row.determinant_strategy == :lazy
+        @test lazy_success_row.correction_side == :column
+        @test lazy_success_row.determinant_source == :deferred_submatrix
+        @test _bounded_route_row_is_structured(lazy_success_row; timeout_seconds = 5.0)
+
+        lazy_not_reached_timeout = ToricBuilderCacheQBlockStatusReport._bounded_exercised_row(
+            FakeBoundedEntry("case_lazy_not_reached"; mode = :lazy_timeout_not_reached),
+            synthetic_timeout_seconds;
+            determinant_strategy = :lazy,
+            correction_side = :row,
+        )
+        @test lazy_not_reached_timeout.route_status == :timed_out
+        @test !lazy_not_reached_timeout.verified
+        @test lazy_not_reached_timeout.determinant_strategy == :lazy
+        @test lazy_not_reached_timeout.correction_side == :row
+        @test lazy_not_reached_timeout.determinant_source == :not_reached
+        @test _bounded_route_row_is_structured(lazy_not_reached_timeout; timeout_seconds = synthetic_timeout_seconds)
+
+        lazy_deferred_timeout = ToricBuilderCacheQBlockStatusReport._bounded_exercised_row(
+            FakeBoundedEntry("case_lazy_deferred"; mode = :lazy_timeout_deferred),
+            synthetic_timeout_seconds;
+            determinant_strategy = :lazy,
+            correction_side = :column,
+        )
+        @test lazy_deferred_timeout.route_status == :timed_out
+        @test lazy_deferred_timeout.determinant_source == :deferred_submatrix
+        @test _bounded_route_row_is_structured(lazy_deferred_timeout; timeout_seconds = synthetic_timeout_seconds)
+
+        false_pass_row = merge(lazy_success_row, (; verified = false))
+        @test !_bounded_route_row_is_structured(false_pass_row; timeout_seconds = 5.0)
+
+        missing_lazy_metadata_row = merge(lazy_success_row, (; determinant_source = :not_run))
+        @test !_bounded_route_row_is_structured(missing_lazy_metadata_row; timeout_seconds = 5.0)
+
+        not_reached_pass_row = merge(lazy_success_row, (; determinant_source = :not_reached))
+        @test !_bounded_route_row_is_structured(not_reached_pass_row; timeout_seconds = 5.0)
+
+        timeout_claimed_pass_row = merge(lazy_not_reached_timeout, (; route_status = :gl_certificate_pass))
+        @test !_bounded_route_row_is_structured(timeout_claimed_pass_row; timeout_seconds = synthetic_timeout_seconds)
+
         noisy_worker_row = ToricBuilderCacheQBlockStatusReport._bounded_exercised_row(
             FakeBoundedEntry("case_noisy_success"; mode = :noisy_serialized_success),
             5.0,
@@ -614,6 +746,36 @@ end
         @test noisy_worker_row.case_id == "case_noisy_success"
         @test noisy_worker_row.route_status == :gl_certificate_pass
         @test noisy_worker_row.error_details == "none"
+
+        lazy_progress_path = tempname()
+        lazy_worker_row = ToricBuilderCacheQBlockStatusReport._worker_exercised_row(
+            "case_010",
+            lazy_progress_path;
+            determinant_strategy = :lazy,
+            correction_side = :row,
+        )
+        @test lazy_worker_row.case_id == "case_010"
+        @test lazy_worker_row.route_status == :gl_certificate_pass
+        @test lazy_worker_row.verified
+        @test lazy_worker_row.determinant_strategy == :lazy
+        @test lazy_worker_row.correction_side == :row
+        @test lazy_worker_row.determinant_source == :deferred_submatrix
+        @test lazy_worker_row.stage_timings.certificate_construction.status == :pass
+        @test lazy_worker_row.stage_timings.verification.status == :pass
+        for path in (lazy_progress_path, string(lazy_progress_path, ".tmp"))
+            isfile(path) && rm(path; force = true)
+        end
+
+        lazy_report = ToricBuilderCacheQBlockStatusReport.build_report(;
+            exercised_case_ids = ("case_010",),
+            determinant_strategy = :lazy,
+            correction_side = :column,
+        )
+        lazy_markdown = ToricBuilderCacheQBlockStatusReport.render_markdown(lazy_report)
+        @test occursin("determinant_strategy", lazy_markdown)
+        @test occursin("correction_side", lazy_markdown)
+        @test occursin("determinant_source", lazy_markdown)
+        @test occursin("| case_010 | lazy | column | deferred_submatrix |", lazy_markdown)
     end
 
     @testset "_record_stage! failure paths" begin
