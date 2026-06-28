@@ -546,6 +546,27 @@ end
         @test route_error_row.stage_timings.determinant_classification.elapsed_seconds == runtime_seconds
         @test route_error_row.stage_timings.determinant_classification.error_details == stderr_text
 
+        command_entry = (;
+            id = "case_command",
+            dimensions = (; matrix = (5, 5)),
+            sparse_entry_count = 25,
+            expected_test_level = :default_contract,
+        )
+        worker_command = ToricBuilderCacheQBlockStatusReport._worker_command(
+            command_entry,
+            "/tmp/qblock-progress",
+            "/tmp/qblock-result";
+            determinant_strategy = :lazy,
+            correction_side = :column,
+        )
+        worker_command_args = collect(worker_command)
+        @test "--bounded-worker=case_command" in worker_command_args
+        @test "--worker-progress=/tmp/qblock-progress" in worker_command_args
+        @test "--worker-result=/tmp/qblock-result" in worker_command_args
+        @test "--determinant-strategy=lazy" in worker_command_args
+        @test "--correction-side=column" in worker_command_args
+        @test !any(arg -> occursin("case_command--worker-progress", arg), worker_command_args)
+
         timeout_entry = (;
             id = "case_timeout",
             dimensions = (; matrix = (4, 4)),

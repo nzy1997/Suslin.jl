@@ -1014,7 +1014,11 @@ function _worker_command(
     ]
     determinant_strategy == :lazy &&
         push!(args, "--correction-side=$(_symbol_text(correction_side))")
-    return `$(Base.julia_cmd()) --project=$(project_path) $(abspath(@__FILE__)) $(args...)`
+    return Cmd(vcat(
+        collect(Base.julia_cmd()),
+        ["--project=$(project_path)", abspath(@__FILE__)],
+        args,
+    ))
 end
 
 function _worker_route_error_row(
