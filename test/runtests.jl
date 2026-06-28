@@ -22,6 +22,7 @@ const TEST_GROUP_FILES = Dict(
         "internal/toricbuilder_cache_q_blocks.jl",
         "internal/toricbuilder_case010_column_boundary.jl",
         "internal/toricbuilder_case008_d21_column_boundary.jl",
+        "internal/toricbuilder_case008_d16_column_boundary.jl",
         "internal/toricbuilder_cache_status_report.jl",
         "internal/toricbuilder_cache_case010_certificate.jl",
         "internal/toricbuilder_problem_catalog.jl",
