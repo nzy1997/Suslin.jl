@@ -19,6 +19,7 @@ end
 
 function _issue159_rebuild(
     certificate;
+    determinant_source = certificate.determinant_source,
     correction_side = certificate.correction_side,
     reconstruction_relation = certificate.reconstruction_relation,
     correction = certificate.correction,
@@ -37,6 +38,7 @@ function _issue159_rebuild(
         certificate.original_matrix,
         certificate.deferred_metadata,
         certificate.overall_determinant,
+        determinant_source,
         correction_side,
         reconstruction_relation,
         correction,
