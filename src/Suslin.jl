@@ -5,6 +5,8 @@ using Oscar
 export suslin_polynomial_ring
 export suslin_laurent_polynomial_ring
 export elementary_matrix
+export max_elementary_factor_monomial_degree
+export total_elementary_factor_offdiagonal_monomials
 export elementary_preconditioning_step
 export replay_elementary_preconditioning
 export verify_elementary_preconditioning

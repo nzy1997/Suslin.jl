@@ -7,6 +7,65 @@ function elementary_matrix(n::Int, i::Int, j::Int, a, R)
     return E
 end
 
+function _elementary_factor_term_exponents(value)
+    try
+        return collect(exponents(value))
+    catch err
+        err isa InterruptException && rethrow()
+        err isa MethodError || err isa ErrorException || rethrow()
+    end
+
+    try
+        return collect(AbstractAlgebra.exponent_vectors(value))
+    catch err
+        err isa InterruptException && rethrow()
+        err isa MethodError || err isa ErrorException || rethrow()
+        throw(ArgumentError("elementary factor analysis requires polynomial or Laurent polynomial entries"))
+    end
+end
+
+function _elementary_factor_term_count(value)::Int
+    iszero(value) && return 0
+    return length(_elementary_factor_term_exponents(value))
+end
+
+function _elementary_factor_monomial_degree(raw_exponents)::Int
+    return sum(abs, Int.(collect(raw_exponents)))
+end
+
+function _require_square_elementary_analysis_factor(factor)
+    nrows(factor) == ncols(factor) || throw(ArgumentError("factor must be square"))
+    return nrows(factor)
+end
+
+function max_elementary_factor_monomial_degree(factors)::Int
+    max_degree = 0
+    for factor in factors
+        n = _require_square_elementary_analysis_factor(factor)
+        for row in 1:n, col in 1:n
+            row == col && continue
+            value = factor[row, col]
+            iszero(value) && continue
+            for raw_exponents in _elementary_factor_term_exponents(value)
+                max_degree = max(max_degree, _elementary_factor_monomial_degree(raw_exponents))
+            end
+        end
+    end
+    return max_degree
+end
+
+function total_elementary_factor_offdiagonal_monomials(factors)::Int
+    total = 0
+    for factor in factors
+        n = _require_square_elementary_analysis_factor(factor)
+        for row in 1:n, col in 1:n
+            row == col && continue
+            total += _elementary_factor_term_count(factor[row, col])
+        end
+    end
+    return total
+end
+
 function _require_elementary_preconditioning_side(side)
     side isa Symbol || throw(ArgumentError("side must be :left or :right"))
     (side == :left || side == :right) || throw(ArgumentError("side must be :left or :right"))
