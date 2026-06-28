@@ -16,6 +16,7 @@ const EXPECTED_DIAGNOSTIC = (;
     laurent_witness_unit_index = nothing,
     laurent_normalization_outcome = :normalized_not_unimodular,
     normalized_column_length = 16,
+    normalized_ring_kind = :polynomial,
     normalized_status = :precondition_failed,
     normalized_failure_code = :not_unimodular,
 )
@@ -172,6 +173,7 @@ function _diagnostic_stage_profile_matches(diagnostic, expected)::Bool
     normalization === nothing && return false
     normalization.outcome == expected.laurent_normalization_outcome || return false
     normalization.normalized_column_length == expected.normalized_column_length || return false
+    normalization.normalized_ring_kind == expected.normalized_ring_kind || return false
     normalization.normalized_status == expected.normalized_status || return false
     normalization.normalized_failure_code == expected.normalized_failure_code || return false
 
