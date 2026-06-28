@@ -101,9 +101,13 @@ end
     metadata = Suslin._factor_laurent_gl_lazy_determinant_peel(A)
 
     certificate = Suslin._laurent_gl_lazy_deferred_correction_certificate(metadata)
+    direct_certificate = Suslin._laurent_gl_lazy_deferred_correction_certificate(A)
 
     @test certificate.original_matrix == A
     @test certificate.deferred_metadata == metadata
+    @test direct_certificate.original_matrix == A
+    @test direct_certificate.reconstructed_product == A
+    @test direct_certificate.verification.overall_ok
     @test certificate.overall_determinant == metadata.overall_determinant
     @test certificate.overall_determinant == entry.determinant_profile.expected_determinant
     @test certificate.correction.scope == :original_matrix
@@ -147,4 +151,32 @@ end
     @test wrong.reconstructed_product != wrong.original_matrix
     @test !Suslin._verify_laurent_gl_lazy_deferred_correction_certificate(wrong)
     @test !Suslin._laurent_gl_lazy_deferred_correction_certificate_verification(wrong).rewritten_left_factors_ok
+
+    outer_broken = Suslin._laurent_gl_lazy_deferred_correction_certificate_verification((
+        original_matrix = nothing,
+    ))
+    @test !outer_broken.size_ok
+    @test !outer_broken.overall_ok
+
+    inner_broken = Suslin.LaurentLazyGLHoistCertificate(
+        certificate.original_matrix,
+        (;),
+        certificate.overall_determinant,
+        certificate.correction,
+        certificate.inverse_correction,
+        certificate.normalized_deferred_core,
+        certificate.normalized_deferred_factorization,
+        certificate.normalized_deferred_factors,
+        certificate.rewritten_left_factors,
+        certificate.elementary_factors,
+        certificate.elementary_product,
+        certificate.reconstructed_product,
+        certificate.verification,
+    )
+    inner_verification = Suslin._laurent_gl_lazy_deferred_correction_certificate_verification(
+        inner_broken,
+    )
+    @test inner_verification.size_ok
+    @test !inner_verification.metadata_ok
+    @test !inner_verification.overall_ok
 end
