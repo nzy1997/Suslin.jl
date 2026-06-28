@@ -68,6 +68,9 @@ end
     @test occursin("lazy Laurent determinant correction", sprint(showerror, lazy_err))
     @test !isempty(lazy_progress)
     @test any(record -> record.completed_steps >= 1, lazy_progress)
+    first_completed_progress = first(record for record in lazy_progress if record.completed_steps >= 1)
+    @test first_completed_progress.current_dimension < original_size[1]
+    @test first_completed_progress.last_completed_dimension == original_size[1]
     @test !isempty(lazy_probes)
     @test first(lazy_probes).size[1] < original_size[1]
     @test first(lazy_probes).size[2] < original_size[2]
