@@ -53,19 +53,19 @@ end
 
     lazy_progress = Any[]
     lazy_probes = Any[]
-    lazy_err = try
-        Suslin._factor_laurent_gl_lazy_determinant_peel(
-            A;
-            progress_callback = record -> push!(lazy_progress, record),
-            determinant_probe = _issue155_lazy_probe(original_size[1], lazy_progress, lazy_probes),
-        )
-        nothing
-    catch err
-        err
-    end
+    lazy_metadata = Suslin._factor_laurent_gl_lazy_determinant_peel(
+        A;
+        progress_callback = record -> push!(lazy_progress, record),
+        determinant_probe = _issue155_lazy_probe(original_size[1], lazy_progress, lazy_probes),
+    )
 
-    @test lazy_err isa ArgumentError
-    @test occursin("lazy Laurent determinant correction", sprint(showerror, lazy_err))
+    @test lazy_metadata.determinant_source == :deferred_submatrix
+    @test lazy_metadata.determinant_classification == :laurent_monomial_unit
+    @test lazy_metadata.supported
+    @test lazy_metadata.normalized_deferred_core !== nothing
+    @test det(lazy_metadata.normalized_deferred_core) ==
+        one(base_ring(lazy_metadata.normalized_deferred_core))
+    @test lazy_metadata.staged_boundary === nothing
     @test !isempty(lazy_progress)
     @test any(record -> record.completed_steps >= 1, lazy_progress)
     first_completed_progress = first(record for record in lazy_progress if record.completed_steps >= 1)
@@ -75,7 +75,6 @@ end
     @test first(lazy_probes).size[1] < original_size[1]
     @test first(lazy_probes).size[2] < original_size[2]
     @test first(lazy_probes).completed_before_probe >= 1
-    @test !(lazy_err isa _Issue155InitialDeterminantProbeError)
 
     eager_progress = Any[]
     eager_probes = Any[]
