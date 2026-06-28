@@ -17,6 +17,24 @@ function _test_diagnostic_stage_details_shape(diagnostic)
     @test all(detail -> detail isa NamedTuple, stage_details)
 end
 
+struct _DiagnosticNonunitEntry end
+struct _DiagnosticRing end
+struct _DiagnosticNormalizedEntry end
+struct _DiagnosticNormalizedRing end
+
+Suslin.is_unit(::_DiagnosticNonunitEntry) = false
+
+function Suslin.normalize_laurent_object(column::Vector{_DiagnosticNonunitEntry})
+    return (;
+        normalized_object = [_DiagnosticNormalizedEntry() for _ in eachindex(column)],
+        metadata = (; polynomial_ring = _DiagnosticNormalizedRing()),
+    )
+end
+
+function Suslin.is_unimodular_column(::Vector{_DiagnosticNormalizedEntry}, ::_DiagnosticNormalizedRing)
+    error("forced diagnostic normalized-column check failure")
+end
+
 @testset "Laurent column reduction diagnostics" begin
     fixture = ToricBuilderCase010ColumnBoundary.boundary_fixture()
 
@@ -101,4 +119,102 @@ end
     @test hasproperty(precondition, :stage_details)
     _test_diagnostic_stage_details_shape(precondition)
     @test isempty(precondition.stage_details)
+end
+
+@testset "Ordinary column reduction diagnostic stage details" begin
+    R, (x, y) = Oscar.polynomial_ring(GF(2), ["x", "y"])
+
+    unit = Suslin.diagnose_unimodular_column_reduction([x, y, one(R)], R)
+    @test unit.status == :supported
+    unit_detail = _diagnostic_stage_detail(unit, :unit_entry)
+    @test unit_detail !== nothing
+    @test unit_detail.outcome == :supported
+    @test unit_detail.pivot_index == 3
+
+    witness = Suslin.diagnose_unimodular_column_reduction([x, y, x + one(R)], R)
+    @test witness.status == :supported
+    witness_detail = _diagnostic_stage_detail(witness, :witness_unit)
+    @test witness_detail !== nothing
+    @test witness_detail.outcome == :supported
+    @test witness_detail.witness_unit_index isa Integer
+
+    monic_column = [
+        x + y^2,
+        x * y + x + one(R),
+        x^2 + x * y + y + one(R),
+    ]
+    monic = Suslin.diagnose_unimodular_column_reduction(monic_column, R)
+    @test monic.status == :supported
+    monic_detail = _diagnostic_stage_detail(monic, :monicity_normalization)
+    @test monic_detail !== nothing
+    @test monic_detail.outcome == :supported
+    @test monic_detail.normalized_column_length == 3
+
+    block_column = [
+        x + y,
+        x * y,
+        x^2,
+        x^2 + x * y + y + one(R),
+    ]
+    @test Suslin.is_unimodular_column(block_column, R)
+    block = Suslin.diagnose_unimodular_column_reduction(block_column, R)
+    @test block.status == :supported
+    block_detail = _diagnostic_stage_detail(block, :three_entry_block)
+    @test block_detail !== nothing
+    @test block_detail.outcome == :supported
+    @test block_detail.block_indices == (1, 2, 4)
+    @test block_detail.pivot_index == 4
+
+    unsupported_column = [zero(R), x^2, x * y + one(R), zero(R)]
+    @test Suslin.is_unimodular_column(unsupported_column, R)
+    unsupported = Suslin.diagnose_unimodular_column_reduction(unsupported_column, R)
+    @test unsupported.status == :unsupported
+    no_block_detail = _diagnostic_stage_detail(unsupported, :three_entry_block)
+    @test no_block_detail !== nothing
+    @test no_block_detail.outcome == :no_supported_three_block
+end
+
+@testset "Defensive diagnostic stage details" begin
+    unsupported_attempted = Symbol[]
+    unsupported_details = Any[]
+    unsupported_result = Suslin._diagnose_supported_unimodular_column_reduction(
+        [_DiagnosticNonunitEntry(), _DiagnosticNonunitEntry(), _DiagnosticNonunitEntry()],
+        _DiagnosticRing(),
+        unsupported_attempted,
+        unsupported_details,
+    )
+    @test !unsupported_result.supported
+    @test unsupported_attempted == [:unit_entry, :witness_unit]
+    unsupported_diagnostic = (; stage_details = tuple(unsupported_details...))
+    unavailable_witness = _diagnostic_stage_detail(unsupported_diagnostic, :witness_unit)
+    @test unavailable_witness !== nothing
+    @test unavailable_witness.outcome == :witness_unavailable
+    @test unavailable_witness.witness_unit_index === nothing
+
+    laurent_attempted = Symbol[]
+    laurent_details = Any[]
+    laurent_result = Suslin._diagnose_laurent_unimodular_column_reduction(
+        [_DiagnosticNonunitEntry(), _DiagnosticNonunitEntry(), _DiagnosticNonunitEntry()],
+        _DiagnosticRing(),
+        laurent_attempted,
+        laurent_details,
+    )
+    @test !laurent_result.supported
+    @test laurent_attempted == [
+        :unit_entry,
+        :laurent_unit_creation,
+        :laurent_witness_unit,
+        :laurent_normalization,
+    ]
+    laurent_diagnostic = (; stage_details = tuple(laurent_details...))
+    laurent_witness = _diagnostic_stage_detail(laurent_diagnostic, :laurent_witness_unit)
+    @test laurent_witness !== nothing
+    @test laurent_witness.outcome == :witness_unavailable
+    @test laurent_witness.witness_unit_index === nothing
+    normalization = _diagnostic_stage_detail(laurent_diagnostic, :laurent_normalization)
+    @test normalization !== nothing
+    @test normalization.outcome == :normalized_unimodularity_check_failed
+    @test normalization.normalized_status == :precondition_failed
+    @test normalization.normalized_failure_code == :unimodularity_check_failed
+    @test occursin("forced diagnostic normalized-column check failure", normalization.normalized_message)
 end
