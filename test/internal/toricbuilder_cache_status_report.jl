@@ -47,7 +47,7 @@ function _row_lazy_metadata_is_structured(row)
     hasproperty(row, :determinant_source) || return false
     row.determinant_strategy == :lazy || return true
     row.correction_side in (:row, :column) || return false
-    row.determinant_source in (:deferred_submatrix, :not_reached, :not_run) || return false
+    row.determinant_source in (:deferred_submatrix, :not_reached) || return false
     if row.route_status == :gl_certificate_pass
         row.verified == true || return false
         row.determinant_source == :deferred_submatrix || return false
@@ -736,7 +736,10 @@ end
         not_reached_pass_row = merge(lazy_success_row, (; determinant_source = :not_reached))
         @test !_bounded_route_row_is_structured(not_reached_pass_row; timeout_seconds = 5.0)
 
-        timeout_claimed_pass_row = merge(lazy_not_reached_timeout, (; route_status = :gl_certificate_pass))
+        timeout_claimed_pass_row = merge(
+            lazy_not_reached_timeout,
+            (; route_status = :gl_certificate_pass, verified = true),
+        )
         @test !_bounded_route_row_is_structured(timeout_claimed_pass_row; timeout_seconds = synthetic_timeout_seconds)
 
         noisy_worker_row = ToricBuilderCacheQBlockStatusReport._bounded_exercised_row(
