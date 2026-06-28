@@ -10,6 +10,13 @@ function _diagnostic_stage_detail(diagnostic, stage::Symbol)
     return idx === nothing ? nothing : diagnostic.stage_details[idx]
 end
 
+function _test_diagnostic_stage_details_shape(diagnostic)
+    hasproperty(diagnostic, :stage_details) || return
+    stage_details = diagnostic.stage_details
+    @test stage_details isa Tuple
+    @test all(detail -> detail isa NamedTuple, stage_details)
+end
+
 @testset "Laurent column reduction diagnostics" begin
     fixture = ToricBuilderCase010ColumnBoundary.boundary_fixture()
 
@@ -24,6 +31,7 @@ end
     @test case010.ring_profile.generators == ("u", "v")
     @test :laurent_unit_creation in case010.attempted_stages
     @test hasproperty(case010, :stage_details)
+    _test_diagnostic_stage_details_shape(case010)
     @test length(case010.stage_details) == length(case010.attempted_stages)
     case010_unit_creation = _diagnostic_stage_detail(case010, :laurent_unit_creation)
     @test case010_unit_creation !== nothing
@@ -42,6 +50,7 @@ end
     @test case008_d21.ring_profile.generators == ("u", "v")
     @test :laurent_witness_unit in case008_d21.attempted_stages
     @test hasproperty(case008_d21, :stage_details)
+    _test_diagnostic_stage_details_shape(case008_d21)
     @test length(case008_d21.stage_details) == length(case008_d21.attempted_stages)
     case008_d21_witness = _diagnostic_stage_detail(case008_d21, :laurent_witness_unit)
     @test case008_d21_witness !== nothing
@@ -64,6 +73,7 @@ end
         @test stage in unsupported.attempted_stages
     end
     @test hasproperty(unsupported, :stage_details)
+    _test_diagnostic_stage_details_shape(unsupported)
     @test length(unsupported.stage_details) == length(unsupported.attempted_stages)
     @test !any(detail -> detail.outcome == :supported, unsupported.stage_details)
 
@@ -75,6 +85,7 @@ end
     @test supported.column_length == d
     @test !isempty(supported.attempted_stages)
     @test hasproperty(supported, :stage_details)
+    _test_diagnostic_stage_details_shape(supported)
     @test length(supported.stage_details) == length(supported.attempted_stages)
     Suslin.reduce_unimodular_column(supported_column, fixture.ring)
 
@@ -88,5 +99,6 @@ end
     @test precondition.failure_code != :unsupported_laurent_column_family
     @test isempty(precondition.attempted_stages)
     @test hasproperty(precondition, :stage_details)
+    _test_diagnostic_stage_details_shape(precondition)
     @test isempty(precondition.stage_details)
 end
