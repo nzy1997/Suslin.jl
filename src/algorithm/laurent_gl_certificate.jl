@@ -41,12 +41,15 @@ struct LaurentLazyGLHoistCertificate
     original_matrix
     deferred_metadata
     overall_determinant
+    correction_side::Symbol
+    reconstruction_relation::Symbol
     correction
     inverse_correction
     normalized_deferred_core
     normalized_deferred_factorization
     normalized_deferred_factors::Vector
     rewritten_left_factors::Vector
+    rewritten_right_factors::Vector
     elementary_factors::Vector
     elementary_product
     reconstructed_product
@@ -126,11 +129,98 @@ function _rewrite_left_elementary_factors_across_diagonal(factors, diagonal_fact
     return rewritten
 end
 
+function _rewrite_right_elementary_factor_across_diagonal(factor, diagonal_factor)
+    n = _require_square_matrix(diagonal_factor, "diagonal factor")
+    nrows(factor) == n || throw(ArgumentError("elementary factor and diagonal factor sizes must match"))
+    ncols(factor) == n || throw(ArgumentError("elementary factor and diagonal factor sizes must match"))
+    _same_base_ring(base_ring(factor), base_ring(diagonal_factor)) ||
+        throw(ArgumentError("elementary factor and diagonal factor must have the same base ring"))
+
+    diagonal_entries = _laurent_diagonal_entries(diagonal_factor)
+    row, col, coefficient = _elementary_factor_data(factor)
+    rewritten_coefficient = diagonal_entries[row] * coefficient * inv(diagonal_entries[col])
+    return elementary_matrix(n, row, col, rewritten_coefficient, base_ring(factor))
+end
+
+function _rewrite_right_elementary_factors_across_diagonal(factors, diagonal_factor)
+    R = base_ring(diagonal_factor)
+    n = _require_square_matrix(diagonal_factor, "diagonal factor")
+    rewritten = typeof(identity_matrix(R, n))[]
+    for factor in factors
+        push!(rewritten, _rewrite_right_elementary_factor_across_diagonal(factor, diagonal_factor))
+    end
+    return rewritten
+end
+
+function _laurent_gl_correction_side(correction_side::Symbol)::Symbol
+    correction_side == :row && return :left
+    correction_side == :column && return :right
+    throw(ArgumentError("correction_side must be :row or :column"))
+end
+
+function _laurent_gl_external_correction_side(correction_side::Symbol)::Symbol
+    correction_side == :left && return :row
+    correction_side == :right && return :column
+    throw(ArgumentError("unsupported internal Laurent correction side $(correction_side)"))
+end
+
+function _laurent_gl_reconstruction_relation(correction_side::Symbol)::Symbol
+    correction_side == :left && return :left_correction_times_elementary_product
+    correction_side == :right && return :elementary_product_times_right_correction
+    throw(ArgumentError("unsupported internal Laurent correction side $(correction_side)"))
+end
+
+function _side_aware_identity_correction(R, n::Int, determinant, side::Symbol)
+    correction = _identity_correction(R, n, determinant)
+    return merge(correction, (; side))
+end
+
+function _right_diagonal_determinant_correction(R, n::Int, determinant)
+    correction = _left_diagonal_determinant_correction(R, n, determinant)
+    return merge(correction, (; side = :right, kind = :right_diagonal_determinant_correction))
+end
+
+function _laurent_lazy_deferred_correction(metadata, correction_side::Symbol)
+    metadata.deferred_correction !== nothing ||
+        throw(ArgumentError("supported deferred Laurent determinant metadata is missing a correction"))
+    deferred = metadata.deferred_submatrix
+    R = base_ring(deferred)
+    n = nrows(deferred)
+    seed_correction = metadata.deferred_correction
+    determinant = seed_correction.determinant
+
+    if metadata.determinant_classification == :one
+        return merge(
+            seed_correction,
+            _side_aware_identity_correction(R, n, determinant, correction_side),
+        )
+    elseif metadata.determinant_classification == :laurent_monomial_unit
+        correction = correction_side == :left ?
+            _left_diagonal_determinant_correction(R, n, determinant) :
+            _right_diagonal_determinant_correction(R, n, determinant)
+        return merge(seed_correction, correction)
+    end
+
+    throw(ArgumentError("unsupported deferred Laurent determinant cannot be hoisted"))
+end
+
+function _laurent_lazy_normalized_deferred_core(metadata, correction)
+    deferred = metadata.deferred_submatrix
+    if metadata.determinant_classification == :one
+        return deferred
+    elseif correction.side == :left
+        return correction.inverse_factor * deferred
+    elseif correction.side == :right
+        return deferred * correction.inverse_factor
+    end
+
+    throw(ArgumentError("unsupported internal Laurent correction side $(correction.side)"))
+end
+
 function _embed_laurent_deferred_correction(correction, original_dimension::Int)
     deferred_dimension = nrows(correction.factor)
-    correction_side = correction.side
-    correction_side == :left ||
-        throw(ArgumentError("only left deferred Laurent corrections can be hoisted"))
+    correction.side in (:left, :right) ||
+        throw(ArgumentError("only left or right deferred Laurent corrections can be hoisted"))
 
     embedded_factor = block_embedding(
         correction.factor,
@@ -155,12 +245,8 @@ function _laurent_lazy_hoist_elementary_factors(metadata, correction, normalized
     peel_certificate = metadata.peel_certificate
     R = base_ring(peel_certificate.original_matrix)
     original_dimension = nrows(peel_certificate.original_matrix)
-    deferred_dimension = nrows(metadata.normalized_deferred_core)
+    deferred_dimension = nrows(metadata.deferred_submatrix)
     left_inverse = _inverse_elementary_sequence(peel_certificate.left_factors)
-    rewritten_left = _rewrite_left_elementary_factors_across_diagonal(
-        left_inverse,
-        correction.factor,
-    )
     embedded_core = _embed_laurent_deferred_peel_factors(
         normalized_deferred_factors,
         R,
@@ -168,28 +254,50 @@ function _laurent_lazy_hoist_elementary_factors(metadata, correction, normalized
         deferred_dimension,
     )
     right_inverse = _inverse_elementary_sequence(peel_certificate.right_factors)
-    return (;
-        rewritten_left,
-        elementary_factors = vcat(rewritten_left, embedded_core, right_inverse),
-    )
+    empty_rewrites = typeof(identity_matrix(R, original_dimension))[]
+
+    if correction.side == :left
+        rewritten_left = _rewrite_left_elementary_factors_across_diagonal(
+            left_inverse,
+            correction.factor,
+        )
+        return (;
+            rewritten_left,
+            rewritten_right = empty_rewrites,
+            elementary_factors = vcat(rewritten_left, embedded_core, right_inverse),
+        )
+    elseif correction.side == :right
+        rewritten_right = _rewrite_right_elementary_factors_across_diagonal(
+            right_inverse,
+            correction.factor,
+        )
+        return (;
+            rewritten_left = empty_rewrites,
+            rewritten_right,
+            elementary_factors = vcat(left_inverse, embedded_core, rewritten_right),
+        )
+    end
+
+    throw(ArgumentError("unsupported internal Laurent correction side $(correction.side)"))
 end
 
 function _laurent_gl_lazy_deferred_correction_certificate(
     metadata::NamedTuple;
+    correction_side = :row,
     progress_callback = nothing,
 )
     _verify_laurent_determinant_deferred_submatrix_normalization(metadata) ||
         error("invalid deferred Laurent determinant normalization metadata")
     metadata.supported ||
         throw(ArgumentError("unsupported deferred Laurent determinant cannot be hoisted"))
-    metadata.deferred_correction !== nothing ||
-        throw(ArgumentError("supported deferred Laurent determinant metadata is missing a correction"))
 
     A = metadata.peel_certificate.original_matrix
     R = base_ring(A)
     n = nrows(A)
-    correction = _embed_laurent_deferred_correction(metadata.deferred_correction, n)
-    normalized_deferred_core = metadata.normalized_deferred_core
+    internal_correction_side = _laurent_gl_correction_side(correction_side)
+    deferred_correction = _laurent_lazy_deferred_correction(metadata, internal_correction_side)
+    correction = _embed_laurent_deferred_correction(deferred_correction, n)
+    normalized_deferred_core = _laurent_lazy_normalized_deferred_core(metadata, deferred_correction)
     normalized_deferred_factorization = _factor_laurent_sl_column_peel(
         normalized_deferred_core;
         progress_callback,
@@ -201,17 +309,23 @@ function _laurent_gl_lazy_deferred_correction_certificate(
         normalized_deferred_factors,
     )
     elementary_product = _factor_product(assembly.elementary_factors, R, n)
-    reconstructed_product = correction.factor * elementary_product
+    reconstruction_relation = _laurent_gl_reconstruction_relation(internal_correction_side)
+    reconstructed_product = internal_correction_side == :left ?
+        correction.factor * elementary_product :
+        elementary_product * correction.factor
     certificate = LaurentLazyGLHoistCertificate(
         A,
         metadata,
         metadata.overall_determinant,
+        correction_side,
+        reconstruction_relation,
         correction,
         correction.inverse_factor,
         normalized_deferred_core,
         normalized_deferred_factorization,
         normalized_deferred_factors,
         assembly.rewritten_left,
+        assembly.rewritten_right,
         assembly.elementary_factors,
         elementary_product,
         reconstructed_product,
@@ -224,12 +338,15 @@ function _laurent_gl_lazy_deferred_correction_certificate(
         certificate.original_matrix,
         certificate.deferred_metadata,
         certificate.overall_determinant,
+        certificate.correction_side,
+        certificate.reconstruction_relation,
         certificate.correction,
         certificate.inverse_correction,
         certificate.normalized_deferred_core,
         certificate.normalized_deferred_factorization,
         certificate.normalized_deferred_factors,
         certificate.rewritten_left_factors,
+        certificate.rewritten_right_factors,
         certificate.elementary_factors,
         certificate.elementary_product,
         certificate.reconstructed_product,
@@ -239,6 +356,7 @@ end
 
 function _laurent_gl_lazy_deferred_correction_certificate(
     A;
+    correction_side = :row,
     determinant_probe = classify_laurent_determinant,
     progress_callback = nothing,
 )
@@ -252,6 +370,7 @@ function _laurent_gl_lazy_deferred_correction_certificate(
     )
     return _laurent_gl_lazy_deferred_correction_certificate(
         metadata;
+        correction_side,
         progress_callback,
     )
 end
@@ -368,7 +487,10 @@ function _laurent_gl_lazy_deferred_correction_certificate_verification(certifica
     correction_ok = false
     normalized_core_ok = false
     normalized_factorization_ok = false
+    correction_side_ok = false
+    reconstruction_relation_ok = false
     rewritten_left_factors_ok = false
+    rewritten_right_factors_ok = false
     elementary_factors_ok = false
     elementary_product_ok = false
     reconstructed_product_ok = false
@@ -385,11 +507,22 @@ function _laurent_gl_lazy_deferred_correction_certificate_verification(certifica
                 metadata.determinant_source == :deferred_submatrix &&
                 _verify_laurent_determinant_deferred_submatrix_normalization(metadata)
 
+            expected_side = _laurent_gl_correction_side(certificate.correction_side)
+            expected_relation = _laurent_gl_reconstruction_relation(expected_side)
+            expected_deferred_correction = _laurent_lazy_deferred_correction(
+                metadata,
+                expected_side,
+            )
             expected_correction = _embed_laurent_deferred_correction(
-                metadata.deferred_correction,
+                expected_deferred_correction,
                 n,
             )
             identity = identity_matrix(R, n)
+            correction_side_ok =
+                _laurent_gl_external_correction_side(expected_side) == certificate.correction_side &&
+                certificate.correction.side == expected_side
+            reconstruction_relation_ok =
+                certificate.reconstruction_relation == expected_relation
             correction_ok =
                 certificate.overall_determinant == metadata.overall_determinant &&
                 certificate.correction == expected_correction &&
@@ -398,8 +531,12 @@ function _laurent_gl_lazy_deferred_correction_certificate_verification(certifica
                 certificate.inverse_correction * certificate.correction.factor == identity &&
                 det(certificate.correction.factor) == certificate.overall_determinant
 
+            expected_normalized_core = _laurent_lazy_normalized_deferred_core(
+                metadata,
+                expected_deferred_correction,
+            )
             normalized_core_ok =
-                certificate.normalized_deferred_core == metadata.normalized_deferred_core &&
+                certificate.normalized_deferred_core == expected_normalized_core &&
                 det(certificate.normalized_deferred_core) ==
                     one(base_ring(certificate.normalized_deferred_core))
 
@@ -419,13 +556,28 @@ function _laurent_gl_lazy_deferred_correction_certificate_verification(certifica
             expected_left_inverse = _inverse_elementary_sequence(
                 metadata.peel_certificate.left_factors,
             )
-            expected_rewritten_left = _rewrite_left_elementary_factors_across_diagonal(
-                expected_left_inverse,
-                certificate.correction.factor,
-            )
+            expected_rewritten_left = expected_side == :left ?
+                _rewrite_left_elementary_factors_across_diagonal(
+                    expected_left_inverse,
+                    certificate.correction.factor,
+                ) :
+                typeof(identity_matrix(R, n))[]
             rewritten_left_factors_ok = _factor_sequences_equal(
                 certificate.rewritten_left_factors,
                 expected_rewritten_left,
+            )
+            expected_right_inverse = _inverse_elementary_sequence(
+                metadata.peel_certificate.right_factors,
+            )
+            expected_rewritten_right = expected_side == :right ?
+                _rewrite_right_elementary_factors_across_diagonal(
+                    expected_right_inverse,
+                    certificate.correction.factor,
+                ) :
+                typeof(identity_matrix(R, n))[]
+            rewritten_right_factors_ok = _factor_sequences_equal(
+                certificate.rewritten_right_factors,
+                expected_rewritten_right,
             )
 
             assembly = _laurent_lazy_hoist_elementary_factors(
@@ -439,9 +591,11 @@ function _laurent_gl_lazy_deferred_correction_certificate_verification(certifica
             )
             rebuilt_product = _factor_product(certificate.elementary_factors, R, n)
             elementary_product_ok = certificate.elementary_product == rebuilt_product
+            expected_reconstructed_product = expected_side == :left ?
+                certificate.correction.factor * certificate.elementary_product :
+                certificate.elementary_product * certificate.correction.factor
             reconstructed_product_ok =
-                certificate.reconstructed_product ==
-                    certificate.correction.factor * certificate.elementary_product &&
+                certificate.reconstructed_product == expected_reconstructed_product &&
                 certificate.reconstructed_product == A
         catch err
             err isa InterruptException && rethrow()
@@ -449,7 +603,9 @@ function _laurent_gl_lazy_deferred_correction_certificate_verification(certifica
     end
 
     overall_ok = size_ok && metadata_ok && correction_ok && normalized_core_ok &&
-        normalized_factorization_ok && rewritten_left_factors_ok &&
+        normalized_factorization_ok && correction_side_ok &&
+        reconstruction_relation_ok && rewritten_left_factors_ok &&
+        rewritten_right_factors_ok &&
         elementary_factors_ok && elementary_product_ok && reconstructed_product_ok
 
     return (;
@@ -459,7 +615,10 @@ function _laurent_gl_lazy_deferred_correction_certificate_verification(certifica
         correction_ok,
         normalized_core_ok,
         normalized_factorization_ok,
+        correction_side_ok,
+        reconstruction_relation_ok,
         rewritten_left_factors_ok,
+        rewritten_right_factors_ok,
         elementary_factors_ok,
         elementary_product_ok,
         reconstructed_product_ok,
