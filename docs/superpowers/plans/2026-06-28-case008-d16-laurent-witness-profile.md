@@ -204,12 +204,18 @@ function _laurent_witness_profile(column::AbstractVector, witness::AbstractVecto
     witness_entry_is_unit = Tuple(is_unit(entry) for entry in witness)
     witness_unit_indices = Tuple(idx for idx in eachindex(witness) if witness_entry_is_unit[idx])
     witness_unit_entry_count = length(witness_unit_indices)
+    witness_nonunit_obstructions = Tuple(
+        (; index = idx, is_unit = false, reason = :non_unit_witness_entry)
+        for idx in eachindex(witness_entry_is_unit)
+        if !witness_entry_is_unit[idx]
+    )
     column_dot_witness = _laurent_column_dot(column, witness, R)
 
     return (;
         witness_length = length(witness),
         witness_unit_entry_count,
         witness_unit_indices,
+        witness_nonunit_obstructions,
         witness_entry_term_counts = Tuple(length(entry) for entry in witness),
         witness_entry_support_bounds = Tuple(_laurent_support_bounds(entry) for entry in witness),
         witness_entry_is_unit,
@@ -235,6 +241,10 @@ end
     @test profile.witness_length == 16
     @test profile.witness_unit_entry_count == 0
     @test profile.witness_unit_indices == ()
+    @test length(profile.witness_nonunit_obstructions) == 16
+    @test Tuple(record.index for record in profile.witness_nonunit_obstructions) == ntuple(identity, 16)
+    @test all(record -> record.is_unit === false, profile.witness_nonunit_obstructions)
+    @test all(record -> record.reason === :non_unit_witness_entry, profile.witness_nonunit_obstructions)
     @test profile.witness_entry_is_unit == ntuple(_ -> false, 16)
     @test profile.witness_entry_term_counts == CASE008_D16_EXPECTED_WITNESS_TERM_COUNTS
     @test profile.witness_entry_support_bounds == CASE008_D16_EXPECTED_WITNESS_SUPPORT_BOUNDS
@@ -264,6 +274,9 @@ end
 
     known_profile = _laurent_witness_profile(column, known_witness, R)
     @test known_profile.witness_length == 3
+    @test known_profile.witness_nonunit_obstructions == (
+        (; index = 3, is_unit = false, reason = :non_unit_witness_entry),
+    )
     @test known_profile.witness_unit_entry_count >= 1
     @test known_profile.witness_unit_indices == (1, 2)
     @test known_profile.existing_witness_unit_stage_applicable
@@ -272,6 +285,7 @@ end
     solver_witness = Suslin._laurent_unimodular_witness(column, R)
     @test solver_witness !== nothing
     solver_profile = _laurent_witness_profile(column, solver_witness, R)
+    @test length(solver_profile.witness_nonunit_obstructions) < solver_profile.witness_length
     @test solver_profile.witness_unit_entry_count >= 1
     @test solver_profile.column_dot_witness == one(R)
 
@@ -321,6 +335,6 @@ Expected: commit created with only the expert test file staged for this task.
 
 ## Self-Review
 
-- Spec coverage: Task 1 creates the requested expert file, records length/unit/term/support/gcd/combination profile fields, checks `column ⋅ witness == 1`, records the no-unit obstruction, and includes the synthetic unit-witness reduction route control.
+- Spec coverage: Task 1 creates the requested expert file, records length/unit/per-entry-obstruction/term/support/gcd/combination profile fields, checks `column ⋅ witness == 1`, records the no-unit obstruction, and includes the synthetic unit-witness reduction route control.
 - Red-flag scan: the plan contains no incomplete implementation instructions.
 - Type consistency: `_laurent_witness_profile(column, witness, R)` returns the stable field names listed in the design spec and used by the tests.

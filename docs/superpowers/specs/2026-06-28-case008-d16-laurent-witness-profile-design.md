@@ -50,6 +50,7 @@ The profile is a `NamedTuple` with stable field names:
 - `witness_length`
 - `witness_unit_entry_count`
 - `witness_unit_indices`
+- `witness_nonunit_obstructions`
 - `witness_entry_term_counts`
 - `witness_entry_support_bounds`
 - `witness_entry_is_unit`
@@ -82,7 +83,8 @@ The d=16 test uses the fixture and asserts:
 - `column_dot_witness == 1`
 - `column_dot_witness_is_one`
 - every witness entry fails `is_unit`
-- the existing Laurent witness-unit certificate route returns `nothing`
+- per-entry obstruction records explain why the existing witness-unit stage
+  cannot apply
 - the profile carries `unit_obstruction_reason == :no_witness_unit_entry`
 
 The negative control in the issue is implemented as a positive synthetic
