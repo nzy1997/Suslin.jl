@@ -30,14 +30,15 @@ verify_factorization(A, factors)
   deterministic multivariate Quillen/local-to-global fixture-backed matrices,
   and determinant-one Laurent inputs through the existing Laurent `SL` path.
 - `verify_factorization(A, factors)` checks exact multiplication against `A`.
-- `laurent_gl_factorization_certificate(A)` records Laurent normalization and
-  determinant-one core factorization data. General Laurent `GL_n` determinant
-  correction is still a staged boundary.
+- `laurent_gl_factorization_certificate(A)` defaults to the eager Laurent
+  normalization/core certificate. With `determinant_strategy = :lazy`, it
+  records the supported monomial-unit deferred determinant correction path for
+  original Laurent `GL_n` inputs such as the issue #38 fixture.
 - The implementation is not yet the full Park-Woodburn algorithm for arbitrary
   `SL_n(k[x_1, ..., x_m])`, `n >= 3`. General Quillen local realizability,
   coefficient-ring support beyond exact field-backed ordinary polynomial
-  rings, Laurent `GL_n` determinant correction, and factor-count optimization
-  remain staged boundaries.
+  rings, arbitrary Laurent `GL_n` determinant correction, and factor-count
+  optimization remain staged boundaries.
 
 ## Testing
 

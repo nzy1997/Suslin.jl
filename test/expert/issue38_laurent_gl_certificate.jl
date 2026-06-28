@@ -98,6 +98,77 @@ function _issue59_malformed_normalization_certificate(certificate)
     )
 end
 
+function _issue162_rebuild_lazy_certificate(
+    certificate;
+    overall_determinant = certificate.overall_determinant,
+    determinant_source = certificate.determinant_source,
+    correction_side = certificate.correction_side,
+    reconstruction_relation = certificate.reconstruction_relation,
+    correction = certificate.correction,
+    inverse_correction = certificate.inverse_correction,
+    normalized_deferred_core = certificate.normalized_deferred_core,
+    normalized_deferred_factorization = certificate.normalized_deferred_factorization,
+    normalized_deferred_factors = certificate.normalized_deferred_factors,
+    rewritten_left_factors = certificate.rewritten_left_factors,
+    rewritten_right_factors = certificate.rewritten_right_factors,
+    elementary_factors = certificate.elementary_factors,
+    elementary_product = certificate.elementary_product,
+    reconstructed_product = certificate.reconstructed_product,
+    verification = certificate.verification,
+)
+    return Suslin.LaurentLazyGLHoistCertificate(
+        certificate.original_matrix,
+        certificate.deferred_metadata,
+        overall_determinant,
+        determinant_source,
+        correction_side,
+        reconstruction_relation,
+        correction,
+        inverse_correction,
+        normalized_deferred_core,
+        normalized_deferred_factorization,
+        normalized_deferred_factors,
+        rewritten_left_factors,
+        rewritten_right_factors,
+        elementary_factors,
+        elementary_product,
+        reconstructed_product,
+        verification,
+    )
+end
+
+function _issue162_tamper_lazy_correction(certificate)
+    R = base_ring(certificate.original_matrix)
+    bad_factor = copy(certificate.correction.factor)
+    bad_factor[1, 1] = one(R)
+    bad_correction = merge(certificate.correction, (; factor = bad_factor))
+    return _issue162_rebuild_lazy_certificate(
+        certificate;
+        correction = bad_correction,
+    )
+end
+
+function _issue162_tamper_lazy_correction_side(certificate)
+    return _issue162_rebuild_lazy_certificate(
+        certificate;
+        correction_side = :column,
+    )
+end
+
+function _issue162_tamper_lazy_hoisted_factor(certificate)
+    R = base_ring(certificate.original_matrix)
+    n = nrows(certificate.original_matrix)
+    bad_factors = copy(certificate.elementary_factors)
+    bad_factors[1] = identity_matrix(R, n)
+    bad_product = _issue59_product(bad_factors, R, n)
+    return _issue162_rebuild_lazy_certificate(
+        certificate;
+        elementary_factors = bad_factors,
+        elementary_product = bad_product,
+        reconstructed_product = certificate.correction.factor * bad_product,
+    )
+end
+
 @testset "Issue 38 Laurent GL certificate" begin
     entry = only(ToricBuilderIssue38Cases.catalog().cases)
     Q = entry.inputs.matrix
@@ -163,6 +234,36 @@ end
 
     malformed_normalization = _issue59_malformed_normalization_certificate(certificate)
     @test !verify_laurent_gl_factorization_certificate(malformed_normalization)
+
+    lazy_certificate = laurent_gl_factorization_certificate(
+        Q;
+        determinant_strategy = :lazy,
+        correction_side = :row,
+    )
+    @test lazy_certificate isa LaurentLazyGLHoistCertificate
+    @test lazy_certificate.original_matrix == Q
+    @test lazy_certificate.overall_determinant == u * v
+    @test lazy_certificate.determinant_source == :deferred_submatrix
+    @test lazy_certificate.correction_side == :row
+    @test lazy_certificate.reconstruction_relation ==
+        :left_correction_times_elementary_product
+    @test length(lazy_certificate.elementary_factors) > 0
+    @test lazy_certificate.elementary_product ==
+        _issue59_product(lazy_certificate.elementary_factors, R, nrows(Q))
+    @test lazy_certificate.correction.factor * lazy_certificate.elementary_product == Q
+    @test lazy_certificate.reconstructed_product == Q
+    @test lazy_certificate.verification.overall_ok
+    @test verify_laurent_gl_factorization_certificate(lazy_certificate)
+
+    @test !verify_laurent_gl_factorization_certificate(
+        _issue162_tamper_lazy_correction(lazy_certificate),
+    )
+    @test !verify_laurent_gl_factorization_certificate(
+        _issue162_tamper_lazy_correction_side(lazy_certificate),
+    )
+    @test !verify_laurent_gl_factorization_certificate(
+        _issue162_tamper_lazy_hoisted_factor(lazy_certificate),
+    )
 
     original_err = try
         elementary_factorization(Q)
