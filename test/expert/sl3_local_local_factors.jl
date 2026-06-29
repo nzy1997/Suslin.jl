@@ -140,6 +140,13 @@ end
         UX;
         local_unit_witness,
     )
+    @test_throws ArgumentError Suslin.sl3_local_elementary_factor(
+        1,
+        2,
+        one(R),
+        one(R),
+        X + one(R),
+    )
 
     corrupted_witness = merge(
         local_unit_witness,

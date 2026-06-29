@@ -1403,6 +1403,8 @@ function _require_sl3_local_elementary_factor(record)
     record.row != record.col || throw(ArgumentError("local elementary factor row and column must differ"))
     parent(record.selected_variable) === record.R ||
         throw(ArgumentError("local elementary factor variable must lie in the factor ring"))
+    record.selected_variable in collect(gens(record.R)) ||
+        throw(ArgumentError("local elementary factor variable must be a ring generator"))
     parent(record.numerator) === record.R ||
         throw(ArgumentError("local elementary factor numerator ring mismatch"))
     parent(record.denominator) === record.R ||
