@@ -62,7 +62,13 @@ function _assert_resultant_certificate(cert; expected_source::Symbol)
     reduction = cert.witness.reduction
     @test reduction.witness_source == expected_source
     @test Suslin.verify_sl3_local_murthy_q0_nonunit_reduction(reduction)
-    if !hasproperty(reduction, :local_factor_replay)
+    local_factor_replay = try
+        getproperty(reduction, :local_factor_replay)
+    catch err
+        err isa FieldError || rethrow()
+        nothing
+    end
+    if local_factor_replay === nothing
         @test Suslin.verify_factorization(cert.target, cert.factors)
         @test _resultant_product(cert.factors, base_ring(cert.target)) == cert.target
         @test reduction.child_certificate.branch == :murthy_q0_unit
