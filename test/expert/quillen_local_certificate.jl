@@ -154,6 +154,17 @@ end
     @test correction_cert.verification.original_input == correction_cert.correction
     @test correction_cert.verification.witness_metadata.input_kind == :elementary_correction
 
+    sequence_cert = Suslin.quillen_local_factor_sequence_certificate(correction_cert)
+    @test sequence_cert isa Suslin.QuillenLocalFactorSequenceCertificate
+    @test Suslin.verify_quillen_local_factor_sequence_certificate(sequence_cert)
+    @test length(sequence_cert.factors) == 1
+    @test sequence_cert.raw_denominators == [correction_cert.denominator]
+    @test sequence_cert.product_denominator == correction_cert.denominator
+    @test sequence_cert.local_product == correction_cert.local_product
+    @test sequence_cert.local_correction == correction_cert.local_correction
+    @test sequence_cert.normalized_global_elementary_factors == correction_cert.factors
+    @test sequence_cert.verification.overall_ok
+
     local_factor = entries[fixture_ids[1]].local_factors[1]
     correction_input = local_correction_from_fixture(local_factor)
     @test_throws ArgumentError Suslin.quillen_local_realization_certificate(
