@@ -67,6 +67,25 @@ struct SL3LocalMurthyQ0NonunitReduction
     witness_source::Symbol
 end
 
+struct SL3LocalMurthyInputContext
+    R
+    X
+    var_idx::Int
+    entries::NamedTuple
+    target
+    determinant
+    degree_p::Int
+    degree_q::Int
+    p0
+    q0
+    p_monic::Bool
+    global_units::NamedTuple
+    local_units::NamedTuple
+    local_unit_witnesses::NamedTuple
+    split_witness
+    bezout_witness
+end
+
 function Base.:(==)(left::SL3LocalQDegreeNormalization, right::SL3LocalQDegreeNormalization)
     return left.target == right.target &&
         left.quotient == right.quotient &&
@@ -74,6 +93,49 @@ function Base.:(==)(left::SL3LocalQDegreeNormalization, right::SL3LocalQDegreeNo
         left.normalized_target == right.normalized_target &&
         left.elementary_correction == right.elementary_correction &&
         left.selected_variable == right.selected_variable
+end
+
+function sl3_local_murthy_input_context(A, X; witness=nothing, local_unit_witnesses=(;),
+        split_witness=nothing, bezout_witness=nothing)
+    nrows(A) == 3 || throw(ArgumentError("Murthy local input context requires a 3x3 special-form matrix"))
+    ncols(A) == 3 || throw(ArgumentError("Murthy local input context requires a 3x3 special-form matrix"))
+    entries = _sl3_local_target_entries(A)
+    entries === nothing && throw(ArgumentError("Murthy local input context requires a special-form SL_3 target"))
+    return sl3_local_murthy_input_context(
+        entries.p,
+        entries.q,
+        entries.r,
+        entries.s,
+        X;
+        witness,
+        local_unit_witnesses,
+        split_witness,
+        bezout_witness,
+    )
+end
+
+function sl3_local_murthy_input_context(p, q, r, s, X; witness=nothing,
+        local_unit_witnesses=(;), split_witness=nothing, bezout_witness=nothing)
+    return _sl3_local_murthy_input_context(
+        p,
+        q,
+        r,
+        s,
+        X;
+        witness,
+        local_unit_witnesses,
+        split_witness,
+        bezout_witness,
+    )
+end
+
+function verify_sl3_local_murthy_input_context(context)::Bool
+    try
+        return _sl3_local_murthy_input_context_verification(context).overall_ok
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
 end
 
 function realize_sl3_local(A, X; check_monic::Bool=true, murthy_q0_nonunit_witness=nothing)
@@ -711,6 +773,508 @@ function _sl3_local_murthy_q0_nonunit_bezout_pair(form)
     return (g_inverse * a, -g_inverse * b, :extracted_bezout_witness)
 end
 
+function _sl3_local_murthy_input_context(p, q, r, s, X; witness, local_unit_witnesses,
+        split_witness, bezout_witness)
+    R = parent(p)
+    parent(q) === R || throw(ArgumentError("Murthy local input context entries and X must lie in the same polynomial ring"))
+    parent(r) === R || throw(ArgumentError("Murthy local input context entries and X must lie in the same polynomial ring"))
+    parent(s) === R || throw(ArgumentError("Murthy local input context entries and X must lie in the same polynomial ring"))
+    parent(X) === R || throw(ArgumentError("Murthy local input context entries and X must lie in the same polynomial ring"))
+
+    ring_gens = collect(gens(R))
+    var_idx = findfirst(isequal(X), ring_gens)
+    var_idx === nothing && throw(ArgumentError("Murthy local input context variable must be a ring generator"))
+    _is_laurent_polynomial_ring(R) &&
+        throw(ArgumentError("Murthy local input context is only supported for ordinary polynomial rings"))
+
+    target = _sl3_local_special_form_target(R, p, q, r, s)
+    determinant = det(target)
+    determinant == one(R) || throw(ArgumentError("Murthy local input context target must have determinant 1"))
+    p_monic = _is_monic_in_variable(p, var_idx, R)
+    p_monic || throw(ArgumentError("Murthy local input context p must be monic in X"))
+
+    normalized_witnesses = _sl3_local_murthy_normalize_witness_data(
+        witness,
+        local_unit_witnesses,
+        split_witness,
+        bezout_witness,
+    )
+    p0 = _sl3_local_constant_coefficient(p, var_idx, R)
+    q0 = _sl3_local_constant_coefficient(q, var_idx, R)
+    degree_p = degree(p, var_idx)
+    degree_q = degree(q, var_idx)
+    bezout_data = _sl3_local_murthy_bezout_data(
+        R,
+        X,
+        p,
+        q,
+        p0,
+        q0,
+        degree_p,
+        degree_q,
+        normalized_witnesses.bezout_witness,
+    )
+    global_units = _sl3_local_murthy_global_units(
+        p,
+        q,
+        r,
+        s,
+        p0,
+        q0;
+        resultant = _sl3_local_murthy_optional_bezout_field(bezout_data, :resultant),
+        branch_unit = _sl3_local_murthy_optional_bezout_field(bezout_data, :branch_unit),
+    )
+    local_units = _sl3_local_murthy_local_units(
+        R,
+        X,
+        p,
+        q,
+        p0,
+        q0,
+        degree_p,
+        degree_q,
+        normalized_witnesses.local_unit_witnesses,
+        normalized_witnesses.bezout_witness,
+    )
+    _sl3_local_murthy_validate_required_local_evidence(
+        R,
+        degree_p,
+        degree_q,
+        q0,
+        global_units,
+        local_units,
+        normalized_witnesses.bezout_witness,
+    )
+    _sl3_local_murthy_verify_split_witness(R, normalized_witnesses.split_witness)
+
+    context = SL3LocalMurthyInputContext(
+        R,
+        X,
+        var_idx,
+        (; p, q, r, s),
+        target,
+        determinant,
+        degree_p,
+        degree_q,
+        p0,
+        q0,
+        p_monic,
+        global_units,
+        local_units,
+        normalized_witnesses.local_unit_witnesses,
+        normalized_witnesses.split_witness,
+        normalized_witnesses.bezout_witness,
+    )
+    verify_sl3_local_murthy_input_context(context) ||
+        error("internal Murthy local input context verification failed")
+    return context
+end
+
+function _sl3_local_murthy_normalize_witness_data(
+        witness,
+        local_unit_witnesses,
+        split_witness,
+        bezout_witness,
+)
+    local_unit_witnesses isa NamedTuple ||
+        throw(ArgumentError("Murthy local input context local-unit witnesses must be a named tuple"))
+
+    extracted_local_unit_witnesses = (;)
+    extracted_split_witness = nothing
+    extracted_bezout_witness = nothing
+
+    if witness !== nothing
+        witness isa NamedTuple ||
+            throw(ArgumentError("Murthy local input context witness must be a named tuple"))
+        if hasproperty(witness, :local_unit_witness)
+            extracted_local_unit_witnesses =
+                merge(extracted_local_unit_witnesses, (; q0 = witness.local_unit_witness))
+        end
+        if hasproperty(witness, :branch_unit_witness)
+            extracted_local_unit_witnesses =
+                merge(extracted_local_unit_witnesses, (; branch_unit = witness.branch_unit_witness))
+        end
+        if hasproperty(witness, :resultant_unit_witness)
+            extracted_local_unit_witnesses =
+                merge(extracted_local_unit_witnesses, (; resultant = witness.resultant_unit_witness))
+        end
+        if hasproperty(witness, :split)
+            extracted_split_witness = witness.split
+        elseif _sl3_local_murthy_split_witness_fields_ok(witness)
+            extracted_split_witness = witness
+        end
+        if hasproperty(witness, :p_prime) || hasproperty(witness, :q_prime)
+            extracted_bezout_witness = witness
+        end
+    end
+
+    return (;
+        local_unit_witnesses = merge(extracted_local_unit_witnesses, local_unit_witnesses),
+        split_witness = split_witness === nothing ? extracted_split_witness : split_witness,
+        bezout_witness = bezout_witness === nothing ? extracted_bezout_witness : bezout_witness,
+    )
+end
+
+function _sl3_local_murthy_global_units(p, q, r, s, p0, q0; resultant=nothing, branch_unit=nothing)
+    return (;
+        p = is_unit(p),
+        q = is_unit(q),
+        r = is_unit(r),
+        s = is_unit(s),
+        p0 = is_unit(p0),
+        q0 = is_unit(q0),
+        resultant = resultant !== nothing && is_unit(resultant),
+        branch_unit = branch_unit !== nothing && is_unit(branch_unit),
+    )
+end
+
+function _sl3_local_murthy_local_units(
+        R,
+        X,
+        p,
+        q,
+        p0,
+        q0,
+        degree_p,
+        degree_q,
+        local_unit_witnesses,
+        bezout_witness,
+)
+    local_unit_witnesses isa NamedTuple ||
+        throw(ArgumentError("Murthy local input context local-unit witnesses must be a named tuple"))
+    allowed_keys = (:p0, :q0, :resultant, :branch_unit)
+    for key in keys(local_unit_witnesses)
+        key in allowed_keys ||
+            throw(ArgumentError("Murthy local input context has an unsupported local-unit witness $(key)"))
+    end
+
+    bezout_data = _sl3_local_murthy_bezout_data(
+        R,
+        X,
+        p,
+        q,
+        p0,
+        q0,
+        degree_p,
+        degree_q,
+        bezout_witness,
+    )
+    resultant = _sl3_local_murthy_optional_bezout_field(bezout_data, :resultant)
+    branch_unit = _sl3_local_murthy_optional_bezout_field(bezout_data, :branch_unit)
+
+    return (;
+        p0 = _sl3_local_murthy_local_unit_status(
+            R,
+            X,
+            local_unit_witnesses,
+            :p0,
+            p0,
+            "p0 local-unit witness",
+        ),
+        q0 = _sl3_local_murthy_local_unit_status(
+            R,
+            X,
+            local_unit_witnesses,
+            :q0,
+            q0,
+            "q0 local-unit witness",
+        ),
+        resultant = _sl3_local_murthy_local_unit_status(
+            R,
+            X,
+            local_unit_witnesses,
+            :resultant,
+            resultant,
+            "resultant local-unit witness",
+        ),
+        branch_unit = _sl3_local_murthy_local_unit_status(
+            R,
+            X,
+            local_unit_witnesses,
+            :branch_unit,
+            branch_unit,
+            "branch-unit local-unit witness",
+        ),
+    )
+end
+
+function _sl3_local_murthy_local_unit_status(
+        R,
+        X,
+        local_unit_witnesses,
+        key::Symbol,
+        expected_unit,
+        label::AbstractString,
+)
+    expected_unit === nothing && !hasproperty(local_unit_witnesses, key) && return false
+    expected_unit === nothing &&
+        throw(ArgumentError("Murthy local input context cannot verify $(label) without its expected unit"))
+    if hasproperty(local_unit_witnesses, key)
+        _sl3_local_murthy_verify_local_unit_witness(
+            R,
+            X,
+            getproperty(local_unit_witnesses, key),
+            expected_unit;
+            label,
+        )
+        return true
+    end
+    return is_unit(expected_unit)
+end
+
+function _sl3_local_murthy_validate_required_local_evidence(
+        R,
+        degree_p,
+        degree_q,
+        q0,
+        global_units,
+        local_units,
+        bezout_witness,
+)
+    degree_q >= degree_p && return true
+    (global_units.q0 || local_units.q0) && return true
+
+    if !(global_units.resultant || local_units.resultant)
+        throw(ArgumentError("Murthy local input context requires a local-unit witness for q0 or Bezout resultant evidence"))
+    end
+    if global_units.branch_unit || local_units.branch_unit
+        return true
+    end
+
+    if bezout_witness === nothing
+        throw(ArgumentError("Murthy local input context requires a local-unit witness for q0 or a Bezout witness with branch-unit evidence"))
+    end
+    throw(ArgumentError("Murthy local input context requires a local-unit witness for q0 or branch_unit"))
+end
+
+function _sl3_local_murthy_verify_local_unit_witness(
+        R,
+        X,
+        witness,
+        expected_unit;
+        label::AbstractString = "local-unit witness",
+)
+    witness isa NamedTuple ||
+        throw(ArgumentError("Murthy local input context $(label) must be a named tuple"))
+    required_fields = (
+        :context,
+        :unit,
+        :residue_unit,
+        :residue_inverse,
+        :maximal_ideal_generators,
+        :residue_difference_coefficients,
+    )
+    for field in required_fields
+        hasproperty(witness, field) ||
+            throw(ArgumentError("Murthy local input context $(label) is missing $(field)"))
+    end
+
+    context = witness.context
+    context isa NamedTuple ||
+        throw(ArgumentError("Murthy local input context $(label) context must be a named tuple"))
+    hasproperty(context, :kind) && context.kind == :localization_at_maximal_ideal ||
+        throw(ArgumentError("Murthy local input context $(label) has unsupported local context kind"))
+    hasproperty(context, :selected_variable) && context.selected_variable == X ||
+        throw(ArgumentError("Murthy local input context $(label) local context variable mismatch"))
+
+    unit = _coerce_into_ring(R, witness.unit, "Murthy local input context $(label) unit")
+    residue_unit = _coerce_into_ring(R, witness.residue_unit, "Murthy local input context $(label) residue_unit")
+    residue_inverse = _coerce_into_ring(R, witness.residue_inverse, "Murthy local input context $(label) residue_inverse")
+    expected = _coerce_into_ring(R, expected_unit, "Murthy local input context $(label) expected unit")
+    unit == expected ||
+        throw(ArgumentError("Murthy local input context $(label) unit does not match expected value"))
+
+    generators = tuple(witness.maximal_ideal_generators...)
+    coefficients = tuple(witness.residue_difference_coefficients...)
+    hasproperty(context, :maximal_ideal_generators) &&
+            tuple(context.maximal_ideal_generators...) == generators ||
+        throw(ArgumentError("Murthy local input context $(label) local context maximal_ideal_generators mismatch"))
+    length(generators) == length(coefficients) ||
+        throw(ArgumentError("Murthy local input context $(label) generator/coefficient length mismatch"))
+    for generator in generators
+        parent(generator) === R ||
+            throw(ArgumentError("Murthy local input context $(label) generator ring mismatch"))
+    end
+    for coefficient in coefficients
+        parent(coefficient) === R ||
+            throw(ArgumentError("Murthy local input context $(label) coefficient ring mismatch"))
+    end
+
+    difference = zero(R)
+    for (coefficient, generator) in zip(coefficients, generators)
+        difference += coefficient * generator
+    end
+    unit - residue_unit == difference ||
+        throw(ArgumentError("Murthy local input context $(label) local residue equation failed"))
+    residue_unit * residue_inverse == one(R) ||
+        throw(ArgumentError("Murthy local input context $(label) local residue inverse equation failed"))
+    if hasproperty(witness, :global_unit)
+        is_unit(unit) == witness.global_unit ||
+            throw(ArgumentError("Murthy local input context $(label) global unit flag is incorrect"))
+    end
+    return true
+end
+
+function _sl3_local_murthy_bezout_data(
+        R,
+        X,
+        p,
+        q,
+        p0,
+        q0,
+        degree_p,
+        degree_q,
+        bezout_witness,
+)
+    parent(X) === R ||
+        throw(ArgumentError("Murthy local input context Bezout variable must lie in the target ring"))
+    var_idx = findfirst(isequal(X), collect(gens(R)))
+    var_idx === nothing &&
+        throw(ArgumentError("Murthy local input context Bezout variable must be a ring generator"))
+
+    supplied = bezout_witness !== nothing
+    if supplied
+        bezout_witness isa NamedTuple ||
+            throw(ArgumentError("Murthy local input context Bezout witness must be a named tuple"))
+        hasproperty(bezout_witness, :p_prime) ||
+            throw(ArgumentError("Murthy local input context Bezout witness must provide p_prime"))
+        hasproperty(bezout_witness, :q_prime) ||
+            throw(ArgumentError("Murthy local input context Bezout witness must provide q_prime"))
+        p_prime = _coerce_into_ring(R, bezout_witness.p_prime, "Murthy local input context p_prime witness")
+        q_prime = _coerce_into_ring(R, bezout_witness.q_prime, "Murthy local input context q_prime witness")
+        resultant = p_prime * p - q_prime * q
+        if hasproperty(bezout_witness, :resultant)
+            supplied_resultant =
+                _coerce_into_ring(R, bezout_witness.resultant, "Murthy local input context resultant witness")
+            supplied_resultant == resultant ||
+                throw(ArgumentError("Murthy local input context Bezout equality p_prime*p - q_prime*q failed"))
+        end
+        if hasproperty(bezout_witness, :p0)
+            _coerce_into_ring(R, bezout_witness.p0, "Murthy local input context p0 witness") == p0 ||
+                throw(ArgumentError("Murthy local input context Bezout p0 witness is incorrect"))
+        end
+        if hasproperty(bezout_witness, :q0)
+            _coerce_into_ring(R, bezout_witness.q0, "Murthy local input context q0 witness") == q0 ||
+                throw(ArgumentError("Murthy local input context Bezout q0 witness is incorrect"))
+        end
+    else
+        g, a, b = gcdx(p, q)
+        g_inverse = _unit_inverse_or_nothing(g)
+        g_inverse === nothing && return nothing
+        p_prime = g_inverse * a
+        q_prime = -g_inverse * b
+        resultant = p_prime * p - q_prime * q
+        resultant == one(R) || return nothing
+    end
+
+    degree_p_prime = degree(p_prime, var_idx)
+    degree_q_prime = degree(q_prime, var_idx)
+    degree_guards_ok = degree_p_prime < degree_q && degree_q_prime < degree_p
+    if !degree_guards_ok
+        supplied &&
+            throw(ArgumentError("Murthy local input context Bezout degree guards failed"))
+        return nothing
+    end
+    if supplied && hasproperty(bezout_witness, :p_prime_degree)
+        bezout_witness.p_prime_degree == degree_p_prime ||
+            throw(ArgumentError("Murthy local input context p_prime degree witness is incorrect"))
+    end
+    if supplied && hasproperty(bezout_witness, :q_prime_degree)
+        bezout_witness.q_prime_degree == degree_q_prime ||
+            throw(ArgumentError("Murthy local input context q_prime degree witness is incorrect"))
+    end
+
+    branch_unit = q0 + _sl3_local_constant_coefficient(p_prime, var_idx, R)
+    if supplied && hasproperty(bezout_witness, :branch_unit)
+        _coerce_into_ring(R, bezout_witness.branch_unit, "Murthy local input context branch unit witness") ==
+                branch_unit ||
+            throw(ArgumentError("Murthy local input context branch unit witness is incorrect"))
+    end
+    if supplied && hasproperty(bezout_witness, :case1_entries)
+        case1_entries = bezout_witness.case1_entries
+        case1_entries isa NamedTuple ||
+            throw(ArgumentError("Murthy local input context case1_entries witness must be a named tuple"))
+        for field in (:p, :q, :r, :s)
+            hasproperty(case1_entries, field) ||
+                throw(ArgumentError("Murthy local input context case1_entries witness is missing $(field)"))
+        end
+        case1_entries.p == p + q_prime ||
+            throw(ArgumentError("Murthy local input context Case 2 reduction p entry is incorrect"))
+        case1_entries.q == q + p_prime ||
+            throw(ArgumentError("Murthy local input context Case 2 reduction q entry is incorrect"))
+        case1_entries.r == q_prime ||
+            throw(ArgumentError("Murthy local input context Case 2 reduction r entry is incorrect"))
+        case1_entries.s == p_prime ||
+            throw(ArgumentError("Murthy local input context Case 2 reduction s entry is incorrect"))
+        _sl3_local_constant_coefficient(case1_entries.q, var_idx, R) == branch_unit ||
+            throw(ArgumentError("Murthy local input context Case 2 branch constant is incorrect"))
+        det(_sl3_local_special_form_target(
+            R,
+            case1_entries.p,
+            case1_entries.q,
+            case1_entries.r,
+            case1_entries.s,
+        )) == one(R) ||
+            throw(ArgumentError("Murthy local input context Case 2 target determinant is not one"))
+    end
+
+    return (;
+        p_prime,
+        q_prime,
+        resultant,
+        degree_p_prime,
+        degree_q_prime,
+        branch_unit,
+        source = supplied ? :supplied_bezout_witness : :extracted_bezout_witness,
+    )
+end
+
+function _sl3_local_murthy_verify_split_witness(R, split_witness, expected_target=nothing)
+    split_witness === nothing && return true
+    _sl3_local_murthy_split_witness_fields_ok(split_witness) ||
+        throw(ArgumentError("Murthy local input context split witness has invalid fields"))
+    _sl3_local_murthy_split_witness_ring_ok(split_witness, R) ||
+        throw(ArgumentError("Murthy local input context split witness ring mismatch"))
+
+    replay = sl3_local_split_lemma_replay(
+        split_witness.a,
+        split_witness.a_prime,
+        split_witness.b,
+        split_witness.c,
+        split_witness.d,
+        split_witness.c1,
+        split_witness.d1,
+        split_witness.c2,
+        split_witness.d2;
+        split_id = :murthy_input_context_split,
+    )
+    if expected_target !== nothing
+        replay.original_target == expected_target ||
+            throw(ArgumentError("Murthy local input context split witness does not reconstruct the target"))
+    end
+    return true
+end
+
+function _sl3_local_murthy_split_witness_fields_ok(split_witness)
+    split_witness isa NamedTuple || return false
+    for field in (:a, :a_prime, :b, :c, :d, :c1, :d1, :c2, :d2)
+        hasproperty(split_witness, field) || return false
+    end
+    return true
+end
+
+function _sl3_local_murthy_split_witness_ring_ok(split_witness, R)
+    for field in (:a, :a_prime, :b, :c, :d, :c1, :d1, :c2, :d2)
+        parent(getproperty(split_witness, field)) === R || return false
+    end
+    return true
+end
+
+function _sl3_local_murthy_optional_bezout_field(bezout_data, field::Symbol)
+    bezout_data === nothing && return nothing
+    return getproperty(bezout_data, field)
+end
+
 function _sl3_local_split_lemma_normalize_inputs(R, values...)
     return tuple((_coerce_into_ring(R, value, "split lemma input") for value in values)...)
 end
@@ -842,6 +1406,125 @@ function verify_sl3_local_murthy_q0_nonunit_reduction(reduction)::Bool
         err isa InterruptException && rethrow()
         return false
     end
+end
+
+function _sl3_local_murthy_input_context_verification(context)
+    target = context.target
+    size_ok = nrows(target) == 3 && ncols(target) == 3
+    R = size_ok ? base_ring(target) : nothing
+    ring_ok = size_ok && context.R === R
+    ordinary_polynomial_ok = ring_ok && !_is_laurent_polynomial_ring(R)
+    entries = ordinary_polynomial_ok ? _sl3_local_target_entries(target) : nothing
+    shape_ok = entries !== nothing
+    entries_ok = shape_ok && context.entries == entries
+
+    variable_parent_ok = ordinary_polynomial_ok && parent(context.X) === R
+    expected_var_idx =
+        variable_parent_ok ? findfirst(isequal(context.X), collect(gens(R))) : nothing
+    variable_ok = expected_var_idx !== nothing && context.var_idx == expected_var_idx
+
+    determinant_ok = false
+    degree_ok = false
+    constants_ok = false
+    monic_ok = false
+    global_units_ok = false
+    local_unit_witnesses_ok = context.local_unit_witnesses isa NamedTuple
+    local_units_ok = false
+    split_witness_ok = false
+    bezout_witness_ok = false
+    required_evidence_ok = false
+    target_replay_ok = false
+    if shape_ok && entries_ok && variable_ok && local_unit_witnesses_ok
+        p = entries.p
+        q = entries.q
+        r = entries.r
+        s = entries.s
+        determinant = det(target)
+        degree_p = degree(p, expected_var_idx)
+        degree_q = degree(q, expected_var_idx)
+        p0 = _sl3_local_constant_coefficient(p, expected_var_idx, R)
+        q0 = _sl3_local_constant_coefficient(q, expected_var_idx, R)
+        p_monic = _is_monic_in_variable(p, expected_var_idx, R)
+        bezout_data = _sl3_local_murthy_bezout_data(
+            R,
+            context.X,
+            p,
+            q,
+            p0,
+            q0,
+            degree_p,
+            degree_q,
+            context.bezout_witness,
+        )
+        expected_global_units = _sl3_local_murthy_global_units(
+            p,
+            q,
+            r,
+            s,
+            p0,
+            q0;
+            resultant = _sl3_local_murthy_optional_bezout_field(bezout_data, :resultant),
+            branch_unit = _sl3_local_murthy_optional_bezout_field(bezout_data, :branch_unit),
+        )
+        expected_local_units = _sl3_local_murthy_local_units(
+            R,
+            context.X,
+            p,
+            q,
+            p0,
+            q0,
+            degree_p,
+            degree_q,
+            context.local_unit_witnesses,
+            context.bezout_witness,
+        )
+
+        determinant_ok = determinant == one(R) && context.determinant == determinant
+        degree_ok = context.degree_p == degree_p && context.degree_q == degree_q
+        constants_ok = context.p0 == p0 && context.q0 == q0
+        monic_ok = context.p_monic == p_monic && p_monic
+        global_units_ok = context.global_units == expected_global_units
+        local_units_ok = context.local_units == expected_local_units
+        split_witness_ok = _sl3_local_murthy_verify_split_witness(R, context.split_witness)
+        bezout_witness_ok = context.bezout_witness === nothing || bezout_data !== nothing
+        required_evidence_ok = _sl3_local_murthy_validate_required_local_evidence(
+            R,
+            degree_p,
+            degree_q,
+            q0,
+            expected_global_units,
+            expected_local_units,
+            context.bezout_witness,
+        )
+        target_replay_ok = _sl3_local_special_form_target(R, p, q, r, s) == target
+    end
+
+    overall_ok = size_ok && ring_ok && ordinary_polynomial_ok && shape_ok &&
+        entries_ok && variable_parent_ok && variable_ok && determinant_ok &&
+        degree_ok && constants_ok && monic_ok && global_units_ok &&
+        local_unit_witnesses_ok && local_units_ok && split_witness_ok &&
+        bezout_witness_ok && required_evidence_ok && target_replay_ok
+    return (;
+        overall_ok,
+        size_ok,
+        ring_ok,
+        ordinary_polynomial_ok,
+        shape_ok,
+        entries_ok,
+        variable_parent_ok,
+        variable_ok,
+        determinant_ok,
+        degree_ok,
+        constants_ok,
+        monic_ok,
+        global_units_ok,
+        local_unit_witnesses_ok,
+        local_units_ok,
+        split_witness_ok,
+        bezout_witness_ok,
+        required_evidence_ok,
+        target_replay_ok,
+    )
 end
 
 function _sl3_local_q_degree_normalization_verification(record)
