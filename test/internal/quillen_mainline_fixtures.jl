@@ -101,6 +101,7 @@ end
 
 function _qml_assert_denominator_cover(entry, R)
     denominator_cover = _qml_field(entry, :denominator_cover)
+    raw_denominator_provenance = _qml_field(entry, :raw_denominator_provenance)
     for field in (:denominators, :multipliers, :coverage_terms, :coverage_sum)
         _qml_field(denominator_cover, field)
     end
@@ -115,9 +116,27 @@ function _qml_assert_denominator_cover(entry, R)
     !isempty(denominators) ||
         throw(ArgumentError("mainline fixture $(entry.id) denominator cover must not be empty"))
 
-    for term in coverage_terms
+    for denominator in denominators
+        parent(denominator) == R ||
+            throw(ArgumentError("mainline fixture $(entry.id) denominator cover denominator has wrong parent ring"))
+    end
+    for multiplier in multipliers
+        parent(multiplier) == R ||
+            throw(ArgumentError("mainline fixture $(entry.id) denominator cover multiplier has wrong parent ring"))
+    end
+
+    for idx in eachindex(coverage_terms)
+        term = coverage_terms[idx]
         _qml_field(term, :denominator)
         _qml_field(term, :multiplier)
+        term.denominator == denominators[idx] ||
+            throw(ArgumentError("mainline fixture $(entry.id) denominator cover denominator does not match the explicit tuple entry"))
+        term.multiplier == multipliers[idx] ||
+            throw(ArgumentError("mainline fixture $(entry.id) denominator cover multiplier does not match the explicit tuple entry"))
+        if hasproperty(term, :term)
+            term.term == multipliers[idx] * denominators[idx] ||
+                throw(ArgumentError("mainline fixture $(entry.id) denominator cover term does not replay"))
+        end
         parent(term.denominator) == R ||
             throw(ArgumentError("mainline fixture $(entry.id) denominator cover denominator has wrong parent ring"))
         parent(term.multiplier) == R ||
@@ -132,6 +151,12 @@ function _qml_assert_denominator_cover(entry, R)
         throw(ArgumentError("mainline fixture $(entry.id) denominator cover sum does not replay"))
     denominator_cover.coverage_sum == one(R) ||
         throw(ArgumentError("mainline fixture $(entry.id) denominator cover must sum to one"))
+    any(
+        idx -> denominators[idx] == raw_denominator_provenance.denominator &&
+            multipliers[idx] == raw_denominator_provenance.coverage_multiplier,
+        eachindex(denominators),
+    ) ||
+        throw(ArgumentError("mainline fixture $(entry.id) raw denominator provenance must match a denominator cover pair"))
     return true
 end
 
@@ -249,6 +274,9 @@ function validate_quillen_mainline_fixture_catalog(catalog)
     control_ids = [entry.id for entry in catalog.negative_controls]
     length(control_ids) == length(unique(control_ids)) ||
         throw(ArgumentError("catalog negative control ids must be unique"))
+    combined_ids = vcat(case_ids, control_ids)
+    length(combined_ids) == length(unique(combined_ids)) ||
+        throw(ArgumentError("catalog case and negative control ids must be globally unique"))
 
     for entry in catalog.cases
         validate_quillen_mainline_fixture(entry)
