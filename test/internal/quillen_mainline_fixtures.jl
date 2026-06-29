@@ -15,9 +15,6 @@ const REQUIRED_QUILLEN_MAINLINE_NEGATIVE_IDS = Set([
 ])
 const PARK_WOODBURN_SECTION_3_REF = "refs/arXiv-alg-geom9405003v1 Section 3"
 const QUILLEN_PATCH_CATALOG_PATH = joinpath(@__DIR__, "..", "fixtures", "quillen_patch_cases.jl")
-const ALLOWED_PATCH_SOURCE_SYMBOLS = Set([
-    :quillen_patch_cases,
-])
 const ALLOWED_LOCAL_EVIDENCE_SEQUENCE_STATUS = Set([
     :recorded,
     :placeholder_for_issue_214,
@@ -44,8 +41,29 @@ function _qml_require_matrix_over(matrix_value, R, n::Int, label)
     return true
 end
 
+function _qml_quillen_patch_cases_by_id()
+    isfile(QUILLEN_PATCH_CATALOG_PATH) ||
+        throw(ArgumentError("mainline fixture validation requires the quillen patch catalog at $(QUILLEN_PATCH_CATALOG_PATH)"))
+    if !isdefined(Main, :QuillenPatchFixtureCatalog)
+        include(QUILLEN_PATCH_CATALOG_PATH)
+    end
+    return Main.QuillenPatchFixtureCatalog.cases_by_id()
+end
+
 function _qml_assert_patch_case(entry)
     patch_case = _qml_field(entry, :patch_case)
+    source_patch_catalog = _qml_field(entry, :source_patch_catalog)
+    source_patch_case_id = _qml_field(entry, :source_patch_case_id)
+    source_patch_catalog == :quillen_patch_cases ||
+        throw(ArgumentError("mainline fixture $(entry.id) source_patch_catalog must be :quillen_patch_cases"))
+    source_patch_case_id isa AbstractString ||
+        throw(ArgumentError("mainline fixture $(entry.id) source_patch_case_id must be a string"))
+    source_patch_case_id == entry.id ||
+        throw(ArgumentError("mainline fixture $(entry.id) source_patch_case_id must match the wrapper id"))
+
+    source_entries = _qml_quillen_patch_cases_by_id()
+    haskey(source_entries, source_patch_case_id) ||
+        throw(ArgumentError("mainline fixture $(entry.id) source patch case id must exist in the #99 catalog"))
     for field in (
         :id,
         :kind,
@@ -64,25 +82,12 @@ function _qml_assert_patch_case(entry)
     )
         _qml_field(patch_case, field)
     end
+    patch_case == source_entries[source_patch_case_id] ||
+        throw(ArgumentError("mainline fixture $(entry.id) patch_case must match the referenced #99 entry"))
 
     patch_case.id == entry.id ||
-        throw(ArgumentError("mainline fixture $(entry.id) patch_case id must match the wrapper id"))
+        throw(ArgumentError("mainline fixture $(entry.id) patch_case id must match wrapper id"))
     return patch_case
-end
-
-function _qml_assert_patch_source_metadata(entry, patch_case)
-    source_patch_catalog = _qml_field(entry, :source_patch_catalog)
-    source_patch_case_id = _qml_field(entry, :source_patch_case_id)
-
-    source_patch_catalog in ALLOWED_PATCH_SOURCE_SYMBOLS ||
-        throw(ArgumentError("mainline fixture $(entry.id) source_patch_catalog must point to quillen_patch_cases"))
-    isfile(QUILLEN_PATCH_CATALOG_PATH) ||
-        throw(ArgumentError("mainline fixture $(entry.id) must reference an existing quillen patch catalog file"))
-    source_patch_case_id == entry.id ||
-        throw(ArgumentError("mainline fixture $(entry.id) source_patch_case_id must match the wrapper id"))
-    source_patch_case_id == patch_case.id ||
-        throw(ArgumentError("mainline fixture $(entry.id) source_patch_case_id must match patch_case.id"))
-    return true
 end
 
 function _qml_assert_ring_metadata(entry, patch_case)
@@ -338,17 +343,18 @@ function _qml_assert_consumer_ids(entry)
     return true
 end
 
-function validate_quillen_mainline_fixture(entry)
+function validate_quillen_mainline_fixture(entry; require_positive_metadata::Bool = true)
     patch_case = _qml_assert_patch_case(entry)
-    _qml_assert_patch_source_metadata(entry, patch_case)
     R, n = _qml_assert_ring_metadata(entry, patch_case)
     _qml_assert_denominator_cover(entry, R)
     _qml_assert_raw_denominator_provenance(entry, R)
     _qml_assert_local_evidence(entry, patch_case, R, n)
     _qml_assert_patched_chain(entry, patch_case, R, n)
     _qml_assert_base_term_evidence(entry)
-    _qml_assert_source_refs(entry)
-    _qml_assert_consumer_ids(entry)
+    if require_positive_metadata
+        _qml_assert_source_refs(entry)
+        _qml_assert_consumer_ids(entry)
+    end
     return true
 end
 
@@ -374,7 +380,7 @@ function validate_quillen_mainline_fixture_catalog(catalog)
         throw(ArgumentError("catalog must contain negative controls"))
     for entry in catalog.negative_controls
         try
-            validate_quillen_mainline_fixture(entry)
+            validate_quillen_mainline_fixture(entry; require_positive_metadata = false)
         catch err
             err isa ArgumentError || rethrow()
             continue
