@@ -134,6 +134,8 @@ function _qml_assert_ring_metadata(entry, patch_case)
     _qml_require_matrix_over(_qml_field(entry, :expected_global_product), R, size, "expected global product")
     patch_case.target_matrix == entry.expected_global_product ||
         throw(ArgumentError("mainline fixture $(entry.id) expected global product must match the reused patch target matrix"))
+    det(entry.expected_global_product) == one(R) ||
+        throw(ArgumentError("mainline fixture $(entry.id) expected global product must have determinant one"))
 
     return R, size
 end
@@ -262,6 +264,8 @@ function _qml_assert_local_evidence(entry, patch_case, R, n::Int)
         throw(ArgumentError("mainline fixture $(entry.id) local evidence factors do not replay"))
     local_evidence.expected_product == patch_case.expected.global_correction ||
         throw(ArgumentError("mainline fixture $(entry.id) local evidence must match the patch-case global correction"))
+    local_evidence.expected_product == entry.expected_global_product ||
+        throw(ArgumentError("mainline fixture $(entry.id) local evidence must match the expected global product"))
     return true
 end
 
@@ -293,12 +297,26 @@ function _qml_assert_patched_chain(entry, patch_case, R, n::Int)
     parent(patched_chain.final_variable) == R ||
         throw(ArgumentError("mainline fixture $(entry.id) patched substitution chain final_variable must be in the fixture ring"))
 
+    coverage_terms = _qml_field(_qml_field(entry, :denominator_cover), :coverage_terms)
+    coverage_terms isa Tuple ||
+        throw(ArgumentError("mainline fixture $(entry.id) patched substitution chain requires tuple denominator-cover terms"))
+    length(patched_chain.steps) == length(coverage_terms) ||
+        throw(ArgumentError("mainline fixture $(entry.id) patched substitution chain steps must align with denominator-cover terms"))
+
     expected_chain_var = patched_chain.start
     powered_cover_sum = zero(R)
-    for step in patched_chain.steps
+    for (idx, step) in enumerate(patched_chain.steps)
         for field in (:input, :denominator, :exponent_l, :multiplier, :output)
             _qml_field(step, field)
         end
+        cover_term = coverage_terms[idx]
+        for field in (:denominator, :multiplier)
+            _qml_field(cover_term, field)
+        end
+        step.denominator == cover_term.denominator ||
+            throw(ArgumentError("mainline fixture $(entry.id) patched substitution chain denominator must match the denominator-cover term"))
+        step.multiplier == cover_term.multiplier ||
+            throw(ArgumentError("mainline fixture $(entry.id) patched substitution chain multiplier must match the denominator-cover term"))
         step.input == expected_chain_var ||
             throw(ArgumentError("mainline fixture $(entry.id) patched substitution chain steps must be sequentially linked"))
         parent(step.denominator) == R ||
