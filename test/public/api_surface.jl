@@ -29,6 +29,9 @@ using Oscar
     @test isdefined(Suslin, :verify_laurent_gl_normalization)
     @test isdefined(Suslin, :verify_laurent_normalization)
     @test isdefined(Suslin, :verify_factorization)
+    @test isdefined(Suslin, :ConjugatedElementaryNormalityCertificate)
+    @test isdefined(Suslin, :realize_conjugate_elementary_certificate)
+    @test isdefined(Suslin, :verify_conjugate_elementary_certificate)
     @test isdefined(Suslin, :SL3LocalObligation)
     @test isdefined(Suslin, :SLNToSL3Reduction)
     @test isdefined(Suslin, :SL3LocalReductionDiagnostic)
@@ -71,6 +74,9 @@ using Oscar
     @test Suslin.verify_laurent_gl_normalization === verify_laurent_gl_normalization
     @test Suslin.verify_laurent_normalization === verify_laurent_normalization
     @test Suslin.verify_factorization === verify_factorization
+    @test Suslin.ConjugatedElementaryNormalityCertificate === ConjugatedElementaryNormalityCertificate
+    @test Suslin.realize_conjugate_elementary_certificate === realize_conjugate_elementary_certificate
+    @test Suslin.verify_conjugate_elementary_certificate === verify_conjugate_elementary_certificate
     @test Suslin.SL3LocalObligation === SL3LocalObligation
     @test Suslin.SLNToSL3Reduction === SLNToSL3Reduction
     @test Suslin.SL3LocalReductionDiagnostic === SL3LocalReductionDiagnostic
