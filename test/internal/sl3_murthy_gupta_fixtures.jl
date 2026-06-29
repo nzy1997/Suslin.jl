@@ -319,9 +319,9 @@ function _sl3_mg_assert_q0_unit_witness(entry, witness)
     normalized_s = _sl3_mg_field(witness, :normalized_s)
     split = _sl3_mg_field(witness, :split)
 
-    p0 == _sl3_mg_constant_coefficient(p) ||
+    p0 == _sl3_mg_constant_in_variable(p, entry.variable) ||
         throw(ArgumentError("fixture $(entry.id) q0-unit p(0) witness is incorrect"))
-    q0 == _sl3_mg_constant_coefficient(q) ||
+    q0 == _sl3_mg_constant_in_variable(q, entry.variable) ||
         throw(ArgumentError("fixture $(entry.id) q0-unit q(0) witness is incorrect"))
     q0 * q0_inverse == one(R) ||
         throw(ArgumentError("fixture $(entry.id) q0-unit q(0) inverse witness is incorrect"))
@@ -333,7 +333,7 @@ function _sl3_mg_assert_q0_unit_witness(entry, witness)
         throw(ArgumentError("fixture $(entry.id) q0-unit normalized_r inconsistent"))
     normalized_s == s ||
         throw(ArgumentError("fixture $(entry.id) q0-unit normalized_s inconsistent"))
-    _sl3_mg_constant_coefficient(normalized_p) == zero(R) ||
+    _sl3_mg_constant_in_variable(normalized_p, entry.variable) == zero(R) ||
         throw(ArgumentError("fixture $(entry.id) q0-unit normalization did not make p(0) zero"))
     target = _sl3_mg_target(entry)
     normalized_target = _sl3_mg_matrix(R, normalized_p, q, normalized_r, normalized_s)
@@ -585,6 +585,62 @@ end
         ),
     )
     @test_throws ArgumentError validate_sl3_murthy_gupta_fixture(q0_unit_bad)
+
+    RU, (u, X) = Oscar.polynomial_ring(QQ, ["u", "X"])
+    synthetic_q0_unit = (;
+        id = "synthetic-q0-unit-selected-variable",
+        branch = :q0_unit_recursion,
+        ring_constructor = (;
+            function_name = :polynomial_ring,
+            coefficient = "QQ",
+            variables = ("u", "X"),
+        ),
+        ring = (;
+            description = "QQ[u, X]",
+            object = RU,
+            generator_names = ("u", "X"),
+            generators = (u, X),
+        ),
+        variable = X,
+        entries = (;
+            p = X + u,
+            q = RU(2),
+            r = (X + u - one(RU)) * inv(RU(2)),
+            s = one(RU),
+        ),
+        target = _sl3_mg_matrix(
+            RU,
+            X + u,
+            RU(2),
+            (X + u - one(RU)) * inv(RU(2)),
+            one(RU),
+        ),
+        murthy_path = true,
+        expected_current_solver = (; status = :passes),
+        witnesses = ((
+            p0 = u,
+            q0 = RU(2),
+            q0_inverse = inv(RU(2)),
+            right_e21_coefficient = -inv(RU(2)) * u,
+            normalized_p = X,
+            normalized_r = (X - one(RU)) * inv(RU(2)),
+            normalized_s = one(RU),
+            split = (;
+                a = X,
+                a_prime = one(RU),
+                b = RU(2),
+                c = (X - one(RU)) * inv(RU(2)),
+                c1 = (X - one(RU)) * inv(RU(2)),
+                c2 = zero(RU),
+                d1 = one(RU),
+                d2 = one(RU),
+                d = one(RU),
+            ),
+        ),),
+        source_refs = ("synthetic regression",),
+        consumer_issue_ids = ("#206",),
+    )
+    @test validate_sl3_murthy_gupta_fixture(synthetic_q0_unit)
 
     bezout_entry = by_id["mg-q0-nonunit-normalized-bezout-resultant"]
     bezout_witness = first(bezout_entry.witnesses)
