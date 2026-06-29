@@ -150,6 +150,14 @@ end
         "unsupported local-unit denominator witness",
         sprint(showerror, unsupported_denominator_err),
     )
+    unsupported_route_err = _captured_error(
+        () -> Suslin.realize_sl3_local_certificate(multi_generator_context),
+    )
+    @test unsupported_route_err isa ArgumentError
+    @test occursin(
+        "unsupported local-unit denominator witness",
+        sprint(showerror, unsupported_route_err),
+    )
 
     missing_local_witness_err = _captured_error(() -> Suslin.sl3_local_murthy_input_context(
         local_q0_unit.target,

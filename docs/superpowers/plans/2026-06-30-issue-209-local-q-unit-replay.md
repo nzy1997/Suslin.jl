@@ -37,7 +37,7 @@
 - Consumes: `SL3LocalMurthyInputContext`, `verify_sl3_local_murthy_input_context`, existing `sl3_local_q_degree_normalization(p, q, r, s, X)`.
 - Produces: `sl3_local_q_degree_normalization(context::SL3LocalMurthyInputContext)` and `sl3_local_q_degree_normalization_certificate(context::SL3LocalMurthyInputContext)`.
 
-- [ ] **Step 1: Write the failing local q-degree context test**
+- [x] **Step 1: Write the failing local q-degree context test**
 
 Add this block to `test/expert/sl3_local_q_degree_normalization.jl` inside the existing testset after the ordinary fixture certificate checks:
 
@@ -78,7 +78,7 @@ Add this guard check near the q-degree negative controls:
     @test_throws ArgumentError Suslin.sl3_local_q_degree_normalization(local_q0_context)
 ```
 
-- [ ] **Step 2: Run the focused q-degree test and verify RED**
+- [x] **Step 2: Run the focused q-degree test and verify RED**
 
 Run:
 
@@ -88,7 +88,7 @@ julia --project=. -e 'include("test/expert/sl3_local_q_degree_normalization.jl")
 
 Expected before implementation: failure with no method matching `sl3_local_q_degree_normalization(::SL3LocalMurthyInputContext)`.
 
-- [ ] **Step 3: Add the q-degree context implementation**
+- [x] **Step 3: Add the q-degree context implementation**
 
 Add these methods near the existing q-degree helper methods in `src/algorithm/sl3_local.jl`:
 
@@ -114,7 +114,7 @@ function sl3_local_q_degree_normalization_certificate(context::SL3LocalMurthyInp
 end
 ```
 
-- [ ] **Step 4: Run the focused q-degree test and verify GREEN**
+- [x] **Step 4: Run the focused q-degree test and verify GREEN**
 
 Run:
 
@@ -124,7 +124,7 @@ julia --project=. -e 'include("test/expert/sl3_local_q_degree_normalization.jl")
 
 Expected after implementation: all tests pass.
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
 Run:
 
@@ -143,7 +143,7 @@ git commit -m "feat: route q-degree normalization through Murthy context"
 - Consumes: Task 1 context dispatch, #208 local-unit witnesses, #207 local elementary factor replay, existing ordinary q(0)-unit certificate.
 - Produces: `SL3LocalMurthyQUnitLocalReduction`, `realize_sl3_local_certificate(context::SL3LocalMurthyInputContext)`, and local q(0)-unit `:murthy_q0_unit` certificates whose factors are `SL3LocalElementaryFactor` records.
 
-- [ ] **Step 1: Write the failing local q(0)-unit replay test**
+- [x] **Step 1: Write the failing local q(0)-unit replay test**
 
 Add helper assertions to `test/expert/sl3_local_murthy_q_unit.jl`:
 
@@ -181,7 +181,7 @@ Add this local-contract case after the ordinary q0-unit fixture assertions:
     @test local_cert.target == local_fixture.target
 ```
 
-- [ ] **Step 2: Run the focused q0-unit test and verify RED**
+- [x] **Step 2: Run the focused q0-unit test and verify RED**
 
 Run:
 
@@ -191,7 +191,7 @@ julia --project=. -e 'include("test/expert/sl3_local_murthy_q_unit.jl")'
 
 Expected before implementation: failure because `realize_sl3_local_certificate(::SL3LocalMurthyInputContext)` and `SL3LocalMurthyQUnitLocalReduction` do not exist.
 
-- [ ] **Step 3: Add the local reduction type and context route**
+- [x] **Step 3: Add the local reduction type and context route**
 
 Add `SL3LocalMurthyQUnitLocalReduction` near `SL3LocalMurthyQUnitReduction`:
 
@@ -232,7 +232,7 @@ function realize_sl3_local_certificate(context::SL3LocalMurthyInputContext)
 end
 ```
 
-- [ ] **Step 4: Add fraction-field translation helpers and local certificate construction**
+- [x] **Step 4: Add fraction-field translation helpers and local certificate construction**
 
 Implement helpers in `src/algorithm/sl3_local.jl`:
 
@@ -271,7 +271,7 @@ localization used by #206 first. If the context has no q0 local-unit witness,
 or has multiple maximal-ideal generators, throw `ArgumentError` with a message
 containing `unsupported local-unit denominator witness`.
 
-- [ ] **Step 5: Teach certificate verification about local q0 reductions**
+- [x] **Step 5: Teach certificate verification about local q0 reductions**
 
 Add a specific method:
 
@@ -296,7 +296,7 @@ Update `_sl3_local_realization_verification` so the final factor check uses
 `verify_sl3_local_elementary_factor_replay(reduction.local_factor_replay)` for
 local q0 reductions and keeps `verify_factorization` for every existing branch.
 
-- [ ] **Step 6: Run the focused q0-unit test and verify GREEN**
+- [x] **Step 6: Run the focused q0-unit test and verify GREEN**
 
 Run:
 
@@ -306,7 +306,7 @@ julia --project=. -e 'include("test/expert/sl3_local_murthy_q_unit.jl")'
 
 Expected after implementation: all tests pass.
 
-- [ ] **Step 7: Commit Task 2**
+- [x] **Step 7: Commit Task 2**
 
 Run:
 
@@ -326,7 +326,7 @@ git commit -m "feat: replay local Murthy q0-unit certificates"
 - Consumes: Task 2 local reduction verifier.
 - Produces: focused corruption coverage for `q0_inverse`, right `E21` coefficient, source split child, and local factor replay.
 
-- [ ] **Step 1: Add q0-unit local negative controls**
+- [x] **Step 1: Add q0-unit local negative controls**
 
 In `test/expert/sl3_local_murthy_q_unit.jl`, after the local positive case,
 construct corrupted reductions and certificates:
@@ -373,7 +373,7 @@ construct corrupted reductions and certificates:
 Also corrupt one local factor in `local_factor_replay.factors` and assert the
 reduction verifier and certificate verifier both return `false`.
 
-- [ ] **Step 2: Add source split child corruption coverage**
+- [x] **Step 2: Add source split child corruption coverage**
 
 Build a copy of `local_reduction.split_certificate.witness.first_child_certificate`
 with a mismatched target and rewrap it in a copied split certificate. Rebuild
@@ -383,7 +383,7 @@ the local reduction with that split certificate and assert:
 @test !Suslin.verify_sl3_local_murthy_q_unit_reduction(bad_split_reduction)
 ```
 
-- [ ] **Step 3: Add context route smoke tests**
+- [x] **Step 3: Add context route smoke tests**
 
 In `test/expert/sl3_local_murthy_context.jl`, after the local q0 context
 positive assertions, add:
@@ -400,7 +400,7 @@ For the local q0-nonunit context already built in that file, add:
     @test_throws ArgumentError Suslin.realize_sl3_local_certificate(bezout_context)
 ```
 
-- [ ] **Step 4: Run focused tests**
+- [x] **Step 4: Run focused tests**
 
 Run:
 
@@ -412,7 +412,7 @@ julia --project=. -e 'include("test/expert/sl3_local_murthy_context.jl")'
 
 Expected: all commands pass.
 
-- [ ] **Step 5: Run package tests**
+- [x] **Step 5: Run package tests**
 
 Run:
 
@@ -422,7 +422,7 @@ julia --project=. -e 'using Pkg; Pkg.test()'
 
 Expected: default package tests pass.
 
-- [ ] **Step 6: Commit Task 3**
+- [x] **Step 6: Commit Task 3**
 
 Run:
 
