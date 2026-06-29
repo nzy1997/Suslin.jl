@@ -13,6 +13,20 @@ const DEFAULT_EXERCISED_CASE_IDS =
 const DEFAULT_REPORT_PATH =
     joinpath(@__DIR__, "..", "docs", "audits", "2026-06-24-toricbuilder-cache-q-block-status.md")
 const SOURCE_FIXTURE = "test/fixtures/toricbuilder_cache_q_blocks.jl"
+const TORICBUILDER_SOURCE_MONOMIALS = Dict(
+    "case_001" => ("x*y", "x*y"),
+    "case_002" => ("x^-1*y", "x*y"),
+    "case_003" => ("x^2", "x^2"),
+    "case_004" => ("x^-1", "y^-1"),
+    "case_005" => ("x*y", "x*y^-1"),
+    "case_006" => ("x^-1", "x^3*y^2"),
+    "case_007" => ("y^-2", "x^-2"),
+    "case_008" => ("y^-2", "x^2"),
+    "case_009" => ("x^-1*y", "x^-1*y^-1"),
+    "case_010" => ("x^-2*y^-1", "x^2*y"),
+    "case_011" => ("x^-1*y^3", "x^3*y^-1"),
+    "case_012" => ("x^-2", "x^-2*y^2"),
+)
 
 function _symbol_text(value)
     text = string(value)
@@ -26,6 +40,33 @@ end
 function _runtime_text(value)
     value isa Number && return @sprintf("%.3f", value)
     return _symbol_text(value)
+end
+
+function _toricbuilder_source_monomials(case_id::AbstractString)
+    return get(TORICBUILDER_SOURCE_MONOMIALS, String(case_id), ("not_run", "not_run"))
+end
+
+function _row_source_metadata(entry)
+    a, b = _toricbuilder_source_monomials(entry.id)
+    return (; toricbuilder_a = a, toricbuilder_b = b)
+end
+
+function _not_run_factor_metrics()
+    return (;
+        factor_max_monomial_degree = :not_run,
+        factor_total_offdiagonal_monomials = :not_run,
+    )
+end
+
+function _elementary_factor_metrics(factors)
+    return (;
+        factor_max_monomial_degree = max_elementary_factor_monomial_degree(factors),
+        factor_total_offdiagonal_monomials = total_elementary_factor_offdiagonal_monomials(factors),
+    )
+end
+
+function _combined_status_text(row)
+    return string(_symbol_text(row.route_status), " / ", _symbol_text(row.public_elementary_status))
 end
 
 function _elapsed_seconds(start_ns::UInt64)
@@ -415,7 +456,7 @@ function _pending_row(entry)
         error_details = "not_run",
         evidence = "Fixture recorded; full Suslin route audit not exercised in the default report run.",
         stage_timings = _not_run_stage_timings(),
-    ), _row_route_metadata(;
+    ), _row_source_metadata(entry), _not_run_factor_metrics(), _row_route_metadata(;
         determinant_strategy = :not_run,
         correction_side = :not_run,
         determinant_source = :not_run,
@@ -461,7 +502,7 @@ function _stage_failure_row(
         error_details = result.error_details,
         evidence = "Bounded certificate route stopped at $(result.status) during $(_stage_failure_stage(timings, result.status)); see Route Error Details.",
         stage_timings = _stage_timings_from_dict(timings),
-    ), _row_route_metadata(; determinant_strategy, correction_side, determinant_source))
+    ), _row_source_metadata(entry), _not_run_factor_metrics(), _row_route_metadata(; determinant_strategy, correction_side, determinant_source))
 end
 
 function _lazy_gl_certificate_with_progress(
@@ -551,6 +592,7 @@ function _exercised_row(entry; determinant_strategy = :eager, correction_side = 
                 determinant_source = certificate.determinant_source,
             )
         verified = verification_result.value
+        factor_metrics = _elementary_factor_metrics(certificate.elementary_factors)
         return merge((;
             case_id = entry.id,
             matrix_size = entry.dimensions.matrix,
@@ -569,7 +611,7 @@ function _exercised_row(entry; determinant_strategy = :eager, correction_side = 
             error_details = "none",
             evidence = "Lazy deferred determinant route exercised with $(correction_side) correction; deferred determinant source is $(certificate.determinant_source).",
             stage_timings = _stage_timings_from_dict(stage_timings),
-        ), _row_route_metadata(;
+        ), _row_source_metadata(entry), factor_metrics, _row_route_metadata(;
             determinant_strategy = :lazy,
             correction_side,
             determinant_source = certificate.determinant_source,
@@ -640,6 +682,7 @@ function _exercised_row(entry; determinant_strategy = :eager, correction_side = 
                 determinant_source = :not_run,
             )
         verified = verification_result.value
+        factor_metrics = _elementary_factor_metrics(certificate.core_factors)
         return merge((;
             case_id = entry.id,
             matrix_size = entry.dimensions.matrix,
@@ -658,7 +701,7 @@ function _exercised_row(entry; determinant_strategy = :eager, correction_side = 
             error_details = "none",
             evidence = "normalize_laurent_gl_matrix and laurent_gl_factorization_certificate exercised; normalized determinant is $(det(normalization.normalized_matrix)).",
             stage_timings = _stage_timings_from_dict(stage_timings),
-        ), _row_route_metadata(;
+        ), _row_source_metadata(entry), factor_metrics, _row_route_metadata(;
             determinant_strategy = :eager,
             correction_side = :not_run,
             determinant_source = :not_run,
@@ -684,7 +727,7 @@ function _exercised_row(entry; determinant_strategy = :eager, correction_side = 
             error_details,
             evidence = "Route probe failed; see Route Error Details.",
             stage_timings = _stage_timings_from_dict(stage_timings),
-        ), _row_route_metadata(;
+        ), _row_source_metadata(entry), _not_run_factor_metrics(), _row_route_metadata(;
             determinant_strategy = :eager,
             correction_side = :not_run,
             determinant_source = :not_run,
@@ -775,6 +818,7 @@ function _worker_exercised_row(
             )
         verified = verification_result.value
 
+        factor_metrics = _elementary_factor_metrics(certificate.elementary_factors)
         return merge((;
             case_id = entry.id,
             matrix_size = entry.dimensions.matrix,
@@ -793,7 +837,7 @@ function _worker_exercised_row(
             error_details = "none",
             evidence = "Bounded lazy certificate route exercised with $(correction_side) correction; deferred determinant source is $(certificate.determinant_source).",
             stage_timings = _stage_timings_from_dict(timings),
-        ), _row_route_metadata(;
+        ), _row_source_metadata(entry), factor_metrics, _row_route_metadata(;
             determinant_strategy = :lazy,
             correction_side,
             determinant_source = certificate.determinant_source,
@@ -882,6 +926,7 @@ function _worker_exercised_row(
         )
     verified = verification_result.value
 
+    factor_metrics = _elementary_factor_metrics(certificate.core_factors)
     return merge((;
         case_id = entry.id,
         matrix_size = entry.dimensions.matrix,
@@ -900,7 +945,7 @@ function _worker_exercised_row(
         error_details = "none",
         evidence = "Bounded certificate route exercised; normalized determinant is $(det(normalization.normalized_matrix)).",
         stage_timings = _stage_timings_from_dict(timings),
-    ), _row_route_metadata(;
+    ), _row_source_metadata(entry), factor_metrics, _row_route_metadata(;
         determinant_strategy = :eager,
         correction_side = :not_run,
         determinant_source = :not_run,
@@ -996,7 +1041,7 @@ function _timed_out_row(entry, timeout_seconds, runtime_seconds, progress; clean
         error_details = row_error_details,
         evidence,
         stage_timings = _stage_timings_from_dict(timings),
-    ), _row_route_metadata(;
+    ), _row_source_metadata(entry), _not_run_factor_metrics(), _row_route_metadata(;
         determinant_strategy = hasproperty(progress, :determinant_strategy) ? progress.determinant_strategy : :eager,
         correction_side = hasproperty(progress, :correction_side) ? progress.correction_side : :not_run,
         determinant_source = hasproperty(progress, :determinant_source) ? progress.determinant_source : :not_run,
@@ -1071,7 +1116,7 @@ function _worker_route_error_row(
         error_details,
         evidence = "Bounded worker exited before producing a report row.",
         stage_timings = _stage_timings_from_dict(timings),
-    ), _row_route_metadata(;
+    ), _row_source_metadata(entry), _not_run_factor_metrics(), _row_route_metadata(;
         determinant_strategy = route_determinant_strategy,
         correction_side = route_correction_side,
         determinant_source = route_determinant_source,
@@ -1255,15 +1300,17 @@ function render_markdown(report)
     println(io)
     println(io, "## Case Table")
     println(io)
-    println(io, "| Case | Matrix size | Sparse nnz | Test level | Route status | Public elementary status | Determinant class | Decomposed base matrices | Runtime seconds |")
-    println(io, "| --- | ---: | ---: | --- | --- | --- | --- | ---: | ---: |")
+    println(io, "| Case | ToricBuilder a | ToricBuilder b | Matrix size | Sparse nnz | Test level | Status | Decomposed base matrices | Runtime seconds | Determinant | Max factor monomial degree | Total factor offdiag monomials |")
+    println(io, "| --- | --- | --- | ---: | ---: | --- | --- | ---: | ---: | --- | ---: | ---: |")
     for row in report.rows
         println(
             io,
-            "| $(row.case_id) | $(_size_text(row.matrix_size)) | $(row.sparse_entry_count) | " *
-            "$(_symbol_text(row.expected_test_level)) | $(_symbol_text(row.route_status)) | " *
-            "$(_symbol_text(row.public_elementary_status)) | $(_symbol_text(row.determinant_class)) | " *
-            "$(_symbol_text(row.decomposed_base_matrix_count)) | $(_runtime_text(row.runtime_seconds)) |",
+            "| $(row.case_id) | $(row.toricbuilder_a) | $(row.toricbuilder_b) | " *
+            "$(_size_text(row.matrix_size)) | $(row.sparse_entry_count) | " *
+            "$(_symbol_text(row.expected_test_level)) | $(_combined_status_text(row)) | " *
+            "$(_symbol_text(row.decomposed_base_matrix_count)) | $(_runtime_text(row.runtime_seconds)) | " *
+            "$(row.determinant) | $(_symbol_text(row.factor_max_monomial_degree)) | " *
+            "$(_symbol_text(row.factor_total_offdiagonal_monomials)) |",
         )
     end
     println(io)
