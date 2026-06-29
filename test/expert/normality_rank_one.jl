@@ -108,6 +108,9 @@ end
         replace_rank_one_certificate_field(cert, :verification, tampered_verification),
     )
 
+    malformed_ring_cert = replace_rank_one_certificate_field(cert, :ring, QQ)
+    @test !Suslin.verify_rank_one_normality_certificate(malformed_ring_cert)
+
     changed_table = copy(cert.cohn_coefficients)
     changed_table[1] = (; changed_table[1].i, changed_table[1].j, a = changed_table[1].a + one(R))
     @test !Suslin.verify_rank_one_normality_certificate(
