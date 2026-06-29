@@ -107,6 +107,23 @@ struct SL3LocalElementaryFactorReplay
     materialized_factors
 end
 
+struct SL3LocalMurthyQUnitLocalReduction
+    target
+    context::SL3LocalMurthyInputContext
+    q0
+    q0_inverse
+    p0
+    right_e21_coefficient
+    elimination_factor::SL3LocalElementaryFactor
+    inverse_elimination_factor::SL3LocalElementaryFactor
+    source_certificate
+    split_certificate
+    local_factor_replay::SL3LocalElementaryFactorReplay
+    selected_variable
+    degree_p::Int
+    degree_q::Int
+end
+
 function Base.:(==)(left::SL3LocalQDegreeNormalization, right::SL3LocalQDegreeNormalization)
     return left.target == right.target &&
         left.quotient == right.quotient &&
@@ -114,6 +131,17 @@ function Base.:(==)(left::SL3LocalQDegreeNormalization, right::SL3LocalQDegreeNo
         left.normalized_target == right.normalized_target &&
         left.elementary_correction == right.elementary_correction &&
         left.selected_variable == right.selected_variable
+end
+
+function Base.:(==)(left::SL3LocalElementaryFactor, right::SL3LocalElementaryFactor)
+    return _same_base_ring(left.R, right.R) &&
+        left.n == right.n &&
+        left.row == right.row &&
+        left.col == right.col &&
+        left.numerator == right.numerator &&
+        left.denominator == right.denominator &&
+        left.selected_variable == right.selected_variable &&
+        left.local_unit_witness == right.local_unit_witness
 end
 
 function sl3_local_murthy_input_context(A, X; witness=nothing, local_unit_witnesses=(;),
@@ -204,6 +232,21 @@ function realize_sl3_local_certificate(
         murthy_q0_nonunit_witness,
     )
     return _realize_sl3_local_certificate_form(form)
+end
+
+function realize_sl3_local_certificate(context::SL3LocalMurthyInputContext)
+    verify_sl3_local_murthy_input_context(context) ||
+        throw(ArgumentError("local Murthy realization requires a verified input context"))
+    if context.degree_q >= context.degree_p
+        return sl3_local_q_degree_normalization_certificate(context)
+    end
+    context.global_units.q0 || context.local_units.q0 ||
+        throw(ArgumentError("local Murthy q(0)-unit realization requires q(0) to be a global or local unit"))
+    if context.global_units.q0 &&
+            _sl3_local_supports_murthy_q0_unit_branch(context.R, context.var_idx)
+        return realize_sl3_local_certificate(context.target, context.X)
+    end
+    return _realize_sl3_local_murthy_q0_unit_local_certificate(context)
 end
 
 function sl3_local_q_degree_normalization(A, X; check_monic::Bool=true)
@@ -694,6 +737,267 @@ function _sl3_local_murthy_q0_unit_reduction(form)
     verify_sl3_local_murthy_q_unit_reduction(reduction) ||
         error("internal Murthy q(0)-unit reduction verification failed")
     return reduction
+end
+
+function _realize_sl3_local_murthy_q0_unit_local_certificate(context::SL3LocalMurthyInputContext)
+    reduction = _sl3_local_murthy_q0_unit_local_reduction(context)
+    certificate = SL3LocalRealizationCertificate(
+        context.target,
+        :murthy_q0_unit,
+        reduction.local_factor_replay.factors,
+        context.X,
+        (; normalization = nothing, normalized_certificate = nothing, reduction),
+    )
+    verify_sl3_local_realization(certificate) ||
+        error("internal local Murthy q(0)-unit certificate verification failed")
+    return certificate
+end
+
+function _sl3_local_murthy_q0_unit_local_reduction(context::SL3LocalMurthyInputContext)
+    model = _sl3_local_fraction_model(context)
+    fraction_target = _sl3_local_to_fraction_matrix(context.target, model)
+    source_certificate = realize_sl3_local_certificate(fraction_target, model.Y)
+    source_reduction = _sl3_local_source_q0_reduction(source_certificate)
+
+    records = _sl3_local_local_factors_from_fraction_matrices(
+        source_certificate.factors,
+        context,
+    )
+    replay = sl3_local_elementary_factor_replay(context.target, records, context.X)
+    elimination_factor = first(_sl3_local_local_factors_from_fraction_matrices(
+        [source_reduction.elimination_factor],
+        context,
+    ))
+    inverse_elimination_factor = first(_sl3_local_local_factors_from_fraction_matrices(
+        [source_reduction.inverse_elimination_factor],
+        context,
+    ))
+
+    reduction = SL3LocalMurthyQUnitLocalReduction(
+        context.target,
+        context,
+        context.q0,
+        source_reduction.q0_inverse,
+        context.p0,
+        source_reduction.right_e21_coefficient,
+        elimination_factor,
+        inverse_elimination_factor,
+        source_certificate,
+        source_reduction.split_certificate,
+        replay,
+        context.X,
+        context.degree_p,
+        context.degree_q,
+    )
+    verify_sl3_local_murthy_q_unit_reduction(reduction) ||
+        error("internal local Murthy q(0)-unit reduction verification failed")
+    return reduction
+end
+
+function _sl3_local_fraction_model(context::SL3LocalMurthyInputContext)
+    R = context.R
+    ring_gens = collect(gens(R))
+    coefficient_indices = [idx for idx in eachindex(ring_gens) if idx != context.var_idx]
+    isempty(coefficient_indices) &&
+        throw(ArgumentError("unsupported local-unit denominator witness"))
+    coefficient_names = [string(ring_gens[idx]) for idx in coefficient_indices]
+    C, coefficient_gens = polynomial_ring(base_ring(R), coefficient_names)
+    K = fraction_field(C)
+    S, (Y,) = polynomial_ring(K, [string(context.X)])
+    return (;
+        R,
+        S,
+        C,
+        K,
+        Y,
+        coefficient_indices,
+        coefficient_gens = collect(coefficient_gens),
+        coefficient_names,
+        var_idx = context.var_idx,
+    )
+end
+
+function _sl3_local_to_fraction_matrix(target, model)
+    return matrix(model.S, [
+        _sl3_local_to_fraction_polynomial(target[i, j], model)
+        for i in 1:nrows(target), j in 1:ncols(target)
+    ])
+end
+
+function _sl3_local_to_fraction_polynomial(value, model)
+    parent(value) === model.R ||
+        throw(ArgumentError("fraction model translation requires a polynomial in the context ring"))
+    result = zero(model.S)
+    for (coefficient, exponents) in
+            zip(AbstractAlgebra.coefficients(value), AbstractAlgebra.exponent_vectors(value))
+        coefficient_value = model.C(coefficient)
+        for (coefficient_position, original_idx) in enumerate(model.coefficient_indices)
+            exponent = exponents[original_idx]
+            exponent == 0 && continue
+            coefficient_value *= model.coefficient_gens[coefficient_position]^exponent
+        end
+        result += model.S(model.K(coefficient_value)) * model.Y^exponents[model.var_idx]
+    end
+    return result
+end
+
+function _sl3_local_fraction_polynomial_to_ratio(value, context::SL3LocalMurthyInputContext)
+    S = parent(value)
+    length(collect(gens(S))) == 1 ||
+        throw(ArgumentError("local fraction polynomial translation requires a univariate source"))
+    coefficients = collect(AbstractAlgebra.coefficients(value))
+    exponents = collect(AbstractAlgebra.exponent_vectors(value))
+    isempty(coefficients) && return (; numerator = zero(context.R), denominator = one(context.R))
+
+    coefficient_denominators = [denominator(coefficient) for coefficient in coefficients]
+    common_denominator = one(parent(first(coefficient_denominators)))
+    for coefficient_denominator in coefficient_denominators
+        common_denominator *= coefficient_denominator
+    end
+
+    numerator_value = zero(context.R)
+    for (coefficient, exponent_vector) in zip(coefficients, exponents)
+        coefficient_numerator = numerator(coefficient)
+        coefficient_denominator = denominator(coefficient)
+        multiplier = divexact(common_denominator, coefficient_denominator)
+        numerator_value +=
+            _sl3_local_coefficient_model_to_ring(
+                coefficient_numerator * multiplier,
+                context,
+                nothing,
+            ) * context.X^first(exponent_vector)
+    end
+    denominator_value =
+        _sl3_local_coefficient_model_to_ring(common_denominator, context, nothing)
+    return (; numerator = numerator_value, denominator = denominator_value)
+end
+
+function _sl3_local_coefficient_model_to_ring(
+        value,
+        context::SL3LocalMurthyInputContext,
+        coefficient_names,
+)
+    R = context.R
+    coefficient_indices = [idx for idx in eachindex(collect(gens(R))) if idx != context.var_idx]
+    source_gens = collect(gens(parent(value)))
+    if coefficient_names !== nothing && length(coefficient_names) != length(source_gens)
+        throw(ArgumentError("coefficient model variable-name mismatch"))
+    end
+    length(source_gens) == length(coefficient_indices) ||
+        throw(ArgumentError("coefficient model variable count mismatch"))
+
+    ring_gens = collect(gens(R))
+    result = zero(R)
+    for (coefficient, exponents) in
+            zip(AbstractAlgebra.coefficients(value), AbstractAlgebra.exponent_vectors(value))
+        term = R(coefficient)
+        for (coefficient_position, original_idx) in enumerate(coefficient_indices)
+            exponent = exponents[coefficient_position]
+            exponent == 0 && continue
+            term *= ring_gens[original_idx]^exponent
+        end
+        result += term
+    end
+    return result
+end
+
+function _sl3_local_derive_local_unit_witness(context::SL3LocalMurthyInputContext, unit)
+    R = context.R
+    unit = _coerce_into_ring(R, unit, "local elementary factor denominator")
+    unit == one(R) && return nothing
+    hasproperty(context.local_unit_witnesses, :q0) ||
+        throw(ArgumentError("unsupported local-unit denominator witness"))
+    template = context.local_unit_witnesses.q0
+    generators = tuple(template.maximal_ideal_generators...)
+    length(generators) == 1 ||
+        throw(ArgumentError("unsupported local-unit denominator witness"))
+    generator = first(generators)
+    generator_idx = findfirst(isequal(generator), collect(gens(R)))
+    generator_idx === nothing &&
+        throw(ArgumentError("unsupported local-unit denominator witness"))
+
+    residue_unit = _sl3_local_constant_coefficient(unit, generator_idx, R)
+    residue_inverse = _unit_inverse_or_nothing(residue_unit)
+    residue_inverse === nothing &&
+        throw(ArgumentError("unsupported local-unit denominator witness"))
+    difference = unit - residue_unit
+    residue_difference_coefficient = try
+        divexact(difference, generator)
+    catch err
+        err isa InterruptException && rethrow()
+        throw(ArgumentError("unsupported local-unit denominator witness"))
+    end
+    generator * residue_difference_coefficient == difference ||
+        throw(ArgumentError("unsupported local-unit denominator witness"))
+
+    return (;
+        context = template.context,
+        unit,
+        residue_unit,
+        residue_inverse,
+        maximal_ideal_generators = generators,
+        residue_difference_coefficients = (residue_difference_coefficient,),
+        global_unit = is_unit(unit),
+    )
+end
+
+function _sl3_local_local_factor_from_fraction_matrix(
+        factor,
+        context::SL3LocalMurthyInputContext,
+)
+    nrows(factor) == 3 || throw(ArgumentError("local fraction elementary factor must be 3x3"))
+    ncols(factor) == 3 || throw(ArgumentError("local fraction elementary factor must be 3x3"))
+    S = base_ring(factor)
+    row = 0
+    col = 0
+    coefficient = zero(S)
+    for i in 1:3, j in 1:3
+        if i == j
+            factor[i, j] == one(S) ||
+                throw(ArgumentError("local fraction factor diagonal is not identity"))
+        elseif factor[i, j] != zero(S)
+            row == 0 ||
+                throw(ArgumentError("local fraction factor has more than one off-diagonal entry"))
+            row = i
+            col = j
+            coefficient = factor[i, j]
+        end
+    end
+    row != 0 || throw(ArgumentError("local fraction identity factor has no elementary data"))
+
+    ratio = _sl3_local_fraction_polynomial_to_ratio(coefficient, context)
+    local_unit_witness = _sl3_local_derive_local_unit_witness(context, ratio.denominator)
+    return sl3_local_elementary_factor(
+        row,
+        col,
+        ratio.numerator,
+        ratio.denominator,
+        context.X;
+        local_unit_witness,
+    )
+end
+
+function _sl3_local_local_factors_from_fraction_matrices(
+        factors,
+        context::SL3LocalMurthyInputContext,
+)
+    return SL3LocalElementaryFactor[
+        _sl3_local_local_factor_from_fraction_matrix(factor, context)
+        for factor in factors
+    ]
+end
+
+function _sl3_local_source_q0_reduction(source_certificate)
+    source_certificate.branch == :murthy_q0_unit ||
+        throw(ArgumentError("local q(0)-unit replay requires a q(0)-unit source certificate"))
+    witness = source_certificate.witness
+    if witness.reduction !== nothing
+        return witness.reduction
+    end
+    if witness.normalized_certificate !== nothing
+        return _sl3_local_source_q0_reduction(witness.normalized_certificate)
+    end
+    throw(ArgumentError("local q(0)-unit replay source certificate has no q(0)-unit reduction"))
 end
 
 function _realize_sl3_local_murthy_q0_nonunit_certificate(form)
@@ -1657,6 +1961,17 @@ function verify_sl3_local_murthy_q_unit_reduction(reduction)::Bool
     end
 end
 
+function verify_sl3_local_murthy_q_unit_reduction(
+        reduction::SL3LocalMurthyQUnitLocalReduction,
+)::Bool
+    try
+        return _sl3_local_murthy_q0_unit_local_reduction_verification(reduction).overall_ok
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
 function verify_sl3_local_murthy_q0_nonunit_reduction(reduction)::Bool
     try
         return _sl3_local_murthy_q0_nonunit_reduction_verification(reduction).overall_ok
@@ -1996,6 +2311,112 @@ function _sl3_local_murthy_q0_unit_reduction_verification(reduction)
     )
 end
 
+function _sl3_local_murthy_q0_unit_local_reduction_verification(
+        reduction::SL3LocalMurthyQUnitLocalReduction,
+)
+    context = reduction.context
+    context_ok = verify_sl3_local_murthy_input_context(context)
+    target_ok = context_ok && reduction.target == context.target
+    variable_ok = context_ok && reduction.selected_variable == context.X
+    scalar_ok = context_ok &&
+        reduction.q0 == context.q0 &&
+        reduction.p0 == context.p0 &&
+        reduction.degree_p == context.degree_p &&
+        reduction.degree_q == context.degree_q &&
+        context.degree_q < context.degree_p &&
+        (context.global_units.q0 || context.local_units.q0)
+
+    source_certificate = reduction.source_certificate
+    source_certificate_ok = false
+    source_target_ok = false
+    source_reduction = nothing
+    source_reduction_ok = false
+    split_certificate_ok = false
+    source_scalars_ok = false
+    local_factor_replay_ok = false
+    local_factors_ok = false
+    elimination_factor_ok = false
+    inverse_elimination_factor_ok = false
+    if context_ok
+        source_certificate_ok =
+            verify_sl3_local_realization(source_certificate) &&
+            source_certificate.branch == :murthy_q0_unit
+        source_target_ok =
+            source_certificate_ok &&
+            _sl3_local_fraction_matrix_matches_target(
+                source_certificate.target,
+                context.target,
+                context,
+            )
+        if source_target_ok
+            source_reduction = _sl3_local_source_q0_reduction(source_certificate)
+            source_reduction_ok = true
+            split_certificate_ok =
+                reduction.split_certificate == source_reduction.split_certificate &&
+                verify_sl3_local_realization(reduction.split_certificate)
+            source_scalars_ok =
+                reduction.q0_inverse == source_reduction.q0_inverse &&
+                reduction.right_e21_coefficient == source_reduction.right_e21_coefficient
+            expected_records = _sl3_local_local_factors_from_fraction_matrices(
+                source_certificate.factors,
+                context,
+            )
+            local_factor_replay_ok =
+                reduction.local_factor_replay.target == context.target &&
+                reduction.local_factor_replay.selected_variable == context.X &&
+                reduction.local_factor_replay.factors == expected_records &&
+                verify_sl3_local_elementary_factor_replay(reduction.local_factor_replay)
+            local_factors_ok =
+                local_factor_replay_ok &&
+                reduction.local_factor_replay.factors isa Vector{SL3LocalElementaryFactor}
+            expected_elimination_factor = first(_sl3_local_local_factors_from_fraction_matrices(
+                [source_reduction.elimination_factor],
+                context,
+            ))
+            expected_inverse_elimination_factor =
+                first(_sl3_local_local_factors_from_fraction_matrices(
+                    [source_reduction.inverse_elimination_factor],
+                    context,
+                ))
+            elimination_factor_ok = reduction.elimination_factor == expected_elimination_factor
+            inverse_elimination_factor_ok =
+                reduction.inverse_elimination_factor == expected_inverse_elimination_factor
+        end
+    end
+
+    overall_ok = context_ok && target_ok && variable_ok && scalar_ok &&
+        source_certificate_ok && source_target_ok && source_reduction_ok &&
+        split_certificate_ok && source_scalars_ok && local_factor_replay_ok &&
+        local_factors_ok && elimination_factor_ok && inverse_elimination_factor_ok
+    return (;
+        overall_ok,
+        context_ok,
+        target_ok,
+        variable_ok,
+        scalar_ok,
+        source_certificate_ok,
+        source_target_ok,
+        source_reduction_ok,
+        split_certificate_ok,
+        source_scalars_ok,
+        local_factor_replay_ok,
+        local_factors_ok,
+        elimination_factor_ok,
+        inverse_elimination_factor_ok,
+    )
+end
+
+function _sl3_local_fraction_matrix_matches_target(source_target, target, context)
+    nrows(source_target) == nrows(target) || return false
+    ncols(source_target) == ncols(target) || return false
+    for i in 1:nrows(target), j in 1:ncols(target)
+        ratio = _sl3_local_fraction_polynomial_to_ratio(source_target[i, j], context)
+        ratio.denominator == one(context.R) || return false
+        ratio.numerator == target[i, j] || return false
+    end
+    return true
+end
+
 function _sl3_local_murthy_q0_nonunit_reduction_verification(reduction)
     target = reduction.target
     bezout_target = reduction.bezout_target
@@ -2272,7 +2693,18 @@ function _sl3_local_realization_verification(certificate)
         nothing
     witness_ok = expected_factors !== nothing
     factors_match_ok = witness_ok && _sl3_local_factor_sequences_equal(certificate.factors, expected_factors)
-    factors_ok = size_ok && verify_factorization(target, certificate.factors)
+    local_reduction =
+        witness_ok &&
+        certificate.branch == :murthy_q0_unit &&
+        certificate.witness.reduction isa SL3LocalMurthyQUnitLocalReduction ?
+        certificate.witness.reduction :
+        nothing
+    factors_ok =
+        local_reduction === nothing ?
+        size_ok && verify_factorization(target, certificate.factors) :
+        verify_sl3_local_elementary_factor_replay(local_reduction.local_factor_replay) &&
+            local_reduction.local_factor_replay.target == target &&
+            local_reduction.local_factor_replay.factors == certificate.factors
     overall_ok = size_ok && variable_ok && shape_ok && determinant_ok &&
         witness_ok && factors_match_ok && factors_ok
     return (;
@@ -2364,6 +2796,9 @@ function _sl3_local_certificate_expected_factors(certificate)
                 witness.normalized_certificate.factors,
                 [witness.normalization.elementary_correction],
             )
+        end
+        if witness.reduction isa SL3LocalMurthyQUnitLocalReduction
+            return witness.reduction.local_factor_replay.factors
         end
 
         return vcat(

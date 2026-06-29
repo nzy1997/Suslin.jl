@@ -81,6 +81,28 @@ function _assert_q0_certificate(cert; normalization_expected::Bool)
     end
 end
 
+function _assert_local_q0_certificate(cert)
+    @test cert.branch == :murthy_q0_unit
+    @test Suslin.verify_sl3_local_realization(cert)
+    @test !isempty(cert.factors)
+    @test all(factor -> factor isa Suslin.SL3LocalElementaryFactor, cert.factors)
+    reduction = cert.witness.reduction
+    @test reduction isa Suslin.SL3LocalMurthyQUnitLocalReduction
+    @test reduction.local_factor_replay.mode == :denominator_cleared
+    @test reduction.local_factor_replay.target == cert.target
+    @test reduction.local_factor_replay.factors == cert.factors
+    @test Suslin.verify_sl3_local_elementary_factor_replay(reduction.local_factor_replay)
+    @test Suslin.verify_sl3_local_realization(reduction.source_certificate)
+    @test reduction.split_certificate.branch == :murthy_split_lemma
+    @test Suslin.verify_sl3_local_realization(reduction.split_certificate)
+    @test Suslin.verify_sl3_local_realization(
+        reduction.split_certificate.witness.first_child_certificate,
+    )
+    @test Suslin.verify_sl3_local_realization(
+        reduction.split_certificate.witness.second_child_certificate,
+    )
+end
+
 @testset "Murthy q(0)-unit recursive branch for local SL3" begin
     include(SL3_Q0_UNIT_FIXTURE_PATH)
     catalog = SL3MurthyGuptaFixtureCatalog.catalog()
@@ -152,6 +174,16 @@ end
     )
     _assert_q0_certificate(normalizing_cert; normalization_expected = true)
     @test normalizing_cert.target == normalizing_fixture.target
+
+    local_fixture = by_id["mg-local-q0-unit-at-u"]
+    local_context = Suslin.sl3_local_murthy_input_context(
+        local_fixture.target,
+        local_fixture.variable;
+        witness = first(local_fixture.witnesses),
+    )
+    local_cert = Suslin.realize_sl3_local_certificate(local_context)
+    _assert_local_q0_certificate(local_cert)
+    @test local_cert.target == local_fixture.target
 
     nonunit_q0_p = X^2 + one(R)
     nonunit_q0_q = X
