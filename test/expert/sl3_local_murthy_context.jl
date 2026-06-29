@@ -219,7 +219,9 @@ end
     @test bezout_context.local_units.branch_unit == true
     @test bezout_context.bezout_witness == bezout_witness
     @test Suslin.verify_sl3_local_murthy_input_context(bezout_context)
-    @test_throws ArgumentError Suslin.realize_sl3_local_certificate(bezout_context)
+    bezout_context_cert = Suslin.realize_sl3_local_certificate(bezout_context)
+    @test bezout_context_cert.branch == :murthy_q0_nonunit_bezout_resultant
+    @test Suslin.verify_sl3_local_realization(bezout_context_cert)
 
     RU = local_nonunit.ring.object
     u = first(gens(RU))
