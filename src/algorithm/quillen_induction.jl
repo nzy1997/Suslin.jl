@@ -171,6 +171,46 @@ struct QuillenLocalFactorSequenceCertificate
     verification::QuillenLocalFactorSequenceVerification
 end
 
+struct QuillenLocalDenominatorSupport
+    local_index::Int
+    support_denominator
+    support_kind::Symbol
+    factor_denominators::Vector
+    factor_entries::Vector{QuillenLocalElementaryFactor}
+    factor_provenance::Vector
+    replayed_denominator
+    replay_equality
+    replay_ok::Bool
+end
+
+struct QuillenDenominatorCoverCandidateVerification
+    local_count::Int
+    raw_denominators::Vector
+    local_certificates_ok::Bool
+    same_original_input_ok::Bool
+    same_ring_ok::Bool
+    same_size_ok::Bool
+    same_selected_variable_ok::Bool
+    local_supports::Vector{QuillenLocalDenominatorSupport}
+    local_supports_ok::Bool
+    raw_denominators_ok::Bool
+    replay_metadata
+    replay_metadata_ok::Bool
+    overall_ok::Bool
+end
+
+struct QuillenDenominatorCoverCandidate
+    original_input
+    ring
+    size::Int
+    selected_variable
+    local_certificates::Vector{QuillenLocalFactorSequenceCertificate}
+    raw_denominators::Vector
+    local_supports::Vector{QuillenLocalDenominatorSupport}
+    replay_metadata
+    verification::QuillenDenominatorCoverCandidateVerification
+end
+
 struct QuillenLocalContributionNormalizationVerification
     local_certificate_ok::Bool
     cover_certificate_ok::Bool
@@ -704,6 +744,117 @@ function _quillen_local_sequence_factor_provenance(factors)
     return [factor.provenance for factor in factors]
 end
 
+function _same_quillen_local_elementary_factor(
+    left::QuillenLocalElementaryFactor,
+    right::QuillenLocalElementaryFactor,
+)::Bool
+    return left.row == right.row &&
+           left.col == right.col &&
+           left.numerator == right.numerator &&
+           left.denominator == right.denominator &&
+           left.coverage_multiplier == right.coverage_multiplier &&
+           left.provenance == right.provenance &&
+           left.local_certificate.indices == right.local_certificate.indices &&
+           left.local_certificate.denominators == right.local_certificate.denominators &&
+           left.metadata == right.metadata
+end
+
+function _same_quillen_local_elementary_factors(left, right)::Bool
+    length(left) == length(right) || return false
+    for idx in eachindex(left)
+        _same_quillen_local_elementary_factor(left[idx], right[idx]) || return false
+    end
+    return true
+end
+
+function _quillen_local_denominator_support(
+    certificate::QuillenLocalFactorSequenceCertificate,
+    local_index::Int,
+)
+    R = _require_supported_quillen_ring(certificate.ring)
+    n = certificate.size
+    factors = [
+        _quillen_local_sequence_factor(raw_factor, R, n, index)
+        for (index, raw_factor) in enumerate(certificate.factors)
+    ]
+    factor_denominators = [factor.denominator for factor in factors]
+    factor_provenance = _quillen_local_sequence_factor_provenance(factors)
+    replayed_denominator = prod(
+        (factor.denominator for factor in factors);
+        init = one(certificate.ring),
+    )
+    replay_equality =
+        certificate.raw_denominators == factor_denominators &&
+        certificate.product_denominator == replayed_denominator
+    return QuillenLocalDenominatorSupport(
+        Int(local_index),
+        certificate.product_denominator,
+        :product,
+        factor_denominators,
+        factors,
+        factor_provenance,
+        replayed_denominator,
+        replay_equality,
+        replay_equality,
+    )
+end
+
+function _same_quillen_local_denominator_support(
+    left::QuillenLocalDenominatorSupport,
+    right::QuillenLocalDenominatorSupport,
+)::Bool
+    return left.local_index == right.local_index &&
+           left.support_denominator == right.support_denominator &&
+           left.support_kind == right.support_kind &&
+           left.factor_denominators == right.factor_denominators &&
+           _same_quillen_local_elementary_factors(left.factor_entries, right.factor_entries) &&
+           left.factor_provenance == right.factor_provenance &&
+           left.replayed_denominator == right.replayed_denominator &&
+           left.replay_equality == right.replay_equality &&
+           left.replay_ok == right.replay_ok
+end
+
+function _same_quillen_local_denominator_supports(left, right)::Bool
+    length(left) == length(right) || return false
+    for idx in eachindex(left)
+        _same_quillen_local_denominator_support(left[idx], right[idx]) || return false
+    end
+    return true
+end
+
+function _quillen_denominator_cover_candidate_replay_metadata(
+    local_certificates::Vector{QuillenLocalFactorSequenceCertificate},
+    local_supports::Vector{QuillenLocalDenominatorSupport},
+    raw_denominators,
+)
+    return (;
+        local_count = length(local_certificates),
+        raw_denominators = collect(raw_denominators),
+        support_denominators = [support.support_denominator for support in local_supports],
+        support_kinds = [support.support_kind for support in local_supports],
+        local_sequence_replay_metadata = [certificate.replay_metadata for certificate in local_certificates],
+    )
+end
+
+function _same_quillen_denominator_cover_candidate_verification(
+    left::QuillenDenominatorCoverCandidateVerification,
+    right::QuillenDenominatorCoverCandidateVerification,
+)::Bool
+    return left.local_count == right.local_count &&
+           left.raw_denominators == right.raw_denominators &&
+           left.local_certificates_ok == right.local_certificates_ok &&
+           left.same_original_input_ok == right.same_original_input_ok &&
+           left.same_ring_ok == right.same_ring_ok &&
+           left.same_size_ok == right.same_size_ok &&
+           left.same_selected_variable_ok == right.same_selected_variable_ok &&
+           _same_quillen_local_denominator_supports(left.local_supports, right.local_supports) &&
+           left.local_supports_ok == right.local_supports_ok &&
+           left.raw_denominators_ok == right.raw_denominators_ok &&
+           left.replay_metadata == right.replay_metadata &&
+           left.replay_metadata_ok == right.replay_metadata_ok &&
+           left.overall_ok == right.overall_ok
+end
+
 function _quillen_local_sequence_replay_metadata(
     certificate::QuillenLocalFactorSequenceCertificate,
     denominator_data,
@@ -1072,6 +1223,163 @@ function verify_quillen_local_factor_sequence_certificate(certificate)::Bool
         err isa InterruptException && rethrow()
         return false
     end
+end
+
+function replay_quillen_denominator_cover_candidate(
+    candidate::QuillenDenominatorCoverCandidate,
+)
+    local_certificates = candidate.local_certificates
+    isempty(local_certificates) &&
+        throw(ArgumentError("Quillen denominator-cover candidate requires at least one local certificate"))
+    R = _require_supported_quillen_ring(candidate.ring)
+    n = Int(candidate.size)
+    n >= 2 || throw(ArgumentError("candidate size must be at least 2"))
+    selected_variable = _require_substitution_generator(R, candidate.selected_variable)
+    original_input = _quillen_local_sequence_original_input(candidate.original_input, R, n)
+
+    local_certificates_ok = all(verify_quillen_local_factor_sequence_certificate, local_certificates)
+    same_ring_ok = all(cert -> cert.ring == R, local_certificates)
+    same_size_ok = all(cert -> cert.size == n, local_certificates)
+    same_selected_variable_ok = same_ring_ok && all(
+        cert -> cert.selected_variable == selected_variable,
+        local_certificates,
+    )
+    same_original_input_ok = same_ring_ok && same_size_ok && all(
+        cert -> cert.original_input == original_input,
+        local_certificates,
+    )
+
+    local_supports = [
+        _quillen_local_denominator_support(certificate, index)
+        for (index, certificate) in enumerate(local_certificates)
+    ]
+    replayed_supports_ok = all(support -> support.replay_ok, local_supports)
+    raw_denominators = [support.support_denominator for support in local_supports]
+    local_supports_ok =
+        replayed_supports_ok &&
+        _same_quillen_local_denominator_supports(candidate.local_supports, local_supports)
+    raw_denominators_ok = candidate.raw_denominators == raw_denominators
+    replay_metadata = _quillen_denominator_cover_candidate_replay_metadata(
+        local_certificates,
+        local_supports,
+        raw_denominators,
+    )
+    replay_metadata_ok = candidate.replay_metadata == replay_metadata
+    overall_ok =
+        local_certificates_ok &&
+        same_original_input_ok &&
+        same_ring_ok &&
+        same_size_ok &&
+        same_selected_variable_ok &&
+        local_supports_ok &&
+        raw_denominators_ok &&
+        replay_metadata_ok
+
+    return QuillenDenominatorCoverCandidateVerification(
+        length(local_certificates),
+        raw_denominators,
+        local_certificates_ok,
+        same_original_input_ok,
+        same_ring_ok,
+        same_size_ok,
+        same_selected_variable_ok,
+        local_supports,
+        local_supports_ok,
+        raw_denominators_ok,
+        replay_metadata,
+        replay_metadata_ok,
+        overall_ok,
+    )
+end
+
+function verify_quillen_denominator_cover_candidate(candidate)::Bool
+    try
+        replay = replay_quillen_denominator_cover_candidate(candidate)
+        return replay.overall_ok &&
+               _same_quillen_denominator_cover_candidate_verification(
+                   candidate.verification,
+                   replay,
+               )
+    catch err
+        err isa InterruptException && rethrow()
+        err isa ArgumentError && return false
+        return false
+    end
+end
+
+function extract_quillen_denominator_cover_candidate(certificates)
+    local_certificates = collect(certificates)
+    isempty(local_certificates) &&
+        throw(ArgumentError("Quillen denominator-cover candidate requires at least one local certificate"))
+    all(verify_quillen_local_factor_sequence_certificate, local_certificates) ||
+        throw(ArgumentError("Quillen denominator-cover candidate requires verified local certificates"))
+
+    first_certificate = first(local_certificates)
+    R = _require_supported_quillen_ring(first_certificate.ring)
+    n = Int(first_certificate.size)
+    n >= 2 || throw(ArgumentError("candidate size must be at least 2"))
+    selected_variable = _require_substitution_generator(R, first_certificate.selected_variable)
+    original_input = _quillen_local_sequence_original_input(first_certificate.original_input, R, n)
+
+    all(cert -> cert.ring == R, local_certificates) ||
+        throw(ArgumentError("Quillen denominator-cover candidate requires matching rings"))
+    all(cert -> cert.size == n, local_certificates) ||
+        throw(ArgumentError("Quillen denominator-cover candidate requires matching sizes"))
+    all(cert -> cert.selected_variable == selected_variable, local_certificates) ||
+        throw(ArgumentError("Quillen denominator-cover candidate requires matching selected variables"))
+    all(cert -> cert.original_input == original_input, local_certificates) ||
+        throw(ArgumentError("Quillen denominator-cover candidate requires matching original inputs"))
+
+    local_supports = [
+        _quillen_local_denominator_support(certificate, index)
+        for (index, certificate) in enumerate(local_certificates)
+    ]
+    raw_denominators = [support.support_denominator for support in local_supports]
+    replay_metadata = _quillen_denominator_cover_candidate_replay_metadata(
+        local_certificates,
+        local_supports,
+        raw_denominators,
+    )
+    placeholder = QuillenDenominatorCoverCandidateVerification(
+        length(local_certificates),
+        raw_denominators,
+        false,
+        false,
+        false,
+        false,
+        false,
+        local_supports,
+        false,
+        false,
+        replay_metadata,
+        false,
+        false,
+    )
+    provisional = QuillenDenominatorCoverCandidate(
+        original_input,
+        R,
+        n,
+        selected_variable,
+        local_certificates,
+        raw_denominators,
+        local_supports,
+        replay_metadata,
+        placeholder,
+    )
+    verification = replay_quillen_denominator_cover_candidate(provisional)
+    verification.overall_ok ||
+        throw(ArgumentError("Quillen denominator-cover candidate data does not replay"))
+    return QuillenDenominatorCoverCandidate(
+        provisional.original_input,
+        provisional.ring,
+        provisional.size,
+        provisional.selected_variable,
+        provisional.local_certificates,
+        provisional.raw_denominators,
+        provisional.local_supports,
+        provisional.replay_metadata,
+        verification,
+    )
 end
 
 function replay_quillen_local_contribution_normalization(
