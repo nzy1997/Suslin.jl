@@ -319,16 +319,18 @@ function validate_polynomial_normality_fixture_catalog(catalog)
 end
 
 @testset "Park-Woodburn polynomial normality fixture catalog" begin
-    include(PARK_WOODBURN_POLYNOMIAL_NORMALITY_CATALOG_PATH)
-    catalog = ParkWoodburnPolynomialNormalityFixtureCatalog.catalog()
+    if !isdefined(Main, :ParkWoodburnPolynomialNormalityFixtureCatalog)
+        include(PARK_WOODBURN_POLYNOMIAL_NORMALITY_CATALOG_PATH)
+    end
+    catalog = Main.ParkWoodburnPolynomialNormalityFixtureCatalog.catalog()
 
     @test validate_polynomial_normality_fixture_catalog(catalog)
 
-    cases = ParkWoodburnPolynomialNormalityFixtureCatalog.cases_by_id()
+    cases = Main.ParkWoodburnPolynomialNormalityFixtureCatalog.cases_by_id()
     @test REQUIRED_PW_POLYNOMIAL_NORMALITY_IDS ⊆ Set(keys(cases))
 
-    negatives = if isdefined(ParkWoodburnPolynomialNormalityFixtureCatalog, :negative_controls_by_id)
-        ParkWoodburnPolynomialNormalityFixtureCatalog.negative_controls_by_id()
+    negatives = if isdefined(Main.ParkWoodburnPolynomialNormalityFixtureCatalog, :negative_controls_by_id)
+        Main.ParkWoodburnPolynomialNormalityFixtureCatalog.negative_controls_by_id()
     else
         Dict(entry.id => entry for entry in catalog.negative_controls)
     end

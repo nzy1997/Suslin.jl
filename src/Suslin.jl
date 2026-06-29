@@ -28,8 +28,11 @@ export laurent_gl_factorization_certificate
 export normalize_laurent_object
 export normalize_laurent_gl_matrix
 export solve_laurent_linear
+export CohnTypeRealizationCertificate
 export realize_cohn_type
+export realize_cohn_type_certificate
 export realize_conjugate_elementary
+export verify_cohn_type_certificate
 export lift_laurent_normalization
 export verify_laurent_gl_factorization_certificate
 export verify_laurent_gl_normalization
