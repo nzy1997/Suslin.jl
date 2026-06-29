@@ -33,6 +33,18 @@ function expected_rank_one_cohn_coefficients(v, w, g)
     ]
 end
 
+function nonzero_cohn_coefficients(coefficients, R)
+    return filter(entry -> entry.a != zero(R), coefficients)
+end
+
+function child_cohn_signature(children)
+    return [(child.i, child.j, child.a) for child in children]
+end
+
+function coefficient_signature(coefficients)
+    return [(entry.i, entry.j, entry.a) for entry in coefficients]
+end
+
 function replace_rank_one_certificate_field(cert, field::Symbol, value)
     names = fieldnames(typeof(cert))
     idx = findfirst(==(field), names)
@@ -58,7 +70,9 @@ end
     @test cert.orthogonality == zero(R)
     @test cert.bezout == one(R)
     @test cert.cohn_coefficients == expected_rank_one_cohn_coefficients(cert.v, cert.w, cert.g)
-    @test length(cert.child_certificates) == count(entry -> entry.a != zero(R), cert.cohn_coefficients)
+    nonzero_coefficients = nonzero_cohn_coefficients(cert.cohn_coefficients, R)
+    @test length(cert.child_certificates) == length(nonzero_coefficients)
+    @test child_cohn_signature(cert.child_certificates) == coefficient_signature(nonzero_coefficients)
     @test all(Suslin.verify_cohn_type_certificate, cert.child_certificates)
     @test cert.factors == reduce(vcat, [child.factors for child in cert.child_certificates]; init = Any[])
     @test cert.product == rank_one_product_of_factors(cert.factors, R, n)
@@ -98,4 +112,28 @@ end
     @test !Suslin.verify_rank_one_normality_certificate(
         replace_rank_one_certificate_field(cert, :cohn_coefficients, changed_table),
     )
+
+    multi_child_v = [one(R), R(inputs.v[2]), R(inputs.v[3])]
+    multi_child_w = [-multi_child_v[2] - multi_child_v[3], one(R), one(R)]
+    multi_child_g = [one(R), zero(R), zero(R)]
+    multi_child_cert = Suslin.realize_rank_one_normality_certificate(
+        multi_child_v,
+        multi_child_w,
+        multi_child_g,
+        R,
+    )
+    multi_child_nonzero = nonzero_cohn_coefficients(multi_child_cert.cohn_coefficients, R)
+    @test coefficient_signature(multi_child_nonzero) == [
+        (1, 2, -one(R)),
+        (1, 3, -one(R)),
+    ]
+    @test child_cohn_signature(multi_child_cert.child_certificates) ==
+        coefficient_signature(multi_child_nonzero)
+    @test multi_child_cert.factors == reduce(
+        vcat,
+        [child.factors for child in multi_child_cert.child_certificates];
+        init = Any[],
+    )
+    @test multi_child_cert.product == multi_child_cert.target
+    @test Suslin.verify_rank_one_normality_certificate(multi_child_cert)
 end
