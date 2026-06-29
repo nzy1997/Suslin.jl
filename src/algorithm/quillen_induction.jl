@@ -116,6 +116,61 @@ struct QuillenLocalRealizationCertificate
     verification
 end
 
+struct QuillenLocalElementaryFactor
+    row::Int
+    col::Int
+    numerator
+    denominator
+    coverage_multiplier
+    provenance
+    local_certificate::LocalCertificate
+    metadata
+end
+
+struct QuillenLocalFactorSequenceVerification
+    original_input
+    selected_variable
+    factor_count::Int
+    raw_denominators::Vector
+    product_denominator
+    normalized_local_contributions::Vector{QuillenLocalContribution}
+    normalized_global_elementary_factors::Vector
+    local_product
+    local_correction
+    denominator_data::Vector{QuillenDenominatorData}
+    factor_provenance::Vector
+    factor_provenance_ok::Bool
+    product_denominator_ok::Bool
+    normalized_contributions_ok::Bool
+    normalized_global_elementary_factors_ok::Bool
+    local_product_ok::Bool
+    local_correction_ok::Bool
+    patched_substitution
+    patched_substitution_ok::Bool
+    replay_metadata
+    replay_metadata_ok::Bool
+    overall_ok::Bool
+end
+
+struct QuillenLocalFactorSequenceCertificate
+    original_input
+    ring
+    size::Int
+    selected_variable
+    factors::Vector{QuillenLocalElementaryFactor}
+    raw_denominators::Vector
+    product_denominator
+    local_product
+    local_correction
+    normalized_local_contributions::Vector{QuillenLocalContribution}
+    normalized_global_elementary_factors::Vector
+    patched_substitution_witness
+    chain_witness
+    witness_metadata
+    replay_metadata
+    verification::QuillenLocalFactorSequenceVerification
+end
+
 struct QuillenLocalContributionNormalizationVerification
     local_certificate_ok::Bool
     cover_certificate_ok::Bool
@@ -485,6 +540,534 @@ function verify_quillen_local_certificate(certificate)::Bool
     try
         replay = _quillen_local_certificate_replay_summary(certificate)
         return replay.overall_ok && certificate.verification == replay
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function QuillenLocalElementaryFactor(
+    row::Int,
+    col::Int,
+    numerator,
+    denominator,
+    coverage_multiplier,
+    local_certificate::LocalCertificate,
+    provenance,
+    metadata,
+)
+    return QuillenLocalElementaryFactor(
+        row,
+        col,
+        numerator,
+        denominator,
+        coverage_multiplier,
+        provenance,
+        local_certificate,
+        metadata,
+    )
+end
+
+function _quillen_local_sequence_factor_field(factor, field::Symbol)
+    hasproperty(factor, field) ||
+        throw(ArgumentError("local elementary factor missing field $(field)"))
+    return getproperty(factor, field)
+end
+
+function _quillen_local_sequence_require_nonempty(value, label::AbstractString)
+    value === nothing && throw(ArgumentError("$(label) must be nonempty"))
+    if value isa NamedTuple
+        isempty(keys(value)) && throw(ArgumentError("$(label) must be nonempty"))
+        return value
+    end
+    applicable(isempty, value) && isempty(value) &&
+        throw(ArgumentError("$(label) must be nonempty"))
+    return value
+end
+
+function _quillen_local_sequence_original_input(original_input, R, n::Int)
+    if original_input isa QuillenElementaryCorrection
+        row, col = _require_elementary_indices(n, original_input.row, original_input.col)
+        entry = _coerce_into_ring(R, original_input.entry, "original input correction entry")
+        return QuillenElementaryCorrection(row, col, entry)
+    end
+    return _quillen_local_require_factor_matrix(original_input, R, n, "original input")
+end
+
+function _quillen_local_sequence_factor(raw_factor, R, n::Int, index::Int)
+    row = Int(_quillen_local_sequence_factor_field(raw_factor, :row))
+    col = Int(_quillen_local_sequence_factor_field(raw_factor, :col))
+    row, col = _require_elementary_indices(n, row, col)
+    numerator = _coerce_into_ring(
+        R,
+        _quillen_local_sequence_factor_field(raw_factor, :numerator),
+        "local elementary factor numerator",
+    )
+    denominator = _coerce_into_ring(
+        R,
+        _quillen_local_sequence_factor_field(raw_factor, :denominator),
+        "local elementary factor denominator",
+    )
+    coverage_multiplier = _coerce_into_ring(
+        R,
+        _quillen_local_sequence_factor_field(raw_factor, :coverage_multiplier),
+        "local elementary factor coverage multiplier",
+    )
+    provenance = _quillen_local_sequence_require_nonempty(
+        _quillen_local_sequence_factor_field(raw_factor, :provenance),
+        "local elementary factor provenance",
+    )
+    local_certificate = hasproperty(raw_factor, :local_certificate) &&
+                        getproperty(raw_factor, :local_certificate) !== nothing ?
+        getproperty(raw_factor, :local_certificate) :
+        LocalCertificate([row, col], [denominator, denominator])
+    local_certificate isa LocalCertificate ||
+        throw(ArgumentError("local elementary factor local certificate must be a LocalCertificate"))
+    metadata = hasproperty(raw_factor, :metadata) ? getproperty(raw_factor, :metadata) : (; factor_index = index)
+    return QuillenLocalElementaryFactor(
+        row,
+        col,
+        numerator,
+        denominator,
+        coverage_multiplier,
+        provenance,
+        local_certificate,
+        metadata,
+    )
+end
+
+function _quillen_local_sequence_contributions(factors, R, n::Int)
+    return [
+        _normalize_quillen_contribution(
+            QuillenLocalContribution(
+                factor.local_certificate,
+                factor.denominator,
+                factor.coverage_multiplier,
+                QuillenElementaryCorrection(factor.row, factor.col, factor.numerator),
+            ),
+            R,
+            n,
+        )
+        for factor in factors
+    ]
+end
+
+function _quillen_local_sequence_provenance_field(provenance, field::Symbol)
+    if hasproperty(provenance, field)
+        return true, getproperty(provenance, field)
+    end
+    if applicable(haskey, provenance, field) && haskey(provenance, field)
+        return true, provenance[field]
+    end
+    return false, nothing
+end
+
+function _quillen_local_sequence_provenance_matches_position(
+    provenance,
+    index::Int,
+    field::Symbol,
+)::Bool
+    present, value = _quillen_local_sequence_provenance_field(provenance, field)
+    present || return true
+    value isa Integer || return false
+    return Int(value) == index
+end
+
+function _quillen_local_sequence_factor_provenance_ok(provenance, index::Int)::Bool
+    _quillen_local_sequence_require_nonempty(provenance, "local elementary factor provenance")
+    return _quillen_local_sequence_provenance_matches_position(
+        provenance,
+        index,
+        :factor_index,
+    ) &&
+           _quillen_local_sequence_provenance_matches_position(
+               provenance,
+               index,
+               :sequence_index,
+           ) &&
+           _quillen_local_sequence_provenance_matches_position(
+               provenance,
+               index,
+               :local_index,
+           )
+end
+
+function _same_quillen_local_contributions(left, right)::Bool
+    length(left) == length(right) || return false
+    for idx in eachindex(left)
+        _same_quillen_local_contribution(left[idx], right[idx]) || return false
+    end
+    return true
+end
+
+function _quillen_local_sequence_factor_provenance(factors)
+    return [factor.provenance for factor in factors]
+end
+
+function _quillen_local_sequence_replay_metadata(
+    certificate::QuillenLocalFactorSequenceCertificate,
+    denominator_data,
+)
+    return (;
+        factor_count = length(certificate.factors),
+        raw_denominators = [factor.denominator for factor in certificate.factors],
+        denominator_data = denominator_data,
+        factor_provenance = _quillen_local_sequence_factor_provenance(certificate.factors),
+        factor_metadata = [factor.metadata for factor in certificate.factors],
+        factor_local_certificates = [factor.local_certificate for factor in certificate.factors],
+        has_patched_substitution_witness = certificate.patched_substitution_witness !== nothing,
+        has_chain_witness = certificate.chain_witness !== nothing,
+        chain_witness = certificate.chain_witness,
+        witness_metadata = certificate.witness_metadata,
+    )
+end
+
+function _same_quillen_local_factor_sequence_verification(
+    left::QuillenLocalFactorSequenceVerification,
+    right::QuillenLocalFactorSequenceVerification,
+)::Bool
+    return left.original_input == right.original_input &&
+           left.selected_variable == right.selected_variable &&
+           left.factor_count == right.factor_count &&
+           left.raw_denominators == right.raw_denominators &&
+           left.product_denominator == right.product_denominator &&
+           _same_quillen_local_contributions(
+               left.normalized_local_contributions,
+               right.normalized_local_contributions,
+           ) &&
+           _same_quillen_factors(
+               left.normalized_global_elementary_factors,
+               right.normalized_global_elementary_factors,
+           ) &&
+           left.local_product == right.local_product &&
+           left.local_correction == right.local_correction &&
+           _same_quillen_denominator_data(left.denominator_data, right.denominator_data) &&
+           left.factor_provenance == right.factor_provenance &&
+           left.factor_provenance_ok == right.factor_provenance_ok &&
+           left.product_denominator_ok == right.product_denominator_ok &&
+           left.normalized_contributions_ok == right.normalized_contributions_ok &&
+           left.normalized_global_elementary_factors_ok ==
+               right.normalized_global_elementary_factors_ok &&
+           left.local_product_ok == right.local_product_ok &&
+           left.local_correction_ok == right.local_correction_ok &&
+           left.patched_substitution == right.patched_substitution &&
+           left.patched_substitution_ok == right.patched_substitution_ok &&
+           left.replay_metadata == right.replay_metadata &&
+           left.replay_metadata_ok == right.replay_metadata_ok &&
+           left.overall_ok == right.overall_ok
+end
+
+function replay_quillen_local_factor_sequence(
+    certificate::QuillenLocalFactorSequenceCertificate,
+)
+    R = _require_supported_quillen_ring(certificate.ring)
+    n = certificate.size
+    n >= 2 || throw(ArgumentError("certificate size must be at least 2"))
+    selected_variable = _require_substitution_generator(R, certificate.selected_variable)
+    original_input = _quillen_local_sequence_original_input(certificate.original_input, R, n)
+    factors = [
+        _quillen_local_sequence_factor(raw_factor, R, n, index)
+        for (index, raw_factor) in enumerate(certificate.factors)
+    ]
+    raw_denominators = [factor.denominator for factor in factors]
+    product_denominator = prod(raw_denominators; init = one(R))
+    normalized_local_contributions = _quillen_local_sequence_contributions(factors, R, n)
+    normalized_global_elementary_factors = _quillen_factors(R, n, normalized_local_contributions)
+    local_product = _quillen_product(R, n, normalized_global_elementary_factors)
+    local_correction = _quillen_local_require_factor_matrix(
+        certificate.local_correction,
+        R,
+        n,
+        "local correction",
+    )
+    denominator_data = _quillen_denominator_data(normalized_local_contributions)
+    factor_provenance = _quillen_local_sequence_factor_provenance(factors)
+    factor_provenance_ok = all(enumerate(factor_provenance)) do (index, provenance)
+        try
+            _quillen_local_sequence_factor_provenance_ok(provenance, index)
+        catch err
+            err isa InterruptException && rethrow()
+            false
+        end
+    end
+    product_denominator_ok =
+        certificate.raw_denominators == raw_denominators &&
+        certificate.product_denominator == product_denominator
+    normalized_contributions_ok = _same_quillen_local_contributions(
+        certificate.normalized_local_contributions,
+        normalized_local_contributions,
+    )
+    normalized_global_elementary_factors_ok = _same_quillen_factors(
+        certificate.normalized_global_elementary_factors,
+        normalized_global_elementary_factors,
+    )
+    local_product_ok = certificate.local_product == local_product
+    local_correction_ok = local_correction == local_product
+    patched_substitution = _quillen_local_patched_witness_summary(
+        certificate.patched_substitution_witness,
+        R,
+        n,
+        selected_variable,
+    )
+    patched_substitution_ok = patched_substitution.ok
+    replay_metadata = _quillen_local_sequence_replay_metadata(certificate, denominator_data)
+    replay_metadata_ok = certificate.replay_metadata == replay_metadata
+    overall_ok =
+        factor_provenance_ok &&
+        product_denominator_ok &&
+        normalized_contributions_ok &&
+        normalized_global_elementary_factors_ok &&
+        local_product_ok &&
+        local_correction_ok &&
+        patched_substitution_ok &&
+        replay_metadata_ok
+
+    return QuillenLocalFactorSequenceVerification(
+        original_input,
+        selected_variable,
+        length(factors),
+        raw_denominators,
+        product_denominator,
+        normalized_local_contributions,
+        normalized_global_elementary_factors,
+        local_product,
+        local_correction,
+        denominator_data,
+        factor_provenance,
+        factor_provenance_ok,
+        product_denominator_ok,
+        normalized_contributions_ok,
+        normalized_global_elementary_factors_ok,
+        local_product_ok,
+        local_correction_ok,
+        patched_substitution,
+        patched_substitution_ok,
+        replay_metadata,
+        replay_metadata_ok,
+        overall_ok,
+    )
+end
+
+function QuillenLocalFactorSequenceCertificate(
+    ring,
+    size::Int,
+    selected_variable,
+    factors,
+    raw_denominators,
+    product_denominator,
+    normalized_global_elementary_factors,
+    local_product,
+    local_correction,
+    verification,
+)
+    R = _require_supported_quillen_ring(ring)
+    n = Int(size)
+    normalized_factors = [
+        _quillen_local_sequence_factor(raw_factor, R, n, index)
+        for (index, raw_factor) in enumerate(collect(factors))
+    ]
+    normalized_local_contributions = try
+        _quillen_local_sequence_contributions(normalized_factors, R, n)
+    catch err
+        err isa InterruptException && rethrow()
+        QuillenLocalContribution[]
+    end
+    original_input = verification isa QuillenLocalFactorSequenceVerification ?
+        verification.original_input :
+        local_correction
+    replay_metadata = verification isa QuillenLocalFactorSequenceVerification ?
+        verification.replay_metadata :
+        (;)
+    return QuillenLocalFactorSequenceCertificate(
+        original_input,
+        R,
+        n,
+        selected_variable,
+        normalized_factors,
+        collect(raw_denominators),
+        product_denominator,
+        local_product,
+        local_correction,
+        normalized_local_contributions,
+        collect(normalized_global_elementary_factors),
+        nothing,
+        nothing,
+        (;),
+        replay_metadata,
+        verification,
+    )
+end
+
+function quillen_local_factor_sequence_certificate(
+    original_input,
+    selected_variable;
+    factors,
+    local_correction = nothing,
+    patched_substitution_witness = nothing,
+    chain_witness = nothing,
+    witness_metadata = nothing,
+    local_evidence = nothing,
+    provenance = (;),
+    ring = nothing,
+    size = nothing,
+)
+    R, n = _quillen_local_input_ring_size(original_input; ring, size)
+    selected = _require_substitution_generator(R, selected_variable)
+    raw_factors = collect(factors)
+    isempty(raw_factors) &&
+        throw(ArgumentError("Quillen local factor sequence certificate requires at least one factor"))
+    normalized_factors = [
+        _quillen_local_sequence_factor(raw_factor, R, n, index)
+        for (index, raw_factor) in enumerate(raw_factors)
+    ]
+    normalized_local_contributions = _quillen_local_sequence_contributions(normalized_factors, R, n)
+    normalized_global_elementary_factors = _quillen_factors(R, n, normalized_local_contributions)
+    local_product = _quillen_product(R, n, normalized_global_elementary_factors)
+    recorded_local_correction = if local_correction !== nothing
+        _quillen_local_require_factor_matrix(local_correction, R, n, "local correction")
+    elseif local_evidence !== nothing && hasproperty(local_evidence, :expected_product)
+        _quillen_local_require_factor_matrix(local_evidence.expected_product, R, n, "local correction")
+    else
+        local_product
+    end
+    stored_witness_metadata = witness_metadata === nothing ?
+        (; provenance = provenance, local_evidence = local_evidence) :
+        witness_metadata
+    raw_denominators = [factor.denominator for factor in normalized_factors]
+    product_denominator = prod(raw_denominators; init = one(R))
+    placeholder = QuillenLocalFactorSequenceVerification(
+        _quillen_local_sequence_original_input(original_input, R, n),
+        selected,
+        length(normalized_factors),
+        raw_denominators,
+        product_denominator,
+        normalized_local_contributions,
+        normalized_global_elementary_factors,
+        local_product,
+        recorded_local_correction,
+        _quillen_denominator_data(normalized_local_contributions),
+        _quillen_local_sequence_factor_provenance(normalized_factors),
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        (; present = false, ok = false),
+        false,
+        (;),
+        false,
+        false,
+    )
+    provisional = QuillenLocalFactorSequenceCertificate(
+        _quillen_local_sequence_original_input(original_input, R, n),
+        R,
+        n,
+        selected,
+        normalized_factors,
+        raw_denominators,
+        product_denominator,
+        local_product,
+        recorded_local_correction,
+        normalized_local_contributions,
+        normalized_global_elementary_factors,
+        patched_substitution_witness,
+        chain_witness,
+        stored_witness_metadata,
+        nothing,
+        placeholder,
+    )
+    replay_metadata = _quillen_local_sequence_replay_metadata(
+        provisional,
+        _quillen_denominator_data(normalized_local_contributions),
+    )
+    provisional = QuillenLocalFactorSequenceCertificate(
+        provisional.original_input,
+        provisional.ring,
+        provisional.size,
+        provisional.selected_variable,
+        provisional.factors,
+        provisional.raw_denominators,
+        provisional.product_denominator,
+        provisional.local_product,
+        provisional.local_correction,
+        provisional.normalized_local_contributions,
+        provisional.normalized_global_elementary_factors,
+        provisional.patched_substitution_witness,
+        provisional.chain_witness,
+        provisional.witness_metadata,
+        replay_metadata,
+        placeholder,
+    )
+    verification = replay_quillen_local_factor_sequence(provisional)
+    verification.overall_ok ||
+        throw(ArgumentError("Quillen local factor sequence certificate data does not replay"))
+    return QuillenLocalFactorSequenceCertificate(
+        provisional.original_input,
+        provisional.ring,
+        provisional.size,
+        provisional.selected_variable,
+        provisional.factors,
+        provisional.raw_denominators,
+        provisional.product_denominator,
+        provisional.local_product,
+        provisional.local_correction,
+        provisional.normalized_local_contributions,
+        provisional.normalized_global_elementary_factors,
+        provisional.patched_substitution_witness,
+        provisional.chain_witness,
+        provisional.witness_metadata,
+        provisional.replay_metadata,
+        verification,
+    )
+end
+
+function quillen_local_factor_sequence_certificate(
+    certificate::QuillenLocalRealizationCertificate;
+    factor_provenance = (;
+        source = :quillen_local_realization_certificate,
+        local_witness_metadata = certificate.witness_metadata,
+    ),
+    metadata = certificate.witness_metadata,
+    chain_witness = nothing,
+    local_evidence = nothing,
+    provenance = (; source = :length_one_local_factor_sequence),
+)
+    verify_quillen_local_certificate(certificate) ||
+        throw(ArgumentError("Quillen local realization certificate does not replay"))
+    factor = QuillenLocalElementaryFactor(
+        certificate.correction.row,
+        certificate.correction.col,
+        certificate.correction.entry,
+        certificate.denominator,
+        certificate.coverage_multiplier,
+        factor_provenance,
+        certificate.local_certificate,
+        metadata,
+    )
+    return quillen_local_factor_sequence_certificate(
+        certificate.original_input,
+        certificate.selected_variable;
+        factors = [factor],
+        local_correction = certificate.local_correction,
+        patched_substitution_witness = certificate.patched_substitution_witness,
+        chain_witness = chain_witness,
+        witness_metadata = certificate.witness_metadata,
+        local_evidence = local_evidence,
+        provenance = provenance,
+        ring = certificate.ring,
+        size = certificate.size,
+    )
+end
+
+function verify_quillen_local_factor_sequence_certificate(certificate)::Bool
+    try
+        replay = replay_quillen_local_factor_sequence(certificate)
+        return replay.overall_ok &&
+               _same_quillen_local_factor_sequence_verification(
+                   certificate.verification,
+                   replay,
+               )
     catch err
         err isa InterruptException && rethrow()
         return false

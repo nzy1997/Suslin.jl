@@ -31,6 +31,7 @@ function qlfs_factor_record(entry, index::Int)
         local_certificate = qlfs_local_certificate(local_factor),
         provenance = (;
             factor_index = index,
+            sequence_index = index,
             local_index = index,
             fixture_id = entry.id,
             source = evidence.source,
@@ -43,7 +44,17 @@ function qlfs_factor_record(entry, index::Int)
     )
 end
 
+function qlfs_local_certificate_with_denominator(factor, denominator)
+    indices = factor.local_certificate.indices
+    denominators = [
+        (index == factor.row || index == factor.col) ? denominator : factor.local_certificate.denominators[position]
+        for (position, index) in enumerate(indices)
+    ]
+    return Suslin.LocalCertificate(indices, denominators)
+end
+
 function qlfs_rebuild_factor(factor; kwargs...)
+    overrides = NamedTuple(kwargs)
     fields = merge((
         row = factor.row,
         col = factor.col,
@@ -53,7 +64,7 @@ function qlfs_rebuild_factor(factor; kwargs...)
         local_certificate = factor.local_certificate,
         provenance = factor.provenance,
         metadata = factor.metadata,
-    ), kwargs)
+    ), overrides)
     return Suslin.QuillenLocalElementaryFactor(
         fields.row,
         fields.col,
@@ -85,6 +96,7 @@ function qlfs_sequence_fields(factors, R, n)
 end
 
 function qlfs_rebuild_sequence_certificate(cert; recompute_derived::Bool = false, kwargs...)
+    overrides = NamedTuple(kwargs)
     derived = recompute_derived ? qlfs_sequence_fields(cert.factors, cert.ring, cert.size) : (;)
     fields = merge((
         ring = cert.ring,
@@ -97,15 +109,15 @@ function qlfs_rebuild_sequence_certificate(cert; recompute_derived::Bool = false
         local_product = cert.local_product,
         local_correction = cert.local_correction,
         verification = cert.verification,
-    ), derived, kwargs)
-    if recompute_derived && !haskey(kwargs, :factors)
+    ), derived, overrides)
+    if recompute_derived && !(:factors in keys(overrides))
         recomputed = qlfs_sequence_fields(fields.factors, fields.ring, fields.size)
         fields = merge(fields, recomputed)
-    elseif haskey(kwargs, :factors) &&
-           !haskey(kwargs, :raw_denominators) &&
-           !haskey(kwargs, :product_denominator) &&
-           !haskey(kwargs, :normalized_global_elementary_factors) &&
-           !haskey(kwargs, :local_product)
+    elseif :factors in keys(overrides) &&
+           !(:raw_denominators in keys(overrides)) &&
+           !(:product_denominator in keys(overrides)) &&
+           !(:normalized_global_elementary_factors in keys(overrides)) &&
+           !(:local_product in keys(overrides))
         recomputed = qlfs_sequence_fields(fields.factors, fields.ring, fields.size)
         fields = merge(fields, recomputed)
     end
@@ -171,9 +183,11 @@ end
 
     bad_denominator = qlfs_rebuild_sequence_certificate(cert; factors = begin
         modified = collect(cert.factors)
+        new_denominator = modified[1].denominator + one(cert.ring)
         modified[1] = qlfs_rebuild_factor(
             modified[1];
-            denominator = modified[1].denominator + one(cert.ring),
+            denominator = new_denominator,
+            local_certificate = qlfs_local_certificate_with_denominator(modified[1], new_denominator),
         )
         modified
     end)
@@ -204,7 +218,15 @@ end
     end)
     @test !Suslin.verify_quillen_local_factor_sequence_certificate(bad_provenance)
 
-    reversed_order = qlfs_rebuild_sequence_certificate(cert; factors = reverse(collect(cert.factors)))
+    reversed_order = qlfs_rebuild_sequence_certificate(
+        cert;
+        factors = reverse(collect(cert.factors)),
+        recompute_derived = true,
+    )
+    reversed_order = qlfs_rebuild_sequence_certificate(
+        reversed_order;
+        verification = Suslin.replay_quillen_local_factor_sequence(reversed_order),
+    )
     reversed_order_replay = Suslin.replay_quillen_local_factor_sequence(reversed_order)
     @test reversed_order.factors == reverse(collect(cert.factors))
     @test reversed_order.normalized_global_elementary_factors ==
@@ -213,6 +235,9 @@ end
     @test reversed_order_replay.normalized_global_elementary_factors ==
           reversed_order.normalized_global_elementary_factors
     @test reversed_order_replay.local_product == reversed_order.local_product
+    @test !reversed_order_replay.factor_provenance_ok
+    @test reversed_order_replay.product_denominator_ok
+    @test reversed_order_replay.replay_metadata_ok
     @test !reversed_order_replay.overall_ok
     @test !Suslin.verify_quillen_local_factor_sequence_certificate(reversed_order)
 end
