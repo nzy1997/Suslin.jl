@@ -107,4 +107,16 @@ end
         [one(L), lx, ly],
         L,
     )
+
+    @test_throws ArgumentError Suslin.realize_cohn_type_certificate(
+        3,
+        1,
+        2,
+        one(QQ),
+        [one(QQ), one(QQ), zero(QQ)],
+        QQ,
+    )
+
+    malformed_ring_cert = replace_cohn_certificate_field(cert, :ring, QQ)
+    @test !Suslin.verify_cohn_type_certificate(malformed_ring_cert)
 end
