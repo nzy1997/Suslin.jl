@@ -4,6 +4,15 @@ using Oscar
 
 include(joinpath(@__DIR__, "..", "fixtures", "quillen_mainline_cases.jl"))
 
+mutable struct QLFSFlakyProvenance
+    isempty_calls::Int
+end
+
+function Base.isempty(provenance::QLFSFlakyProvenance)
+    provenance.isempty_calls += 1
+    return provenance.isempty_calls > 1
+end
+
 function qlfs_product(factors, R, n)
     product = identity_matrix(R, n)
     for factor in factors
@@ -300,4 +309,112 @@ end
     @test reversed_order_replay.replay_metadata_ok
     @test !reversed_order_replay.overall_ok
     @test !Suslin.verify_quillen_local_factor_sequence_certificate(reversed_order)
+
+    dict_provenance_factor = begin
+        source = cert.factors[1]
+        (;
+            row = source.row,
+            col = source.col,
+            numerator = source.numerator,
+            denominator = source.denominator,
+            coverage_multiplier = source.coverage_multiplier,
+            provenance = Dict(
+                :factor_index => 1,
+                :sequence_index => 1,
+                :local_index => 1,
+                :fixture_id => entry.id,
+            ),
+        )
+    end
+    dict_default_cert = Suslin.quillen_local_factor_sequence_certificate(
+        entry.patch_case.target_matrix,
+        entry.patch_case.substitution_variable;
+        factors = [dict_provenance_factor],
+        ring = entry.patch_case.ring.object,
+        size = entry.patch_case.size,
+    )
+    @test Suslin.verify_quillen_local_factor_sequence_certificate(dict_default_cert)
+    @test dict_default_cert.local_correction == dict_default_cert.local_product
+    @test dict_default_cert.factors[1].metadata == (; factor_index = 1)
+    @test dict_default_cert.factors[1].local_certificate.indices ==
+          [dict_default_cert.factors[1].row, dict_default_cert.factors[1].col]
+    @test dict_default_cert.factors[1].local_certificate.denominators ==
+          [dict_default_cert.factors[1].denominator, dict_default_cert.factors[1].denominator]
+    @test dict_default_cert.verification.factor_provenance_ok
+
+    empty_vector_provenance_factor = merge(
+        dict_provenance_factor,
+        (; provenance = Symbol[]),
+    )
+    @test_throws ArgumentError Suslin.quillen_local_factor_sequence_certificate(
+        entry.patch_case.target_matrix,
+        entry.patch_case.substitution_variable;
+        factors = [empty_vector_provenance_factor],
+        ring = entry.patch_case.ring.object,
+        size = entry.patch_case.size,
+    )
+
+    legacy_source = qlfs_rebuild_sequence_certificate(
+        cert;
+        patched_substitution_witness = nothing,
+        chain_witness = nothing,
+        witness_metadata = (;),
+        recompute_derived = true,
+    )
+    legacy_source = qlfs_rebuild_sequence_certificate(
+        legacy_source;
+        verification = Suslin.replay_quillen_local_factor_sequence(legacy_source),
+    )
+    legacy_cert = Suslin.QuillenLocalFactorSequenceCertificate(
+        legacy_source.ring,
+        legacy_source.size,
+        legacy_source.selected_variable,
+        legacy_source.factors,
+        legacy_source.raw_denominators,
+        legacy_source.product_denominator,
+        legacy_source.normalized_global_elementary_factors,
+        legacy_source.local_product,
+        legacy_source.local_correction,
+        legacy_source.verification,
+    )
+    @test Suslin.verify_quillen_local_factor_sequence_certificate(legacy_cert)
+    @test legacy_cert.original_input == legacy_source.original_input
+    @test legacy_cert.replay_metadata == legacy_source.replay_metadata
+
+    incomplete_certificate_factor = qlfs_rebuild_factor(
+        legacy_source.factors[1];
+        local_certificate = Suslin.LocalCertificate(
+            [legacy_source.factors[1].row],
+            [legacy_source.factors[1].denominator],
+        ),
+    )
+    incomplete_legacy_cert = Suslin.QuillenLocalFactorSequenceCertificate(
+        legacy_source.ring,
+        legacy_source.size,
+        legacy_source.selected_variable,
+        [incomplete_certificate_factor],
+        [incomplete_certificate_factor.denominator],
+        incomplete_certificate_factor.denominator,
+        legacy_source.normalized_global_elementary_factors,
+        legacy_source.local_product,
+        legacy_source.local_correction,
+        legacy_source.verification,
+    )
+    @test isempty(incomplete_legacy_cert.normalized_local_contributions)
+
+    flaky_provenance_factor = qlfs_rebuild_factor(
+        cert.factors[1];
+        provenance = QLFSFlakyProvenance(0),
+    )
+    flaky_provenance = qlfs_rebuild_sequence_certificate(
+        cert;
+        factors = [flaky_provenance_factor],
+        recompute_derived = true,
+    )
+    flaky_provenance_replay = Suslin.replay_quillen_local_factor_sequence(flaky_provenance)
+    @test !flaky_provenance_replay.factor_provenance_ok
+    @test !flaky_provenance_replay.overall_ok
+
+    malformed_size = qlfs_rebuild_sequence_certificate(cert; size = 1)
+    @test !Suslin.verify_quillen_local_factor_sequence_certificate(malformed_size)
 end
