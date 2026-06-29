@@ -754,7 +754,8 @@ function _same_quillen_local_elementary_factor(
            left.denominator == right.denominator &&
            left.coverage_multiplier == right.coverage_multiplier &&
            left.provenance == right.provenance &&
-           left.local_certificate == right.local_certificate &&
+           left.local_certificate.indices == right.local_certificate.indices &&
+           left.local_certificate.denominators == right.local_certificate.denominators &&
            left.metadata == right.metadata
 end
 
@@ -1228,6 +1229,8 @@ function replay_quillen_denominator_cover_candidate(
     candidate::QuillenDenominatorCoverCandidate,
 )
     local_certificates = candidate.local_certificates
+    isempty(local_certificates) &&
+        throw(ArgumentError("Quillen denominator-cover candidate requires at least one local certificate"))
     R = _require_supported_quillen_ring(candidate.ring)
     n = Int(candidate.size)
     n >= 2 || throw(ArgumentError("candidate size must be at least 2"))

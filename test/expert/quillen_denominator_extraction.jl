@@ -196,6 +196,40 @@ function qde_rebuild_candidate(candidate; kwargs...)
     )
 end
 
+function qde_rebuild_candidate_verification(verification; kwargs...)
+    overrides = NamedTuple(kwargs)
+    fields = merge((
+        local_count = verification.local_count,
+        raw_denominators = verification.raw_denominators,
+        local_certificates_ok = verification.local_certificates_ok,
+        same_original_input_ok = verification.same_original_input_ok,
+        same_ring_ok = verification.same_ring_ok,
+        same_size_ok = verification.same_size_ok,
+        same_selected_variable_ok = verification.same_selected_variable_ok,
+        local_supports = verification.local_supports,
+        local_supports_ok = verification.local_supports_ok,
+        raw_denominators_ok = verification.raw_denominators_ok,
+        replay_metadata = verification.replay_metadata,
+        replay_metadata_ok = verification.replay_metadata_ok,
+        overall_ok = verification.overall_ok,
+    ), overrides)
+    return Suslin.QuillenDenominatorCoverCandidateVerification(
+        fields.local_count,
+        fields.raw_denominators,
+        fields.local_certificates_ok,
+        fields.same_original_input_ok,
+        fields.same_ring_ok,
+        fields.same_size_ok,
+        fields.same_selected_variable_ok,
+        fields.local_supports,
+        fields.local_supports_ok,
+        fields.raw_denominators_ok,
+        fields.replay_metadata,
+        fields.replay_metadata_ok,
+        fields.overall_ok,
+    )
+end
+
 function qde_trivial_sequence_certificate(R, selected_variable, n::Int)
     correction = Suslin.QuillenElementaryCorrection(1, 2, zero(R))
     local_certificate = Suslin.LocalCertificate([1, 2], [one(R), one(R)])
@@ -256,6 +290,40 @@ end
         Suslin.QuillenLocalFactorSequenceCertificate[],
     )
 
+    empty_replay_metadata = (
+        local_count = 0,
+        raw_denominators = Any[],
+        support_denominators = Any[],
+        support_kinds = Symbol[],
+        local_sequence_replay_metadata = Any[],
+    )
+    empty_candidate = Suslin.QuillenDenominatorCoverCandidate(
+        candidate.original_input,
+        candidate.ring,
+        candidate.size,
+        candidate.selected_variable,
+        Suslin.QuillenLocalFactorSequenceCertificate[],
+        Any[],
+        Suslin.QuillenLocalDenominatorSupport[],
+        empty_replay_metadata,
+        Suslin.QuillenDenominatorCoverCandidateVerification(
+            0,
+            Any[],
+            true,
+            true,
+            true,
+            true,
+            true,
+            Suslin.QuillenLocalDenominatorSupport[],
+            true,
+            true,
+            empty_replay_metadata,
+            true,
+            true,
+        ),
+    )
+    @test !Suslin.verify_quillen_denominator_cover_candidate(empty_candidate)
+
     dropped_candidate = qde_rebuild_candidate(
         candidate;
         local_certificates = candidate.local_certificates[1:1],
@@ -300,6 +368,34 @@ end
         end,
     )
     @test !Suslin.verify_quillen_denominator_cover_candidate(edited_factor_denominator_candidate)
+
+    structurally_equivalent_factor_entries = [
+        qde_rebuild_factor(
+            factor;
+            local_certificate = Suslin.LocalCertificate(
+                copy(factor.local_certificate.indices),
+                copy(factor.local_certificate.denominators),
+            ),
+        )
+        for factor in candidate.local_supports[1].factor_entries
+    ]
+    structurally_equivalent_supports = collect(candidate.local_supports)
+    structurally_equivalent_supports[1] = qde_rebuild_support(
+        structurally_equivalent_supports[1];
+        factor_entries = structurally_equivalent_factor_entries,
+    )
+    structurally_equivalent_candidate = qde_rebuild_candidate(
+        candidate;
+        local_supports = structurally_equivalent_supports,
+    )
+    structurally_equivalent_candidate = qde_rebuild_candidate(
+        structurally_equivalent_candidate;
+        verification = qde_rebuild_candidate_verification(
+            candidate.verification;
+            local_supports = structurally_equivalent_supports,
+        ),
+    )
+    @test Suslin.verify_quillen_denominator_cover_candidate(structurally_equivalent_candidate)
 
     mixed_variable_certificates = collect(certificates)
     mixed_variable_certificates[2] = qde_sequence_certificate(
