@@ -159,4 +159,6 @@ end
 
     tampered_n_cert = replace_conjugate_certificate_field(cert, :n, cert.n + 1)
     @test !Suslin.verify_conjugate_elementary_certificate(tampered_n_cert)
+
+    @test !Suslin.verify_conjugate_elementary_certificate((not_a_certificate = true,))
 end
