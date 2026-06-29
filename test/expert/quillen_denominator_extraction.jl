@@ -51,6 +51,8 @@ end
 function qde_sequence_certificate(entry, index::Int; selected_variable = entry.patch_case.substitution_variable)
     local_factor = entry.patch_case.local_factors[index]
     record = qde_factor_record(entry, index)
+    # #214 sequence certificates are one-factor artifacts, so their positional provenance
+    # is normalized to 1 even when the surrounding mainline fixture index is larger.
     factor_provenance = merge(record.provenance, (; factor_index = 1, sequence_index = 1, local_index = 1))
     realization = Suslin.quillen_local_realization_certificate(
         entry.patch_case.target_matrix,
@@ -76,6 +78,70 @@ function qde_sequence_certificates(entry)
         qde_sequence_certificate(entry, index)
         for index in eachindex(entry.patch_case.local_factors)
     ]
+end
+
+function qde_rebuild_factor(factor; kwargs...)
+    overrides = NamedTuple(kwargs)
+    fields = merge((
+        row = factor.row,
+        col = factor.col,
+        numerator = factor.numerator,
+        denominator = factor.denominator,
+        coverage_multiplier = factor.coverage_multiplier,
+        local_certificate = factor.local_certificate,
+        provenance = factor.provenance,
+        metadata = factor.metadata,
+    ), overrides)
+    return Suslin.QuillenLocalElementaryFactor(
+        fields.row,
+        fields.col,
+        fields.numerator,
+        fields.denominator,
+        fields.coverage_multiplier,
+        fields.local_certificate,
+        fields.provenance,
+        fields.metadata,
+    )
+end
+
+function qde_rebuild_sequence_certificate(cert; kwargs...)
+    overrides = NamedTuple(kwargs)
+    fields = merge((
+        original_input = cert.original_input,
+        ring = cert.ring,
+        size = cert.size,
+        selected_variable = cert.selected_variable,
+        factors = cert.factors,
+        raw_denominators = cert.raw_denominators,
+        product_denominator = cert.product_denominator,
+        local_product = cert.local_product,
+        local_correction = cert.local_correction,
+        normalized_local_contributions = cert.normalized_local_contributions,
+        normalized_global_elementary_factors = cert.normalized_global_elementary_factors,
+        patched_substitution_witness = cert.patched_substitution_witness,
+        chain_witness = cert.chain_witness,
+        witness_metadata = cert.witness_metadata,
+        replay_metadata = cert.replay_metadata,
+        verification = cert.verification,
+    ), overrides)
+    return Suslin.QuillenLocalFactorSequenceCertificate(
+        fields.original_input,
+        fields.ring,
+        fields.size,
+        fields.selected_variable,
+        fields.factors,
+        fields.raw_denominators,
+        fields.product_denominator,
+        fields.local_product,
+        fields.local_correction,
+        fields.normalized_local_contributions,
+        fields.normalized_global_elementary_factors,
+        fields.patched_substitution_witness,
+        fields.chain_witness,
+        fields.witness_metadata,
+        fields.replay_metadata,
+        fields.verification,
+    )
 end
 
 function qde_rebuild_support(support; kwargs...)
@@ -133,9 +199,15 @@ end
 @testset "Quillen denominator extraction" begin
     entries = Main.QuillenMainlineFixtureCatalog.cases_by_id()
     entry = entries["quillen-two-open-cover-qq"]
+    nontrivial_entry = entries["quillen-nontrivial-multipliers-qq"]
+    constructive_entry = entries["quillen-constructive-acceptance-gf2"]
     certificates = qde_sequence_certificates(entry)
+    nontrivial_certificates = qde_sequence_certificates(nontrivial_entry)
+    constructive_certificates = qde_sequence_certificates(constructive_entry)
 
     @test all(Suslin.verify_quillen_local_factor_sequence_certificate, certificates)
+    @test all(Suslin.verify_quillen_local_factor_sequence_certificate, nontrivial_certificates)
+    @test all(Suslin.verify_quillen_local_factor_sequence_certificate, constructive_certificates)
 
     candidate = Suslin.extract_quillen_denominator_cover_candidate(certificates)
 
@@ -212,4 +284,45 @@ end
         )),
     )
     @test_throws ArgumentError Suslin.extract_quillen_denominator_cover_candidate(mixed_variable_certificates)
+
+    unverified_local_sequence_certificates = collect(certificates)
+    unverified_local_sequence_certificates[2] = qde_rebuild_sequence_certificate(
+        certificates[2];
+        factors = begin
+            modified = collect(certificates[2].factors)
+            modified[1] = qde_rebuild_factor(
+                modified[1];
+                numerator = modified[1].numerator + one(certificates[2].ring),
+            )
+            modified
+        end,
+    )
+    @test !Suslin.verify_quillen_local_factor_sequence_certificate(unverified_local_sequence_certificates[2])
+    @test_throws ArgumentError Suslin.extract_quillen_denominator_cover_candidate(unverified_local_sequence_certificates)
+
+    mixed_original_input_certificates = [
+        certificates[1],
+        nontrivial_certificates[1],
+    ]
+    @test certificates[1].original_input != nontrivial_certificates[1].original_input
+    @test certificates[1].ring == nontrivial_certificates[1].ring
+    @test certificates[1].size == nontrivial_certificates[1].size
+    @test certificates[1].selected_variable == nontrivial_certificates[1].selected_variable
+    @test_throws ArgumentError Suslin.extract_quillen_denominator_cover_candidate(mixed_original_input_certificates)
+
+    mixed_ring_certificates = collect(certificates)
+    mixed_ring_certificates[2] = qde_rebuild_sequence_certificate(
+        certificates[2];
+        ring = constructive_certificates[1].ring,
+    )
+    @test mixed_ring_certificates[1].ring != mixed_ring_certificates[2].ring
+    @test_throws ArgumentError Suslin.extract_quillen_denominator_cover_candidate(mixed_ring_certificates)
+
+    mixed_size_certificates = collect(certificates)
+    mixed_size_certificates[2] = qde_rebuild_sequence_certificate(
+        certificates[2];
+        size = certificates[2].size + 1,
+    )
+    @test mixed_size_certificates[1].size != mixed_size_certificates[2].size
+    @test_throws ArgumentError Suslin.extract_quillen_denominator_cover_candidate(mixed_size_certificates)
 end
