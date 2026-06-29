@@ -87,6 +87,21 @@ function _replace_rewrite_field(rewrite, field::Symbol, value)
     return merge(rewrite, NamedTuple{(field,)}((value,)))
 end
 
+function _replace_conjugated_certificate_field(cert, field::Symbol, value)
+    fields = fieldnames(typeof(cert))
+    values = [getfield(cert, name) for name in fields]
+    idx = findfirst(==(field), fields)
+    idx === nothing && error("unknown conjugated certificate field: $(field)")
+    values[idx] = value
+    return typeof(cert)(values...)
+end
+
+function _tamper_nested_first_factor(cert, R, n::Int)
+    factors = copy(cert.factors)
+    factors[1] = identity_matrix(R, n)
+    return _replace_conjugated_certificate_field(cert, :factors, factors)
+end
+
 function _fixture_certificate(id::AbstractString, witness_builder, normality_entry_builder)
     entry = _case_by_id(id)
     R = entry.ring.object
@@ -139,6 +154,11 @@ end
         qq.R,
         length(qq.column),
     )
+    @test qq.certificate.normality_certificate isa Suslin.ConjugatedElementaryNormalityCertificate
+    @test qq.certificate.normality_rewrite.normality_certificate == qq.certificate.normality_certificate
+    @test Suslin.verify_conjugate_elementary_certificate(qq.certificate.normality_certificate)
+    @test qq.certificate.normality_rewrite.rewrite_factors == qq.certificate.normality_certificate.factors
+    @test qq.certificate.normality_rewrite.rewrite_product == qq.certificate.normality_certificate.product
     @test _apply_factors(qq.certificate.final_factors, qq.column, qq.R) ==
           Suslin._target_reduced_column(qq.R, length(qq.column))
     @test Suslin.verify_ecp_induction_normality_certificate(qq.certificate)
@@ -151,6 +171,18 @@ end
         normality_witness = qq.witness,
     )
     @test Suslin.verify_ecp_induction_normality_certificate(explicit_sequence)
+
+    supplied_nested = Suslin.ecp_induction_normality_certificate(
+        qq.column,
+        qq.R;
+        link_step = qq.link,
+        lower_reduction = qq.lower,
+        normality_witness = qq.witness,
+        normality_certificate = qq.certificate.normality_certificate,
+    )
+    @test Suslin.verify_ecp_induction_normality_certificate(supplied_nested)
+    @test supplied_nested.normality_certificate == qq.certificate.normality_certificate
+    @test supplied_nested.final_factors == qq.certificate.final_factors
 
     implicit_lower = Suslin.ecp_induction_normality_certificate(
         qq.column,
@@ -197,6 +229,26 @@ end
         tampered_rewrite,
     )
     @test !Suslin.verify_ecp_induction_normality_certificate(tampered_rewrite_certificate)
+
+    tampered_nested_factor = _replace_record_field(
+        qq.certificate,
+        :normality_certificate,
+        _tamper_nested_first_factor(qq.certificate.normality_certificate, qq.R, length(qq.column)),
+    )
+    @test !Suslin.verify_ecp_induction_normality_certificate(tampered_nested_factor)
+
+    bad_target = copy(qq.certificate.normality_certificate.conjugation_target)
+    bad_target[1, 1] += one(qq.R)
+    tampered_nested_target = _replace_record_field(
+        qq.certificate,
+        :normality_certificate,
+        _replace_conjugated_certificate_field(
+            qq.certificate.normality_certificate,
+            :conjugation_target,
+            bad_target,
+        ),
+    )
+    @test !Suslin.verify_ecp_induction_normality_certificate(tampered_nested_target)
 
     tampered_lower_sequence_certificate = _replace_record_field(
         qq.certificate,

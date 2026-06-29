@@ -82,6 +82,7 @@ struct ECPInductionNormalityCertificate
     lower_variable_factors::Vector
     lifted_lower_variable_factors::Vector
     normality_witness
+    normality_certificate
     normality_rewrite
     final_factors::Vector
     final_column
@@ -454,6 +455,7 @@ function ecp_induction_normality_certificate(
     link_step = nothing,
     lower_reduction = nothing,
     normality_witness = nothing,
+    normality_certificate = nothing,
 )
     _is_laurent_polynomial_ring(R) &&
         throw(ArgumentError("ECP induction/normality currently supports ordinary polynomial columns only"))
@@ -473,6 +475,7 @@ function ecp_induction_normality_certificate(
     lifted_lower_factors = [_lift_polynomial_reduction_factor(factor, R) for factor in lower_factors]
     normality_rewrite = _ecp_induction_normality_rewrite(
         normality_witness,
+        normality_certificate,
         lower_column,
         lifted_lower_factors,
         R,
@@ -488,6 +491,7 @@ function ecp_induction_normality_certificate(
         lower_factors,
         lifted_lower_factors,
         normality_witness,
+        normality_rewrite.normality_certificate,
         normality_rewrite,
         final_factors,
         final_column,
@@ -505,6 +509,7 @@ function ecp_induction_normality_certificate(
         provisional.lower_variable_factors,
         provisional.lifted_lower_variable_factors,
         provisional.normality_witness,
+        provisional.normality_certificate,
         provisional.normality_rewrite,
         provisional.final_factors,
         provisional.final_column,
@@ -1348,6 +1353,10 @@ function _ecp_is_concrete_factor_sequence(value)
 end
 
 function _ecp_induction_normality_rewrite(normality_witness, lower_column, lifted_lower_factors, R)
+    return _ecp_induction_normality_rewrite(normality_witness, nothing, lower_column, lifted_lower_factors, R)
+end
+
+function _ecp_induction_normality_rewrite(normality_witness, normality_certificate, lower_column, lifted_lower_factors, R)
     normality_witness === nothing &&
         throw(ArgumentError("ECP induction/normality requires explicit normality witness data"))
     _ecp_normality_witness_keys_ok(normality_witness) ||
@@ -1375,12 +1384,22 @@ function _ecp_induction_normality_rewrite(normality_witness, lower_column, lifte
 
     sl2_block = elementary_matrix(2, 1, 2, entry, R)
     sl2_embedding = block_embedding(sl2_block, n, sl2_indices)
-    rewrite_factors = try
-        realize_conjugate_elementary(conjugator, fixed_index, moving_index, entry)
+    nested_certificate = try
+        _ecp_induction_normality_certificate_from_inputs(
+            normality_certificate,
+            conjugator,
+            fixed_index,
+            moving_index,
+            entry,
+            R,
+            n,
+        )
     catch err
         err isa InterruptException && rethrow()
+        err isa ArgumentError && rethrow()
         throw(ArgumentError("normality witness could not be rewritten into elementary factors"))
     end
+    rewrite_factors = nested_certificate.factors
     rewrite_product = _factor_sequence_product(rewrite_factors, R, n)
     expected_rewrite_product = conjugator * sl2_embedding * lower_product
     lower_matrix = matrix(R, n, 1, collect(lower_column))
@@ -1396,6 +1415,7 @@ function _ecp_induction_normality_rewrite(normality_witness, lower_column, lifte
         sl2_entry = entry,
         sl2_block,
         sl2_embedding,
+        normality_certificate = nested_certificate,
         rewrite_factors,
         rewrite_product,
         expected_rewrite_product,
@@ -1408,6 +1428,60 @@ end
 function _ecp_normality_witness_keys_ok(normality_witness)
     names = propertynames(normality_witness)
     return all(field -> field in names, (:source, :conjugator, :sl2_indices, :sl2_entry))
+end
+
+function _ecp_induction_normality_certificate_from_inputs(
+    supplied_certificate,
+    conjugator,
+    fixed_index::Int,
+    moving_index::Int,
+    entry,
+    R,
+    n::Int,
+)
+    expected = realize_conjugate_elementary_certificate(conjugator, fixed_index, moving_index, entry)
+    supplied_certificate === nothing && return expected
+    verify_conjugate_elementary_certificate(supplied_certificate) ||
+        throw(ArgumentError("normality certificate does not verify"))
+    _same_base_ring(supplied_certificate.ring, R) ||
+        throw(ArgumentError("normality certificate ring must match the ECP ring"))
+    supplied_certificate.n == n ||
+        throw(ArgumentError("normality certificate dimension must match the ECP column"))
+    _ecp_conjugated_normality_certificates_match(supplied_certificate, expected) ||
+        throw(ArgumentError("normality certificate does not match the supplied witness data"))
+    return supplied_certificate
+end
+
+function _ecp_conjugated_normality_certificates_match(actual, expected)
+    return actual.n == expected.n &&
+        actual.A == expected.A &&
+        actual.i == expected.i &&
+        actual.j == expected.j &&
+        actual.a == expected.a &&
+        _same_base_ring(actual.ring, expected.ring) &&
+        actual.determinant == expected.determinant &&
+        actual.inverse_A == expected.inverse_A &&
+        actual.elementary_matrix == expected.elementary_matrix &&
+        actual.conjugation_convention == expected.conjugation_convention &&
+        actual.conjugation_target == expected.conjugation_target &&
+        actual.v == expected.v &&
+        actual.w == expected.w &&
+        actual.g == expected.g &&
+        actual.rank_one_certificate.n == expected.rank_one_certificate.n &&
+        actual.rank_one_certificate.v == expected.rank_one_certificate.v &&
+        actual.rank_one_certificate.w == expected.rank_one_certificate.w &&
+        actual.rank_one_certificate.g == expected.rank_one_certificate.g &&
+        _same_base_ring(actual.rank_one_certificate.ring, expected.rank_one_certificate.ring) &&
+        actual.rank_one_certificate.orthogonality == expected.rank_one_certificate.orthogonality &&
+        actual.rank_one_certificate.bezout == expected.rank_one_certificate.bezout &&
+        actual.rank_one_certificate.cohn_coefficients == expected.rank_one_certificate.cohn_coefficients &&
+        actual.rank_one_certificate.factors == expected.rank_one_certificate.factors &&
+        actual.rank_one_certificate.target == expected.rank_one_certificate.target &&
+        actual.rank_one_certificate.product == expected.rank_one_certificate.product &&
+        actual.rank_one_certificate.verification == expected.rank_one_certificate.verification &&
+        actual.factors == expected.factors &&
+        actual.product == expected.product &&
+        actual.verification == expected.verification
 end
 
 function _ecp_induction_normality_replay_summary(certificate)
@@ -1437,6 +1511,7 @@ function _ecp_induction_normality_replay_summary(certificate)
     normality_rewrite = try
         _ecp_induction_normality_rewrite(
             certificate.normality_witness,
+            certificate.normality_certificate,
             collect(certificate.lower_variable_column),
             certificate.lifted_lower_variable_factors,
             R,
@@ -1448,6 +1523,9 @@ function _ecp_induction_normality_replay_summary(certificate)
     normality_rewrite_ok = normality_rewrite !== nothing &&
         certificate.normality_rewrite == normality_rewrite &&
         normality_rewrite.overall_ok
+    normality_certificate_ok = normality_rewrite !== nothing &&
+        certificate.normality_certificate == normality_rewrite.normality_certificate &&
+        verify_conjugate_elementary_certificate(certificate.normality_certificate)
 
     expected_final_factors = normality_rewrite === nothing ?
         Any[] :
@@ -1465,6 +1543,7 @@ function _ecp_induction_normality_replay_summary(certificate)
         lower_reduction_ok &&
         lifted_lower_factors_ok &&
         normality_rewrite_ok &&
+        normality_certificate_ok &&
         final_factors_ok &&
         final_column_ok &&
         final_reduction_ok &&
@@ -1477,6 +1556,7 @@ function _ecp_induction_normality_replay_summary(certificate)
         lower_reduction_ok,
         lifted_lower_factors_ok,
         normality_rewrite_ok,
+        normality_certificate_ok,
         final_factors_ok,
         final_column_ok,
         final_reduction_ok,
