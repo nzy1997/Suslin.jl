@@ -48,6 +48,7 @@ const TEST_GROUP_FILES = Dict(
         "expert/sl3_local.jl",
         "expert/sl3_local_extended.jl",
         "expert/sl3_local_certificate.jl",
+        "expert/sl3_local_local_factors.jl",
         "expert/sl3_local_q_degree_normalization.jl",
         "expert/sl3_local_split_lemma.jl",
         "expert/sl3_local_murthy_q_unit.jl",

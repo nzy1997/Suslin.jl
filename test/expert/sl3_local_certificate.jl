@@ -23,6 +23,18 @@ function _assert_sl3_certificate_replays(cert)
     @test _sl3_certificate_product(cert.factors, R) == cert.target
     @test Suslin.verify_factorization(cert.target, cert.factors)
     @test Suslin.verify_sl3_local_realization(cert)
+    local_records = Suslin.sl3_local_denominator_one_records_from_matrices(
+        cert.factors,
+        cert.selected_variable,
+    )
+    local_replay = Suslin.sl3_local_elementary_factor_replay(
+        cert.target,
+        local_records,
+        cert.selected_variable,
+    )
+    @test local_replay.mode == :ordinary
+    @test local_replay.materialized_factors == cert.factors
+    @test Suslin.verify_sl3_local_elementary_factor_replay(local_replay)
 end
 
 function _tamper_first_factor(cert)
