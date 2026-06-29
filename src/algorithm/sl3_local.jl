@@ -214,6 +214,20 @@ function sl3_local_q_degree_normalization(A, X; check_monic::Bool=true)
     return sl3_local_q_degree_normalization(entries.p, entries.q, entries.r, entries.s, X; check_monic)
 end
 
+function sl3_local_q_degree_normalization(context::SL3LocalMurthyInputContext)
+    verify_sl3_local_murthy_input_context(context) ||
+        throw(ArgumentError("Murthy q-degree normalization requires a verified local input context"))
+    context.degree_q >= context.degree_p ||
+        throw(ArgumentError("Murthy q-degree normalization context requires deg(q) >= deg(p)"))
+    return sl3_local_q_degree_normalization(
+        context.entries.p,
+        context.entries.q,
+        context.entries.r,
+        context.entries.s,
+        context.X,
+    )
+end
+
 function sl3_local_q_degree_normalization(p, q, r, s, X; check_monic::Bool=true)
     form = _recognize_sl3_local_q_degree_normalization_parameters(p, q, r, s, X; check_monic)
     quotient, remainder = _sl3_local_divrem_monic_in_variable(form.q, form.p, form.var_idx, form.R)
@@ -250,6 +264,12 @@ function sl3_local_q_degree_normalization_certificate(record::SL3LocalQDegreeNor
     verify_sl3_local_realization(certificate) ||
         error("internal Murthy q-degree normalization certificate verification failed")
     return certificate
+end
+
+function sl3_local_q_degree_normalization_certificate(context::SL3LocalMurthyInputContext)
+    return sl3_local_q_degree_normalization_certificate(
+        sl3_local_q_degree_normalization(context),
+    )
 end
 
 function sl3_local_q_degree_normalization_certificate(args...; check_monic::Bool=true)

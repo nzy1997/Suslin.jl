@@ -73,6 +73,29 @@ end
     @test _qdegree_product(cert.factors, fixture.ring.object) == record.target
     @test Suslin.verify_sl3_local_realization(cert)
 
+    local_fixture = by_id["mg-local-q-degree-qq-u-x"]
+    local_context = Suslin.sl3_local_murthy_input_context(
+        local_fixture.target,
+        local_fixture.variable;
+        witness = first(local_fixture.witnesses),
+    )
+    local_record = Suslin.sl3_local_q_degree_normalization(local_context)
+    local_witness = first(local_fixture.witnesses)
+    _assert_qdegree_record(
+        local_record,
+        local_fixture.entries.p,
+        local_fixture.entries.q,
+        local_fixture.entries.r,
+        local_fixture.entries.s,
+        local_fixture.variable,
+        local_witness.quotient,
+        local_witness.remainder,
+    )
+    local_cert = Suslin.sl3_local_q_degree_normalization_certificate(local_context)
+    @test local_cert.branch == :murthy_q_degree_normalization
+    @test local_cert.target == local_fixture.target
+    @test Suslin.verify_sl3_local_realization(local_cert)
+
     matrix_record = Suslin.sl3_local_q_degree_normalization(fixture.target, fixture.variable)
     @test matrix_record == record
 
@@ -85,6 +108,14 @@ end
     _assert_qdegree_record(second, p, q, r, s, X, X^2, -one(R))
     second_cert = Suslin.sl3_local_q_degree_normalization_certificate(p, q, r, s, X)
     @test Suslin.verify_sl3_local_realization(second_cert)
+
+    local_q0_unit = by_id["mg-local-q0-unit-at-u"]
+    local_q0_context = Suslin.sl3_local_murthy_input_context(
+        local_q0_unit.target,
+        local_q0_unit.variable;
+        witness = first(local_q0_unit.witnesses),
+    )
+    @test_throws ArgumentError Suslin.sl3_local_q_degree_normalization(local_q0_context)
 
     L, (T,) = Oscar.laurent_polynomial_ring(QQ, ["T"])
     laurent_p = T
