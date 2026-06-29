@@ -51,6 +51,7 @@ const TEST_GROUP_FILES = Dict(
         "expert/sl3_local_split_lemma.jl",
         "expert/sl3_local_murthy_q_unit.jl",
         "expert/sl3_local_murthy_resultant.jl",
+        "expert/sl3_local_murthy_context.jl",
         "expert/sl3_local_murthy_gupta.jl",
         "expert/sln_to_sl3_reduction.jl",
         "expert/park_woodburn_route_certificate.jl",
