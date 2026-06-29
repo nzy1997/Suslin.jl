@@ -50,6 +50,7 @@ function replace_rank_one_certificate_field(cert, field::Symbol, value)
     idx = findfirst(==(field), names)
     idx === nothing && throw(ArgumentError("certificate field $(field) not found"))
     values = ntuple(k -> k == idx ? value : getfield(cert, names[k]), length(names))
+    cert isa NamedTuple && return typeof(cert)(values)
     return typeof(cert)(values...)
 end
 
