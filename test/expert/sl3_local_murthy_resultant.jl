@@ -142,6 +142,12 @@ end
     @test local_cert.target == local_fixture.target
 
     local_reduction = _as_namedtuple(local_cert.witness.reduction)
+    corrupt_local_p_prime = merge(
+        local_reduction,
+        (; p_prime = local_reduction.p_prime + one(base_ring(local_cert.target))),
+    )
+    @test !Suslin.verify_sl3_local_murthy_q0_nonunit_reduction(corrupt_local_p_prime)
+
     corrupt_local_q_prime = merge(
         local_reduction,
         (; q_prime = local_reduction.q_prime + one(base_ring(local_cert.target))),
