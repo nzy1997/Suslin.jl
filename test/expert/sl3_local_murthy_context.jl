@@ -43,6 +43,20 @@ end
     @test ordinary_context.local_units.q0 == true
     @test Suslin.verify_sl3_local_murthy_input_context(ordinary_context)
 
+    unrelated_split_source = by_id["mg-split-lemma-x-square"]
+    unrelated_split_witness = first(unrelated_split_source.witnesses)
+    @test unrelated_split_source.target != ordinary.target
+    wrong_split_witness_err = _captured_error(() -> Suslin.sl3_local_murthy_input_context(
+        ordinary.target,
+        ordinary.variable;
+        split_witness = unrelated_split_witness,
+    ))
+    @test wrong_split_witness_err isa ArgumentError
+    @test occursin(
+        "split witness does not reconstruct the target",
+        sprint(showerror, wrong_split_witness_err),
+    )
+
     local_q0_unit = by_id["mg-local-q0-unit-at-u"]
     local_witness = first(local_q0_unit.witnesses)
     local_context = Suslin.sl3_local_murthy_input_context(

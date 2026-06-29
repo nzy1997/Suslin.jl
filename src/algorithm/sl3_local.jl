@@ -845,7 +845,7 @@ function _sl3_local_murthy_input_context(p, q, r, s, X; witness, local_unit_witn
         local_units,
         normalized_witnesses.bezout_witness,
     )
-    _sl3_local_murthy_verify_split_witness(R, normalized_witnesses.split_witness)
+    _sl3_local_murthy_verify_split_witness(R, normalized_witnesses.split_witness, target)
 
     context = SL3LocalMurthyInputContext(
         R,
@@ -1485,7 +1485,12 @@ function _sl3_local_murthy_input_context_verification(context)
         monic_ok = context.p_monic == p_monic && p_monic
         global_units_ok = context.global_units == expected_global_units
         local_units_ok = context.local_units == expected_local_units
-        split_witness_ok = _sl3_local_murthy_verify_split_witness(R, context.split_witness)
+        replayed_target = _sl3_local_special_form_target(R, p, q, r, s)
+        split_witness_ok = _sl3_local_murthy_verify_split_witness(
+            R,
+            context.split_witness,
+            replayed_target,
+        )
         bezout_witness_ok = context.bezout_witness === nothing || bezout_data !== nothing
         required_evidence_ok = _sl3_local_murthy_validate_required_local_evidence(
             R,
@@ -1496,7 +1501,7 @@ function _sl3_local_murthy_input_context_verification(context)
             expected_local_units,
             context.bezout_witness,
         )
-        target_replay_ok = _sl3_local_special_form_target(R, p, q, r, s) == target
+        target_replay_ok = replayed_target == target
     end
 
     overall_ok = size_ok && ring_ok && ordinary_polynomial_ok && shape_ok &&
