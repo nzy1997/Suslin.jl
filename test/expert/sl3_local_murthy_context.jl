@@ -107,6 +107,49 @@ end
     @test local_context.local_units.q0 == true
     @test local_context.local_unit_witnesses.q0 == local_witness.local_unit_witness
     @test Suslin.verify_sl3_local_murthy_input_context(local_context)
+    local_context_cert = Suslin.realize_sl3_local_certificate(local_context)
+    @test local_context_cert.branch == :murthy_q0_unit
+    @test Suslin.verify_sl3_local_realization(local_context_cert)
+
+    Rmulti, (u_multi, v_multi, X_multi) = Oscar.polynomial_ring(QQ, ["u", "v", "X"])
+    q0_multi = one(Rmulti) + u_multi + v_multi
+    p_multi = X_multi^2 + q0_multi * X_multi + one(Rmulti)
+    q_multi = X_multi + q0_multi
+    r_multi = X_multi + p_multi * X_multi
+    s_multi = p_multi
+    multi_generator_witness = (;
+        context = (;
+            kind = :localization_at_maximal_ideal,
+            selected_variable = X_multi,
+            maximal_ideal_generators = (u_multi, v_multi),
+        ),
+        unit = q0_multi,
+        residue_unit = one(Rmulti),
+        residue_inverse = one(Rmulti),
+        maximal_ideal_generators = (u_multi, v_multi),
+        residue_difference_coefficients = (one(Rmulti), one(Rmulti)),
+        global_unit = false,
+    )
+    multi_generator_context = Suslin.sl3_local_murthy_input_context(
+        p_multi,
+        q_multi,
+        r_multi,
+        s_multi,
+        X_multi;
+        local_unit_witnesses = (; q0 = multi_generator_witness),
+    )
+    @test Suslin.verify_sl3_local_murthy_input_context(multi_generator_context)
+    unsupported_denominator_err = _captured_error(
+        () -> Suslin._sl3_local_derive_local_unit_witness(
+            multi_generator_context,
+            q0_multi,
+        ),
+    )
+    @test unsupported_denominator_err isa ArgumentError
+    @test occursin(
+        "unsupported local-unit denominator witness",
+        sprint(showerror, unsupported_denominator_err),
+    )
 
     missing_local_witness_err = _captured_error(() -> Suslin.sl3_local_murthy_input_context(
         local_q0_unit.target,
@@ -168,6 +211,7 @@ end
     @test bezout_context.local_units.branch_unit == true
     @test bezout_context.bezout_witness == bezout_witness
     @test Suslin.verify_sl3_local_murthy_input_context(bezout_context)
+    @test_throws ArgumentError Suslin.realize_sl3_local_certificate(bezout_context)
 
     RU = local_nonunit.ring.object
     u = first(gens(RU))

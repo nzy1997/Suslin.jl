@@ -103,6 +103,39 @@ function _assert_local_q0_certificate(cert)
     )
 end
 
+function _local_q0_reduction_copy(reduction;
+        target = reduction.target,
+        context = reduction.context,
+        q0 = reduction.q0,
+        q0_inverse = reduction.q0_inverse,
+        p0 = reduction.p0,
+        right_e21_coefficient = reduction.right_e21_coefficient,
+        elimination_factor = reduction.elimination_factor,
+        inverse_elimination_factor = reduction.inverse_elimination_factor,
+        source_certificate = reduction.source_certificate,
+        split_certificate = reduction.split_certificate,
+        local_factor_replay = reduction.local_factor_replay,
+        selected_variable = reduction.selected_variable,
+        degree_p = reduction.degree_p,
+        degree_q = reduction.degree_q)
+    return Suslin.SL3LocalMurthyQUnitLocalReduction(
+        target,
+        context,
+        q0,
+        q0_inverse,
+        p0,
+        right_e21_coefficient,
+        elimination_factor,
+        inverse_elimination_factor,
+        source_certificate,
+        split_certificate,
+        local_factor_replay,
+        selected_variable,
+        degree_p,
+        degree_q,
+    )
+end
+
 @testset "Murthy q(0)-unit recursive branch for local SL3" begin
     include(SL3_Q0_UNIT_FIXTURE_PATH)
     catalog = SL3MurthyGuptaFixtureCatalog.catalog()
@@ -184,6 +217,88 @@ end
     local_cert = Suslin.realize_sl3_local_certificate(local_context)
     _assert_local_q0_certificate(local_cert)
     @test local_cert.target == local_fixture.target
+    local_reduction = local_cert.witness.reduction
+
+    bad_q0_inverse = _local_q0_reduction_copy(
+        local_reduction;
+        q0_inverse = local_reduction.q0_inverse + one(parent(local_reduction.q0_inverse)),
+    )
+    @test !Suslin.verify_sl3_local_murthy_q_unit_reduction(bad_q0_inverse)
+
+    bad_e21 = _local_q0_reduction_copy(
+        local_reduction;
+        right_e21_coefficient =
+            local_reduction.right_e21_coefficient +
+            one(parent(local_reduction.right_e21_coefficient)),
+    )
+    @test !Suslin.verify_sl3_local_murthy_q_unit_reduction(bad_e21)
+
+    replay = local_reduction.local_factor_replay
+    bad_factors = copy(replay.factors)
+    original_factor = first(bad_factors)
+    bad_factors[1] = Suslin.SL3LocalElementaryFactor(
+        original_factor.R,
+        original_factor.n,
+        original_factor.row,
+        original_factor.col,
+        original_factor.numerator + one(original_factor.R),
+        original_factor.denominator,
+        original_factor.selected_variable,
+        original_factor.local_unit_witness,
+    )
+    bad_replay = Suslin.SL3LocalElementaryFactorReplay(
+        replay.target,
+        bad_factors,
+        replay.selected_variable,
+        replay.mode,
+        replay.denominator_product,
+        replay.cleared_product,
+        replay.materialized_factors,
+    )
+    bad_factor_reduction = _local_q0_reduction_copy(
+        local_reduction;
+        local_factor_replay = bad_replay,
+    )
+    @test !Suslin.verify_sl3_local_murthy_q_unit_reduction(bad_factor_reduction)
+    bad_factor_certificate = Suslin.SL3LocalRealizationCertificate(
+        local_cert.target,
+        local_cert.branch,
+        bad_replay.factors,
+        local_cert.selected_variable,
+        (;
+            normalization = nothing,
+            normalized_certificate = nothing,
+            reduction = bad_factor_reduction,
+        ),
+    )
+    @test !Suslin.verify_sl3_local_realization(bad_factor_certificate)
+
+    split_certificate = local_reduction.split_certificate
+    split_witness = split_certificate.witness
+    first_child = split_witness.first_child_certificate
+    bad_first_child = Suslin.SL3LocalRealizationCertificate(
+        split_witness.split.second_child_target,
+        first_child.branch,
+        first_child.factors,
+        first_child.selected_variable,
+        first_child.witness,
+    )
+    bad_split_certificate = Suslin.SL3LocalRealizationCertificate(
+        split_certificate.target,
+        split_certificate.branch,
+        split_certificate.factors,
+        split_certificate.selected_variable,
+        (;
+            split = split_witness.split,
+            first_child_certificate = bad_first_child,
+            second_child_certificate = split_witness.second_child_certificate,
+        ),
+    )
+    bad_split_reduction = _local_q0_reduction_copy(
+        local_reduction;
+        split_certificate = bad_split_certificate,
+    )
+    @test !Suslin.verify_sl3_local_murthy_q_unit_reduction(bad_split_reduction)
 
     nonunit_q0_p = X^2 + one(R)
     nonunit_q0_q = X
