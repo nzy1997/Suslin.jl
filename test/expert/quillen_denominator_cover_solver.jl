@@ -155,6 +155,19 @@ end
 
     @test !Suslin.verify_quillen_denominator_cover_solver_result(_solver_tamper_multiplier(result))
     @test !Suslin.verify_quillen_denominator_cover_solver_result(_solver_tamper_exponent(result))
+    malformed_solver_result = Suslin.QuillenDenominatorCoverSolverResult(
+        result.source_candidate,
+        QQ,
+        result.raw_denominators,
+        result.exponent,
+        result.powered_denominators,
+        result.coverage_multipliers,
+        result.coverage_terms,
+        result.coverage_sum,
+        result.cover_certificate,
+        result.verification,
+    )
+    @test !Suslin.verify_quillen_denominator_cover_solver_result(malformed_solver_result)
 
     R_bad, (X_bad, r_bad, s_bad) = Oscar.polynomial_ring(QQ, ["X", "r", "s"])
     try
