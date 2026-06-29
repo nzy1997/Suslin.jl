@@ -20,6 +20,10 @@ const ALLOWED_LOCAL_EVIDENCE_SEQUENCE_STATUS = Set([
     :placeholder_for_issue_214,
 ])
 
+if !isdefined(Main, :QuillenPatchFixtureCatalog)
+    include(QUILLEN_PATCH_CATALOG_PATH)
+end
+
 function _qml_field(entry, field::Symbol)
     hasproperty(entry, field) || throw(ArgumentError("mainline fixture entry missing field $(field)"))
     return getproperty(entry, field)
@@ -44,10 +48,8 @@ end
 function _qml_quillen_patch_cases_by_id()
     isfile(QUILLEN_PATCH_CATALOG_PATH) ||
         throw(ArgumentError("mainline fixture validation requires the quillen patch catalog at $(QUILLEN_PATCH_CATALOG_PATH)"))
-    if !isdefined(Main, :QuillenPatchFixtureCatalog)
-        include(QUILLEN_PATCH_CATALOG_PATH)
-    end
-    return Main.QuillenPatchFixtureCatalog.cases_by_id()
+    catalog_module = getfield(Main, :QuillenPatchFixtureCatalog)
+    return Base.invokelatest(getfield(catalog_module, :cases_by_id))
 end
 
 function _qml_assert_patch_case(entry)

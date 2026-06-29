@@ -6,11 +6,12 @@ using Suslin
 const QUILLEN_PATCH_CATALOG_PATH = joinpath(@__DIR__, "quillen_patch_cases.jl")
 const PARK_WOODBURN_SECTION_3_REF = "refs/arXiv-alg-geom9405003v1 Section 3"
 
+if !isdefined(Main, :QuillenPatchFixtureCatalog)
+    Base.include(Main, QUILLEN_PATCH_CATALOG_PATH)
+end
+
 function _patch_catalog_module()
-    if !isdefined(Main, :QuillenPatchFixtureCatalog)
-        Base.include(Main, QUILLEN_PATCH_CATALOG_PATH)
-    end
-    return Main.QuillenPatchFixtureCatalog
+    return getfield(Main, :QuillenPatchFixtureCatalog)
 end
 
 function _negative_control(id, base_case_id, reason, entry)
@@ -173,7 +174,8 @@ function _append_common_issue_refs(patch_case_issue_ids, issue_ids...)
 end
 
 function catalog()
-    patch_entries = invokelatest(_patch_catalog_module().cases_by_id)
+    patch_module = _patch_catalog_module()
+    patch_entries = Base.invokelatest(getfield(patch_module, :cases_by_id))
 
     two_open = patch_entries["quillen-two-open-cover-qq"]
     two_open_ring = two_open.ring.object
