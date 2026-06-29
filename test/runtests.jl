@@ -40,6 +40,7 @@ const TEST_GROUP_FILES = Dict(
         "expert/factorization_small_examples.jl",
         "expert/cohn_type.jl",
         "expert/normality.jl",
+        "expert/normality_rank_one.jl",
         "expert/polynomial_normality_fixtures.jl",
         "expert/laurent_elementary_core.jl",
         "expert/sl3_local.jl",
