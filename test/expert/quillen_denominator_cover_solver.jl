@@ -7,6 +7,58 @@ if !isdefined(Main, :QuillenPatchFixtureCatalog)
     include(QUILLEN_PATCH_CATALOG_PATH)
 end
 
+function _solver_local_certificate(local_factor)
+    return Suslin.LocalCertificate(
+        local_factor.certificate.indices,
+        local_factor.certificate.denominators,
+    )
+end
+
+function _solver_local_correction(local_factor)
+    correction = local_factor.correction
+    return Suslin.QuillenElementaryCorrection(
+        correction.row,
+        correction.col,
+        correction.entry,
+    )
+end
+
+function _solver_sequence_certificate(entry, index::Int)
+    local_factor = entry.local_factors[index]
+    realization = Suslin.quillen_local_realization_certificate(
+        entry.target_matrix,
+        entry.substitution_variable;
+        local_certificate = _solver_local_certificate(local_factor),
+        denominator = local_factor.denominator,
+        coverage_multiplier = local_factor.coverage_multiplier,
+        correction = _solver_local_correction(local_factor),
+        factors = [local_factor.factor],
+        patched_substitution_witness = entry.patched_substitution_witness,
+        ring = entry.ring.object,
+        size = entry.size,
+    )
+    return Suslin.quillen_local_factor_sequence_certificate(
+        realization;
+        factor_provenance = (;
+            factor_index = 1,
+            sequence_index = 1,
+            local_index = 1,
+            fixture_id = entry.id,
+        ),
+        metadata = (;
+            source_refs = entry.source_refs,
+            consumer_issue_ids = entry.consumer_issue_ids,
+        ),
+    )
+end
+
+function _solver_denominator_cover_candidate(entry)
+    return Suslin.extract_quillen_denominator_cover_candidate([
+        _solver_sequence_certificate(entry, index)
+        for index in eachindex(entry.local_factors)
+    ])
+end
+
 function _solver_tamper_multiplier(result)
     multipliers = copy(result.coverage_multipliers)
     multipliers[1] += one(result.ring)
@@ -65,6 +117,14 @@ end
     @test replay.powered_denominators == result.powered_denominators
     @test replay.coverage_sum == result.coverage_sum
     @test replay.coverage_ok == result.verification.coverage_ok
+
+    candidate = _solver_denominator_cover_candidate(two_open)
+    candidate_result = Suslin.solve_quillen_denominator_cover(candidate; max_exponent = 2)
+    @test candidate_result.source_candidate === candidate
+    @test candidate_result.raw_denominators == candidate.raw_denominators
+    @test candidate_result.powered_denominators == candidate.raw_denominators
+    @test candidate_result.verification.source_candidate_ok
+    @test Suslin.verify_quillen_denominator_cover_solver_result(candidate_result)
 
     squared = Suslin.solve_quillen_denominator_cover(
         R,

@@ -1489,16 +1489,10 @@ function _quillen_supplied_cover_multipliers(coverage_multipliers, supplied_mult
 end
 
 function _quillen_cover_coordinate_multipliers(R, powered_denominators)
-    try
-        coordinates = Oscar.coordinates(one(R), ideal(R, powered_denominators))
-        return [R(coordinates[1, idx]) for idx in eachindex(powered_denominators)]
-    catch err
-        err isa InterruptException && rethrow()
-        err isa ErrorException &&
-            occursin("does not belong to the ideal", err.msg) &&
-            return nothing
-        rethrow()
-    end
+    cover_ideal = ideal(R, powered_denominators)
+    one(R) in cover_ideal || return nothing
+    coordinates = Oscar.coordinates(one(R), cover_ideal)
+    return [R(coordinates[1, idx]) for idx in eachindex(powered_denominators)]
 end
 
 function _quillen_denominator_cover_solver_result(
@@ -1581,6 +1575,7 @@ function solve_quillen_denominator_cover(
             verify_quillen_denominator_cover_solver_result(result) && return result
         catch err
             err isa InterruptException && rethrow()
+            err isa ArgumentError || rethrow()
         end
     end
 
