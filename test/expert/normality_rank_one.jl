@@ -17,6 +17,14 @@ function rank_one_product_of_factors(factors, R, n::Int)
     return product
 end
 
+function rank_one_target_from_vectors(v, w, R, n::Int)
+    target = identity_matrix(R, n)
+    for row in 1:n, col in 1:n
+        target[row, col] += v[row] * w[col]
+    end
+    return target
+end
+
 function expected_rank_one_cohn_coefficients(v, w, g)
     n = length(v)
     return [
@@ -55,6 +63,7 @@ end
     @test cert.factors == reduce(vcat, [child.factors for child in cert.child_certificates]; init = Any[])
     @test cert.product == rank_one_product_of_factors(cert.factors, R, n)
     @test cert.target == fixture.target_matrix
+    @test cert.target == rank_one_target_from_vectors(cert.v, cert.w, R, n)
     @test cert.product == cert.target
     @test cert.verification.target_matches_product_ok
     @test Suslin.verify_rank_one_normality_certificate(cert)
@@ -74,6 +83,15 @@ end
     tampered_factor_cert = Suslin.realize_rank_one_normality_certificate(inputs.v, inputs.w, inputs.g, R)
     tampered_factor_cert.factors[1][1, 1] += one(R)
     @test !Suslin.verify_rank_one_normality_certificate(tampered_factor_cert)
+
+    tampered_verification = replace_rank_one_certificate_field(
+        cert.verification,
+        :target_matches_product_ok,
+        false,
+    )
+    @test !Suslin.verify_rank_one_normality_certificate(
+        replace_rank_one_certificate_field(cert, :verification, tampered_verification),
+    )
 
     changed_table = copy(cert.cohn_coefficients)
     changed_table[1] = (; changed_table[1].i, changed_table[1].j, a = changed_table[1].a + one(R))
