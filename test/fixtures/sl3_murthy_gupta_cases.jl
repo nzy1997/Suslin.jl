@@ -4,18 +4,23 @@ using Oscar
 using Suslin
 
 function _ring_metadata(R, X)
+    return _ring_metadata("QQ[X]", R, (X,))
+end
+
+function _ring_metadata(description, R, generators)
     return (;
-        description = "QQ[X]",
+        description = description,
         object = R,
-        generators = (X,),
+        generator_names = tuple((string(generator) for generator in generators)...),
+        generators = generators,
     )
 end
 
-function _ring_constructor_metadata()
+function _ring_constructor_metadata(coefficient = "QQ", variables = ("X",))
     return (;
         function_name = :polynomial_ring,
-        coefficient = "QQ",
-        variables = ("X",),
+        coefficient = coefficient,
+        variables = variables,
     )
 end
 
@@ -27,12 +32,15 @@ function _target(R, p, q, r, s)
     ])
 end
 
-function _case(id, branch, variable, entries, target, witness, expected_current_solver, consumer_issue_ids)
-    return (
-        id = id,
-        branch = branch,
+function _case(id, branch, variable, entries, target, witness, expected_current_solver, consumer_issue_ids;
         ring_constructor = _ring_constructor_metadata(),
         ring = _ring_metadata(parent(variable), variable),
+        extra = (;))
+    base = (;
+        id = id,
+        branch = branch,
+        ring_constructor = ring_constructor,
+        ring = ring,
         variable = variable,
         entries = entries,
         target = target,
@@ -42,12 +50,18 @@ function _case(id, branch, variable, entries, target, witness, expected_current_
         source_refs = ("Park-Woodburn arXiv:alg-geom/9405003 section 5",),
         consumer_issue_ids = consumer_issue_ids,
     )
+    return merge(base, extra)
+end
+
+function _negative_control(id, base_case_id, reason, entry)
+    return merge(entry, (; id, base_case_id, reason))
 end
 
 function catalog()
     R, (X,) = Oscar.polynomial_ring(QQ, ["X"])
-    common_failure = (; status = :staged_fail, message_substring = "staged local SL_3 solver failure")
     now_supported = (; status = :passes)
+    expected_local_failure = (; status = :staged_fail, message_substring = "staged local SL_3 solver failure")
+    local_consumer_issues = ("#182", "#208", "#207", "#209", "#210")
 
     q_degree_normalization_case = _case(
         "mg-q-degree-normalization",
@@ -228,6 +242,160 @@ function catalog()
         ("#75",),
     )
 
+    RU, (u, UX) = Oscar.polynomial_ring(QQ, ["u", "X"])
+    local_ring = _ring_metadata("QQ[u, X]", RU, (u, UX))
+    local_ring_constructor = _ring_constructor_metadata("QQ", ("u", "X"))
+    local_context = (;
+        kind = :localization_at_maximal_ideal,
+        description = "QQ[u] localized at (u), with X as the Section 5 variable",
+        selected_variable = UX,
+        maximal_ideal_generators = (u,),
+        residue_description = "u => 0",
+    )
+
+    function _local_unit(unit, residue_unit, residue_inverse, generators, coefficients)
+        return (;
+            context = merge(local_context, (; maximal_ideal_generators = generators)),
+            unit,
+            residue_unit,
+            residue_inverse,
+            maximal_ideal_generators = generators,
+            residue_difference_coefficients = coefficients,
+            global_unit = false,
+        )
+    end
+
+    local_q_degree_entries = (; p = UX^2 + u * UX + one(RU), q = UX * (UX^2 + u * UX + one(RU)) + one(RU), r = -one(RU), s = -UX)
+    local_q_degree_case = _case(
+        "mg-local-q-degree-qq-u-x",
+        :q_degree_normalization,
+        UX,
+        local_q_degree_entries,
+        _target(RU, local_q_degree_entries.p, local_q_degree_entries.q, local_q_degree_entries.r, local_q_degree_entries.s),
+        ((
+            quotient = UX,
+            remainder = one(RU),
+            normalized_s = zero(RU),
+        ),),
+        expected_local_failure,
+        local_consumer_issues;
+        ring_constructor = local_ring_constructor,
+        ring = local_ring,
+        extra = (;
+            local_contract = true,
+            requires_local_units = false,
+            requires_bezout_witness = false,
+        ),
+    )
+
+    local_q0_unit_entries = (; p = UX^2 + (u + one(RU)) * UX + one(RU), q = UX + u + one(RU), r = UX + (UX^2 + (u + one(RU)) * UX + one(RU)) * UX, s = UX^2 + (u + one(RU)) * UX + one(RU))
+    local_q0_unit_case = _case(
+        "mg-local-q0-unit-at-u",
+        :q0_unit_recursion,
+        UX,
+        local_q0_unit_entries,
+        _target(RU, local_q0_unit_entries.p, local_q0_unit_entries.q, local_q0_unit_entries.r, local_q0_unit_entries.s),
+        ((
+            p0 = one(RU),
+            q0 = u + one(RU),
+            local_unit_witness = _local_unit(u + one(RU), one(RU), one(RU), (u,), (one(RU),)),
+            formal_right_e21_coefficient = "-1/(1 + u)",
+        ),),
+        expected_local_failure,
+        local_consumer_issues;
+        ring_constructor = local_ring_constructor,
+        ring = local_ring,
+        extra = (;
+            local_contract = true,
+            requires_local_units = true,
+            requires_bezout_witness = false,
+        ),
+    )
+
+    local_q0_nonunit_entries = (; p = UX^2 + u * UX + one(RU), q = UX + u, r = UX + (UX^2 + u * UX + one(RU)) * UX, s = UX^2 + u * UX + one(RU))
+    local_q0_nonunit_case = _case(
+        "mg-local-q0-nonunit-bezout-at-u",
+        :q0_nonunit_bezout_resultant,
+        UX,
+        local_q0_nonunit_entries,
+        _target(RU, local_q0_nonunit_entries.p, local_q0_nonunit_entries.q, local_q0_nonunit_entries.r, local_q0_nonunit_entries.s),
+        ((
+            p0 = one(RU),
+            q0 = u,
+            p_prime = one(RU),
+            q_prime = UX,
+            resultant = one(RU),
+            p_prime_degree = 0,
+            q_prime_degree = 1,
+            branch_unit = u + one(RU),
+            branch_unit_witness = _local_unit(u + one(RU), one(RU), one(RU), (u,), (one(RU),)),
+            case1_entries = (;
+                p = local_q0_nonunit_entries.p + UX,
+                q = local_q0_nonunit_entries.q + one(RU),
+                r = UX,
+                s = one(RU),
+            ),
+        ),),
+        expected_local_failure,
+        local_consumer_issues;
+        ring_constructor = local_ring_constructor,
+        ring = local_ring,
+        extra = (;
+            local_contract = true,
+            requires_local_units = true,
+            requires_bezout_witness = true,
+        ),
+    )
+
+    nonmonic_entries = (; p = 2 * X + one(R), q = X, r = R(2), s = one(R))
+    nonmonic = _case(
+        "mg-negative-nonmonic-p",
+        :open_slice_control,
+        X,
+        nonmonic_entries,
+        _target(R, nonmonic_entries.p, nonmonic_entries.q, nonmonic_entries.r, nonmonic_entries.s),
+        (),
+        now_supported,
+        ("#206",),
+    )
+
+    det_bad_entries = (; p = X + one(R), q = zero(R), r = zero(R), s = one(R))
+    det_bad = _case(
+        "mg-negative-determinant-not-one",
+        :open_slice_control,
+        X,
+        det_bad_entries,
+        _target(R, det_bad_entries.p, det_bad_entries.q, det_bad_entries.r, det_bad_entries.s),
+        (),
+        now_supported,
+        ("#206",),
+    )
+
+    split_negative = _negative_control(
+        "mg-negative-corrupted-split-witness",
+        split_lemma_case.id,
+        "split witness a no longer reconstructs the target",
+        merge(split_lemma_case, (; witnesses = (merge(first(split_lemma_case.witnesses), (; a = first(split_lemma_case.witnesses).a + one(R))),))),
+    )
+
+    local_unit_negative = _negative_control(
+        "mg-negative-corrupted-local-unit-witness",
+        local_q0_unit_case.id,
+        "local unit residue equation is corrupted",
+        merge(local_q0_unit_case, (; witnesses = (merge(first(local_q0_unit_case.witnesses), (;
+            local_unit_witness = merge(first(local_q0_unit_case.witnesses).local_unit_witness, (;
+                residue_difference_coefficients = (zero(RU),),
+            )),
+        )),))),
+    )
+
+    bezout_negative = _negative_control(
+        "mg-negative-corrupted-bezout-equality",
+        local_q0_nonunit_case.id,
+        "p_prime*p - q_prime*q no longer equals the resultant",
+        merge(local_q0_nonunit_case, (; witnesses = (merge(first(local_q0_nonunit_case.witnesses), (; p_prime = one(RU) + u)),))),
+    )
+
     return (;
         ring = _ring_metadata(R, X),
         cases = [
@@ -238,6 +406,16 @@ function catalog()
             q0_nonunit_normalized_bezout_case,
             q0_nonunit_extracted_bezout_case,
             open_slice_case,
+            local_q_degree_case,
+            local_q0_unit_case,
+            local_q0_nonunit_case,
+        ],
+        negative_controls = [
+            nonmonic,
+            det_bad,
+            split_negative,
+            local_unit_negative,
+            bezout_negative,
         ],
     )
 end
