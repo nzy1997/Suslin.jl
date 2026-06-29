@@ -115,6 +115,10 @@ end
     @test staged.verification.link_step_ok
     @test staged.verification.induction_normality_ok
     @test staged.induction_normality.normality_rewrite.sl2_block != identity_matrix(R, 2)
+    @test staged.induction_normality.normality_certificate isa Suslin.ConjugatedElementaryNormalityCertificate
+    @test staged.induction_normality.normality_rewrite.normality_certificate ==
+          staged.induction_normality.normality_certificate
+    @test Suslin.verify_conjugate_elementary_certificate(staged.induction_normality.normality_certificate)
     @test public_factors_by_name["canonical-full-route"] == staged.factors
     legacy = Suslin.ecp_column_reduction_certificate(canonical, R)
     @test any(stage -> stage.kind == :monicity_normalization, legacy.stages)
