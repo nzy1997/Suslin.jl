@@ -324,6 +324,9 @@ end
     )
     @test !Suslin.verify_quillen_denominator_cover_candidate(empty_candidate)
 
+    malformed_original_input_candidate = qde_rebuild_candidate(candidate; original_input = nothing)
+    @test !Suslin.verify_quillen_denominator_cover_candidate(malformed_original_input_candidate)
+
     dropped_candidate = qde_rebuild_candidate(
         candidate;
         local_certificates = candidate.local_certificates[1:1],
