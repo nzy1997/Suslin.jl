@@ -1368,6 +1368,7 @@ function _sl3_local_murthy_input_context(p, q, r, s, X; witness, local_unit_witn
     )
     _sl3_local_murthy_validate_required_local_evidence(
         R,
+        var_idx,
         degree_p,
         degree_q,
         q0,
@@ -1554,6 +1555,7 @@ end
 
 function _sl3_local_murthy_validate_required_local_evidence(
         R,
+        var_idx,
         degree_p,
         degree_q,
         q0,
@@ -1563,6 +1565,14 @@ function _sl3_local_murthy_validate_required_local_evidence(
 )
     degree_q >= degree_p && return true
     (global_units.q0 || local_units.q0) && return true
+
+    if bezout_witness === nothing &&
+            !_sl3_local_supports_murthy_q0_unit_branch(R, var_idx) &&
+            !is_unit(_sl3_local_constant_coefficient_outside_variable(q0, var_idx, R))
+        throw(ArgumentError(
+            "Murthy local input context has unsupported local Bezout/resultant extraction without a supplied Bezout witness",
+        ))
+    end
 
     if !(global_units.resultant || local_units.resultant)
         throw(ArgumentError("Murthy local input context requires a local-unit witness for q0 or Bezout resultant evidence"))
@@ -1688,6 +1698,8 @@ function _sl3_local_murthy_bezout_data(
                 throw(ArgumentError("Murthy local input context Bezout q0 witness is incorrect"))
         end
     else
+        (degree_q >= degree_p || is_unit(q0)) && return nothing
+        _sl3_local_supports_murthy_q0_unit_branch(R, var_idx) || return nothing
         g, a, b = gcdx(p, q)
         g_inverse = _unit_inverse_or_nothing(g)
         g_inverse === nothing && return nothing
@@ -2252,6 +2264,7 @@ function _sl3_local_murthy_input_context_verification(context)
         bezout_witness_ok = context.bezout_witness === nothing || bezout_data !== nothing
         required_evidence_ok = _sl3_local_murthy_validate_required_local_evidence(
             R,
+            expected_var_idx,
             degree_p,
             degree_q,
             q0,
@@ -3188,6 +3201,15 @@ end
 
 function _sl3_local_constant_coefficient(value, var_idx::Int, R)
     return _sl3_local_coefficient_in_variable_degree(value, var_idx, 0, R)
+end
+
+function _sl3_local_constant_coefficient_outside_variable(value, var_idx::Int, R)
+    coefficient = value
+    for idx in eachindex(collect(gens(R)))
+        idx == var_idx && continue
+        coefficient = _sl3_local_constant_coefficient(coefficient, idx, R)
+    end
+    return coefficient
 end
 
 function _is_monic_in_variable(p, var_idx::Int, R)

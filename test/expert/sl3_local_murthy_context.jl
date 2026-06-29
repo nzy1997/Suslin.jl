@@ -209,6 +209,18 @@ end
     )
 
     local_nonunit = by_id["mg-local-q0-nonunit-bezout-at-u"]
+    missing_bezout_witness_err = _captured_error(() -> Suslin.sl3_local_murthy_input_context(
+        local_nonunit.target,
+        local_nonunit.variable,
+    ))
+    @test missing_bezout_witness_err isa ArgumentError
+    @test occursin(
+        "unsupported local Bezout/resultant extraction",
+        sprint(showerror, missing_bezout_witness_err),
+    ) || occursin(
+        "staged local SL_3 solver failure",
+        sprint(showerror, missing_bezout_witness_err),
+    )
     bezout_witness = first(local_nonunit.witnesses)
     bezout_context = Suslin.sl3_local_murthy_input_context(
         local_nonunit.target,
@@ -258,6 +270,7 @@ end
     missing_resultant_err = _captured_error(
         () -> Suslin._sl3_local_murthy_validate_required_local_evidence(
             RU,
+            2,
             2,
             1,
             u,
