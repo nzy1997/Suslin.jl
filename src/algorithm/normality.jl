@@ -213,6 +213,224 @@ function verify_rank_one_normality_certificate(cert)::Bool
     end
 end
 
+struct ConjugatedElementaryNormalityCertificate
+    n::Int
+    A
+    i::Int
+    j::Int
+    a
+    ring
+    determinant
+    inverse_A
+    elementary_matrix
+    conjugation_convention::Symbol
+    conjugation_target
+    v::Vector
+    w::Vector
+    g::Vector
+    rank_one_certificate::RankOneNormalityCertificate
+    factors::Vector
+    product
+    verification
+end
+
+function _conjugate_elementary_checked_data(A, i::Int, j::Int, a)
+    nrows(A) == ncols(A) || throw(ArgumentError("A must be square"))
+
+    n = nrows(A)
+    n >= 3 || throw(ArgumentError("A must have size at least 3"))
+    1 <= i <= n || throw(ArgumentError("i must be between 1 and n"))
+    1 <= j <= n || throw(ArgumentError("j must be between 1 and n"))
+    i == j && throw(ArgumentError("i and j must differ"))
+
+    R = base_ring(A)
+    _require_ordinary_polynomial_certificate_ring(R)
+    coerced_a = _coerce_into_ring(R, a, "a")
+    determinant = det(A)
+    determinant == one(R) || throw(ArgumentError("A must have determinant one"))
+    inverse_A = inv(A)
+    identity = identity_matrix(R, n)
+    A * inverse_A == identity || throw(ArgumentError("A inverse replay failed"))
+    inverse_A * A == identity || throw(ArgumentError("A inverse replay failed"))
+
+    elementary = elementary_matrix(n, i, j, coerced_a, R)
+    conjugation_target = A * elementary * inverse_A
+    v = [A[row, i] for row in 1:n]
+    w = [coerced_a * inverse_A[j, col] for col in 1:n]
+    g = [inverse_A[i, col] for col in 1:n]
+    rank_one_certificate = realize_rank_one_normality_certificate(v, w, g, R)
+    rank_one_certificate.target == conjugation_target ||
+        error("internal conjugated elementary target did not match rank-one target")
+
+    return (;
+        n,
+        A,
+        i,
+        j,
+        a = coerced_a,
+        ring = R,
+        determinant,
+        inverse_A,
+        elementary_matrix = elementary,
+        conjugation_convention = :A_E_invA,
+        conjugation_target,
+        v,
+        w,
+        g,
+        rank_one_certificate,
+    )
+end
+
+function realize_conjugate_elementary_certificate(A, i::Int, j::Int, a)
+    data = _conjugate_elementary_checked_data(A, i, j, a)
+    factors = data.rank_one_certificate.factors
+    product = _cohn_type_factor_product(factors, data.ring, data.n)
+    provisional = ConjugatedElementaryNormalityCertificate(
+        data.n,
+        data.A,
+        data.i,
+        data.j,
+        data.a,
+        data.ring,
+        data.determinant,
+        data.inverse_A,
+        data.elementary_matrix,
+        data.conjugation_convention,
+        data.conjugation_target,
+        data.v,
+        data.w,
+        data.g,
+        data.rank_one_certificate,
+        factors,
+        product,
+        nothing,
+    )
+    verification = _conjugate_elementary_certificate_core_verification(provisional)
+    verification.overall_core_ok ||
+        error("internal conjugated elementary certificate verification failed")
+    return ConjugatedElementaryNormalityCertificate(
+        provisional.n,
+        provisional.A,
+        provisional.i,
+        provisional.j,
+        provisional.a,
+        provisional.ring,
+        provisional.determinant,
+        provisional.inverse_A,
+        provisional.elementary_matrix,
+        provisional.conjugation_convention,
+        provisional.conjugation_target,
+        provisional.v,
+        provisional.w,
+        provisional.g,
+        provisional.rank_one_certificate,
+        provisional.factors,
+        provisional.product,
+        verification,
+    )
+end
+
+function _conjugate_elementary_certificate_core_verification(cert)
+    ring_ok = false
+    checked_inputs_ok = false
+    determinant_ok = false
+    inverse_replay_ok = false
+    elementary_matrix_ok = false
+    convention_ok = false
+    target_replay_ok = false
+    vector_replay_ok = false
+    rank_one_certificate_ok = false
+    factor_sequence_ok = false
+    factor_count = 0
+    product_replay_ok = false
+    product_matches_stored_ok = false
+    target_matches_product_ok = false
+
+    data = _conjugate_elementary_checked_data(cert.A, cert.i, cert.j, cert.a)
+    checked_inputs_ok = true
+    ring_ok = _same_base_ring(cert.ring, data.ring)
+    determinant_ok = cert.determinant == one(data.ring) && cert.determinant == data.determinant
+    identity = identity_matrix(data.ring, data.n)
+    inverse_replay_ok =
+        cert.inverse_A == data.inverse_A &&
+        cert.A * cert.inverse_A == identity &&
+        cert.inverse_A * cert.A == identity
+    elementary_matrix_ok = cert.elementary_matrix == data.elementary_matrix
+    convention_ok =
+        cert.conjugation_convention == :A_E_invA &&
+        cert.conjugation_convention == data.conjugation_convention
+    target_replay_ok = cert.conjugation_target == data.conjugation_target
+    vector_replay_ok = cert.v == data.v && cert.w == data.w && cert.g == data.g
+    rank_one_certificate_ok =
+        verify_rank_one_normality_certificate(cert.rank_one_certificate) &&
+        cert.rank_one_certificate.n == data.n &&
+        cert.rank_one_certificate.v == data.v &&
+        cert.rank_one_certificate.w == data.w &&
+        cert.rank_one_certificate.g == data.g &&
+        _same_base_ring(cert.rank_one_certificate.ring, data.ring) &&
+        cert.rank_one_certificate.target == data.conjugation_target &&
+        cert.rank_one_certificate.factors == data.rank_one_certificate.factors &&
+        cert.rank_one_certificate.product == data.rank_one_certificate.product &&
+        cert.rank_one_certificate.verification == data.rank_one_certificate.verification
+    factor_sequence_ok = cert.factors == cert.rank_one_certificate.factors
+    factor_count = length(cert.factors)
+    replayed_product = _cohn_type_factor_product(cert.factors, data.ring, data.n)
+    product_replay_ok = true
+    product_matches_stored_ok = replayed_product == cert.product
+    target_matches_product_ok = target_replay_ok && replayed_product == cert.conjugation_target
+
+    overall_core_ok =
+        ring_ok &&
+        checked_inputs_ok &&
+        determinant_ok &&
+        inverse_replay_ok &&
+        elementary_matrix_ok &&
+        convention_ok &&
+        target_replay_ok &&
+        vector_replay_ok &&
+        rank_one_certificate_ok &&
+        factor_sequence_ok &&
+        product_replay_ok &&
+        product_matches_stored_ok &&
+        target_matches_product_ok
+
+    return (;
+        ring_ok,
+        checked_inputs_ok,
+        determinant_ok,
+        inverse_replay_ok,
+        elementary_matrix_ok,
+        convention_ok,
+        target_replay_ok,
+        vector_replay_ok,
+        rank_one_certificate_ok,
+        factor_sequence_ok,
+        factor_count,
+        product_replay_ok,
+        product_matches_stored_ok,
+        target_matches_product_ok,
+        overall_core_ok,
+    )
+end
+
+function _conjugate_elementary_certificate_verification(cert)
+    core = _conjugate_elementary_certificate_core_verification(cert)
+    stored_verification_ok = cert.verification == core
+    return merge(core, (;
+        stored_verification_ok,
+        overall_ok = core.overall_core_ok && stored_verification_ok,
+    ))
+end
+
+function verify_conjugate_elementary_certificate(cert)::Bool
+    try
+        return _conjugate_elementary_certificate_verification(cert).overall_ok
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
 function realize_conjugate_elementary(B, i::Int, j::Int, a)
     nrows(B) == ncols(B) || throw(ArgumentError("B must be square"))
 
