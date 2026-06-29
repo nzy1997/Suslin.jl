@@ -27,6 +27,20 @@ const REQUIRED_SL3_MURTHY_GUPTA_BRANCHES = Set([
     :open_slice_control,
 ])
 
+const REQUIRED_SL3_MURTHY_GUPTA_LOCAL_CONTRACT_IDS = Set([
+    "mg-local-q-degree-qq-u-x",
+    "mg-local-q0-unit-at-u",
+    "mg-local-q0-nonunit-bezout-at-u",
+])
+
+const REQUIRED_SL3_MURTHY_GUPTA_NEGATIVE_IDS = Set([
+    "mg-negative-nonmonic-p",
+    "mg-negative-determinant-not-one",
+    "mg-negative-corrupted-split-witness",
+    "mg-negative-corrupted-local-unit-witness",
+    "mg-negative-corrupted-bezout-equality",
+])
+
 function _sl3_mg_field(entry, field::Symbol)
     hasproperty(entry, field) || throw(ArgumentError("fixture entry missing field $(field)"))
     return getproperty(entry, field)
@@ -87,6 +101,27 @@ function _sl3_mg_constant_coefficient(value)
     return const_coeff
 end
 
+function _sl3_mg_constant_in_variable(value, X)
+    R = parent(value)
+    parent(X) == R || throw(ArgumentError("value and variable must lie in same ring"))
+    var_idx = findfirst(isequal(X), collect(gens(R)))
+    var_idx === nothing && throw(ArgumentError("variable must be a generator of the ambient ring"))
+
+    vars = collect(gens(R))
+    constant = zero(R)
+    for (coeff, exponents) in zip(AbstractAlgebra.coefficients(value), AbstractAlgebra.exponent_vectors(value))
+        exponents[var_idx] == 0 || continue
+        term = R(coeff)
+        for idx in eachindex(vars)
+            idx == var_idx && continue
+            exponent = exponents[idx]
+            exponent == 0 || (term *= vars[idx]^exponent)
+        end
+        constant += term
+    end
+    return constant
+end
+
 function _sl3_mg_degree_in_variable(value, X)
     R = parent(value)
     parent(X) == R || throw(ArgumentError("value and variable must lie in same ring"))
@@ -111,6 +146,8 @@ function _sl3_mg_assert_metadata(entry)
         throw(ArgumentError("fixture $(entry.id) missing ring.description"))
     hasproperty(entry.ring, :object) ||
         throw(ArgumentError("fixture $(entry.id) missing ring.object"))
+    hasproperty(entry.ring, :generator_names) ||
+        throw(ArgumentError("fixture $(entry.id) missing ring.generator_names"))
     hasproperty(entry.ring, :generators) ||
         throw(ArgumentError("fixture $(entry.id) missing ring.generators"))
 
@@ -139,6 +176,12 @@ function _sl3_mg_assert_metadata(entry)
     all(occursin.("#", entry.consumer_issue_ids)) ||
         throw(ArgumentError("fixture $(entry.id) consumer issue ids must look like issue references"))
     entry.murthy_path == true || throw(ArgumentError("fixture $(entry.id) must set murthy_path=true"))
+    if hasproperty(entry, :local_contract) && entry.local_contract == true
+        entry.expected_current_solver.status == :staged_fail ||
+            throw(ArgumentError("fixture $(entry.id) local-contract entries must be staged_fail"))
+        entry.consumer_issue_ids == ("#182", "#208", "#207", "#209", "#210") ||
+            throw(ArgumentError("fixture $(entry.id) local-contract consumer issue ids are incorrect"))
+    end
     return true
 end
 
@@ -253,6 +296,22 @@ end
 function _sl3_mg_assert_q0_unit_witness(entry, witness)
     p0 = _sl3_mg_field(witness, :p0)
     q0 = _sl3_mg_field(witness, :q0)
+
+    R = entry.ring.object
+    p, q, r, s = entry.entries.p, entry.entries.q, entry.entries.r, entry.entries.s
+    if hasproperty(witness, :local_unit_witness)
+        p0 == _sl3_mg_constant_in_variable(p, entry.variable) ||
+            throw(ArgumentError("fixture $(entry.id) q0-unit p(0) witness is incorrect"))
+        q0 == _sl3_mg_constant_in_variable(q, entry.variable) ||
+            throw(ArgumentError("fixture $(entry.id) q0-unit q(0) witness is incorrect"))
+        _sl3_mg_assert_local_unit_witness(entry, witness.local_unit_witness, q0; label = "q0-unit")
+        _sl3_mg_degree_in_variable(q, entry.variable) < _sl3_mg_degree_in_variable(p, entry.variable) ||
+            throw(ArgumentError("fixture $(entry.id) q0-unit local witness must already satisfy q-degree guard"))
+        hasproperty(witness, :formal_right_e21_coefficient) ||
+            throw(ArgumentError("fixture $(entry.id) q0-unit local witness missing formal_right_e21_coefficient"))
+        return true
+    end
+
     q0_inverse = _sl3_mg_field(witness, :q0_inverse)
     right_e21_coefficient = _sl3_mg_field(witness, :right_e21_coefficient)
     normalized_p = _sl3_mg_field(witness, :normalized_p)
@@ -260,11 +319,9 @@ function _sl3_mg_assert_q0_unit_witness(entry, witness)
     normalized_s = _sl3_mg_field(witness, :normalized_s)
     split = _sl3_mg_field(witness, :split)
 
-    R = entry.ring.object
-    p, q, r, s = entry.entries.p, entry.entries.q, entry.entries.r, entry.entries.s
-    p0 == _sl3_mg_constant_coefficient(p) ||
+    p0 == _sl3_mg_constant_in_variable(p, entry.variable) ||
         throw(ArgumentError("fixture $(entry.id) q0-unit p(0) witness is incorrect"))
-    q0 == _sl3_mg_constant_coefficient(q) ||
+    q0 == _sl3_mg_constant_in_variable(q, entry.variable) ||
         throw(ArgumentError("fixture $(entry.id) q0-unit q(0) witness is incorrect"))
     q0 * q0_inverse == one(R) ||
         throw(ArgumentError("fixture $(entry.id) q0-unit q(0) inverse witness is incorrect"))
@@ -276,7 +333,7 @@ function _sl3_mg_assert_q0_unit_witness(entry, witness)
         throw(ArgumentError("fixture $(entry.id) q0-unit normalized_r inconsistent"))
     normalized_s == s ||
         throw(ArgumentError("fixture $(entry.id) q0-unit normalized_s inconsistent"))
-    _sl3_mg_constant_coefficient(normalized_p) == zero(R) ||
+    _sl3_mg_constant_in_variable(normalized_p, entry.variable) == zero(R) ||
         throw(ArgumentError("fixture $(entry.id) q0-unit normalization did not make p(0) zero"))
     target = _sl3_mg_target(entry)
     normalized_target = _sl3_mg_matrix(R, normalized_p, q, normalized_r, normalized_s)
@@ -288,6 +345,44 @@ function _sl3_mg_assert_q0_unit_witness(entry, witness)
         Suslin.elementary_matrix(3, 2, 1, -right_e21_coefficient, R) ||
         throw(ArgumentError("fixture $(entry.id) q0-unit elementary identity failed"))
     _sl3_mg_assert_split_lemma_witness(entry, split; expected_target = normalized_target)
+    return true
+end
+
+function _sl3_mg_assert_local_unit_witness(entry, witness, expected_unit; label)
+    R = entry.ring.object
+    context = _sl3_mg_field(witness, :context)
+    unit = _sl3_mg_field(witness, :unit)
+    residue_unit = _sl3_mg_field(witness, :residue_unit)
+    residue_inverse = _sl3_mg_field(witness, :residue_inverse)
+    generators = _sl3_mg_field(witness, :maximal_ideal_generators)
+    coefficients = _sl3_mg_field(witness, :residue_difference_coefficients)
+    global_unit = hasproperty(witness, :global_unit) ? witness.global_unit : is_unit(unit)
+
+    context.kind == :localization_at_maximal_ideal ||
+        throw(ArgumentError("fixture $(entry.id) $(label) local context kind is unsupported"))
+    context.selected_variable == entry.variable ||
+        throw(ArgumentError("fixture $(entry.id) $(label) local context variable mismatch"))
+    context.maximal_ideal_generators == generators ||
+        throw(ArgumentError("fixture $(entry.id) $(label) local context maximal_ideal_generators mismatch"))
+    unit == expected_unit ||
+        throw(ArgumentError("fixture $(entry.id) $(label) local unit does not match expected value"))
+    length(generators) == length(coefficients) ||
+        throw(ArgumentError("fixture $(entry.id) $(label) local witness generator/coefficient length mismatch"))
+    all(parent(generator) === R for generator in generators) ||
+        throw(ArgumentError("fixture $(entry.id) $(label) local witness generator ring mismatch"))
+    all(parent(coefficient) === R for coefficient in coefficients) ||
+        throw(ArgumentError("fixture $(entry.id) $(label) local witness coefficient ring mismatch"))
+
+    difference = zero(R)
+    for (coefficient, generator) in zip(coefficients, generators)
+        difference += coefficient * generator
+    end
+    unit - residue_unit == difference ||
+        throw(ArgumentError("fixture $(entry.id) $(label) local residue equation failed"))
+    residue_unit * residue_inverse == one(R) ||
+        throw(ArgumentError("fixture $(entry.id) $(label) local residue inverse equation failed"))
+    is_unit(unit) == global_unit ||
+        throw(ArgumentError("fixture $(entry.id) $(label) global unit flag is incorrect"))
     return true
 end
 
@@ -304,16 +399,20 @@ function _sl3_mg_assert_q0_nonunit_bezout_witness(entry, witness)
 
     R = entry.ring.object
     p, q, r, s = entry.entries.p, entry.entries.q, entry.entries.r, entry.entries.s
-    p0 == _sl3_mg_constant_coefficient(p) ||
+    p0 == _sl3_mg_constant_in_variable(p, entry.variable) ||
         throw(ArgumentError("fixture $(entry.id) q0-nonunit p(0) witness is incorrect"))
-    q0 == _sl3_mg_constant_coefficient(q) ||
+    q0 == _sl3_mg_constant_in_variable(q, entry.variable) ||
         throw(ArgumentError("fixture $(entry.id) q0-nonunit q(0) witness is incorrect"))
     !is_unit(q0) ||
         throw(ArgumentError("fixture $(entry.id) q0-nonunit witness requires q(0) to be nonunit"))
     p_prime * p - q_prime * q == resultant ||
         throw(ArgumentError("fixture $(entry.id) Bezout equality p_prime*p - q_prime*q failed"))
-    is_unit(resultant) ||
-        throw(ArgumentError("fixture $(entry.id) resultant witness must be a unit"))
+    if hasproperty(witness, :resultant_unit_witness)
+        _sl3_mg_assert_local_unit_witness(entry, witness.resultant_unit_witness, resultant; label = "resultant")
+    else
+        is_unit(resultant) ||
+            throw(ArgumentError("fixture $(entry.id) resultant witness must be a unit"))
+    end
     _sl3_mg_degree_in_variable(p_prime, entry.variable) == p_prime_degree ||
         throw(ArgumentError("fixture $(entry.id) p_prime degree witness is incorrect"))
     _sl3_mg_degree_in_variable(q_prime, entry.variable) == q_prime_degree ||
@@ -322,10 +421,14 @@ function _sl3_mg_assert_q0_nonunit_bezout_witness(entry, witness)
         throw(ArgumentError("fixture $(entry.id) p_prime degree does not satisfy resultant bound"))
     q_prime_degree < _sl3_mg_degree_in_variable(p, entry.variable) ||
         throw(ArgumentError("fixture $(entry.id) q_prime degree does not satisfy resultant bound"))
-    branch_unit == q0 + _sl3_mg_constant_coefficient(p_prime) ||
+    branch_unit == q0 + _sl3_mg_constant_in_variable(p_prime, entry.variable) ||
         throw(ArgumentError("fixture $(entry.id) q0-nonunit branch unit witness is incorrect"))
-    is_unit(branch_unit) ||
-        throw(ArgumentError("fixture $(entry.id) q0-nonunit branch unit must be a unit"))
+    if hasproperty(witness, :branch_unit_witness)
+        _sl3_mg_assert_local_unit_witness(entry, witness.branch_unit_witness, branch_unit; label = "branch-unit")
+    else
+        is_unit(branch_unit) ||
+            throw(ArgumentError("fixture $(entry.id) q0-nonunit branch unit must be a unit"))
+    end
     case1_entries.p == p + q_prime ||
         throw(ArgumentError("fixture $(entry.id) Case 2 reduction p entry is incorrect"))
     case1_entries.q == q + p_prime ||
@@ -340,7 +443,7 @@ function _sl3_mg_assert_q0_nonunit_bezout_witness(entry, witness)
     case1_matrix = _sl3_mg_matrix(R, case1_entries.p, case1_entries.q, case1_entries.r, case1_entries.s)
     det(case1_matrix) == one(R) ||
         throw(ArgumentError("fixture $(entry.id) Case 2 q0-unit matrix determinant is not one"))
-    _sl3_mg_constant_coefficient(case1_entries.q) == branch_unit ||
+    _sl3_mg_constant_in_variable(case1_entries.q, entry.variable) == branch_unit ||
         throw(ArgumentError("fixture $(entry.id) Case 2 q0-unit branch constant is incorrect"))
     target ==
         Suslin.elementary_matrix(3, 2, 1, r * p_prime - s * q_prime, R) * bezout_matrix ||
@@ -406,6 +509,11 @@ function validate_sl3_murthy_gupta_fixture_catalog(catalog)
     for entry in catalog.cases
         validate_sl3_murthy_gupta_fixture(entry)
     end
+    if hasproperty(catalog, :negative_controls)
+        negative_ids = [entry.id for entry in catalog.negative_controls]
+        length(negative_ids) == length(unique(negative_ids)) ||
+            throw(ArgumentError("SL3 Murthy-Gupta negative control ids must be unique"))
+    end
     return true
 end
 
@@ -425,6 +533,22 @@ end
     @test haskey(by_id, "mg-q0-nonunit-normalized-bezout-resultant")
     @test haskey(by_id, "mg-q0-nonunit-extracted-bezout-resultant")
     @test haskey(by_id, "mg-open-slice-control")
+    @test REQUIRED_SL3_MURTHY_GUPTA_LOCAL_CONTRACT_IDS ⊆ Set(keys(by_id))
+
+    local_contract_entries = [by_id[id] for id in REQUIRED_SL3_MURTHY_GUPTA_LOCAL_CONTRACT_IDS]
+    @test length(local_contract_entries) == 3
+    for entry in local_contract_entries
+        @test entry.local_contract == true
+        @test entry.expected_current_solver.status == :staged_fail
+        @test ("#182", "#208", "#207", "#209", "#210") == entry.consumer_issue_ids
+    end
+
+    @test hasproperty(catalog, :negative_controls)
+    negative_by_id = Dict(entry.id => entry for entry in catalog.negative_controls)
+    @test REQUIRED_SL3_MURTHY_GUPTA_NEGATIVE_IDS ⊆ Set(keys(negative_by_id))
+    for entry in values(negative_by_id)
+        @test_throws ArgumentError validate_sl3_murthy_gupta_fixture(entry)
+    end
 
     @test haskey(by_id, "mg-q-degree-normalization")
     @test by_id["mg-q-degree-normalization"].branch == :q_degree_normalization
@@ -463,6 +587,85 @@ end
         ),
     )
     @test_throws ArgumentError validate_sl3_murthy_gupta_fixture(q0_unit_bad)
+
+    local_q0_unit_entry = by_id["mg-local-q0-unit-at-u"]
+    local_q0_unit_witness = first(local_q0_unit_entry.witnesses)
+    local_q0_unit_context_bad = merge(
+        local_q0_unit_entry,
+        (;
+            witnesses = (merge(
+                local_q0_unit_witness,
+                (;
+                    local_unit_witness = merge(
+                        local_q0_unit_witness.local_unit_witness,
+                        (;
+                            context = merge(
+                                local_q0_unit_witness.local_unit_witness.context,
+                                (; maximal_ideal_generators = (local_q0_unit_entry.variable,)),
+                            ),
+                        ),
+                    ),
+                ),
+            ),),
+        ),
+    )
+    @test_throws ArgumentError validate_sl3_murthy_gupta_fixture(local_q0_unit_context_bad)
+
+    RU, (u, X) = Oscar.polynomial_ring(QQ, ["u", "X"])
+    synthetic_q0_unit = (;
+        id = "synthetic-q0-unit-selected-variable",
+        branch = :q0_unit_recursion,
+        ring_constructor = (;
+            function_name = :polynomial_ring,
+            coefficient = "QQ",
+            variables = ("u", "X"),
+        ),
+        ring = (;
+            description = "QQ[u, X]",
+            object = RU,
+            generator_names = ("u", "X"),
+            generators = (u, X),
+        ),
+        variable = X,
+        entries = (;
+            p = X + u,
+            q = RU(2),
+            r = (X + u - one(RU)) * inv(RU(2)),
+            s = one(RU),
+        ),
+        target = _sl3_mg_matrix(
+            RU,
+            X + u,
+            RU(2),
+            (X + u - one(RU)) * inv(RU(2)),
+            one(RU),
+        ),
+        murthy_path = true,
+        expected_current_solver = (; status = :passes),
+        witnesses = ((
+            p0 = u,
+            q0 = RU(2),
+            q0_inverse = inv(RU(2)),
+            right_e21_coefficient = -inv(RU(2)) * u,
+            normalized_p = X,
+            normalized_r = (X - one(RU)) * inv(RU(2)),
+            normalized_s = one(RU),
+            split = (;
+                a = X,
+                a_prime = one(RU),
+                b = RU(2),
+                c = (X - one(RU)) * inv(RU(2)),
+                c1 = (X - one(RU)) * inv(RU(2)),
+                c2 = zero(RU),
+                d1 = one(RU),
+                d2 = one(RU),
+                d = one(RU),
+            ),
+        ),),
+        source_refs = ("synthetic regression",),
+        consumer_issue_ids = ("#206",),
+    )
+    @test validate_sl3_murthy_gupta_fixture(synthetic_q0_unit)
 
     bezout_entry = by_id["mg-q0-nonunit-normalized-bezout-resultant"]
     bezout_witness = first(bezout_entry.witnesses)
