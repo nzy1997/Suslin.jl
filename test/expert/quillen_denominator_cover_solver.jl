@@ -61,6 +61,10 @@ end
     @test result.coverage_terms == [result.coverage_multipliers[i] * result.powered_denominators[i] for i in eachindex(raw)]
     @test result.coverage_sum == one(R)
     @test result.cover_certificate.denominators == result.powered_denominators
+    replay = Suslin.replay_quillen_denominator_cover_solver_result(result)
+    @test replay.powered_denominators == result.powered_denominators
+    @test replay.coverage_sum == result.coverage_sum
+    @test replay.coverage_ok == result.verification.coverage_ok
 
     squared = Suslin.solve_quillen_denominator_cover(
         R,
