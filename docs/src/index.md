@@ -34,11 +34,19 @@ verify_factorization(A, factors)
   normalization/core certificate. With `determinant_strategy = :lazy`, it
   records the supported monomial-unit deferred determinant correction path for
   original Laurent `GL_n` inputs such as the issue #38 fixture.
+- The supported ordinary-polynomial normality/conjugation certificates cover
+  the completed #181 layer: Cohn-type realization certificates, rank-one
+  normality certificates, and conjugated-elementary normality certificates. The
+  staged ECP induction/normality adapter replays a nested
+  conjugated-elementary certificate for its normality step.
 - The implementation is not yet the full Park-Woodburn algorithm for arbitrary
-  `SL_n(k[x_1, ..., x_m])`, `n >= 3`. General Quillen local realizability,
+  `SL_n(k[x_1, ..., x_m])`, `n >= 3`: Park-Woodburn `SL_n(k[x_1, ..., x_m])`
+  factorization remains staged until #182 through #187 are complete. Murthy
+  local solving, general Quillen local realizability, the general ECP reducer,
   coefficient-ring support beyond exact field-backed ordinary polynomial
-  rings, arbitrary Laurent `GL_n` determinant correction, and factor-count
-  optimization remain staged boundaries.
+  rings, arbitrary Laurent `GL_n` determinant correction, Laurent/ToricBuilder
+  mainline acceptance, and Steinberg factor-count optimization remain staged
+  boundaries.
 
 See [ToricBuilder Integration Contract](@ref) for the first recorded
 consumer-boundary fixture contract.

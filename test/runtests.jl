@@ -42,6 +42,7 @@ const TEST_GROUP_FILES = Dict(
         "expert/normality.jl",
         "expert/normality_rank_one.jl",
         "expert/polynomial_normality_fixtures.jl",
+        "expert/polynomial_normality_support_boundary.jl",
         "expert/laurent_elementary_core.jl",
         "expert/sl3_local.jl",
         "expert/sl3_local_extended.jl",
