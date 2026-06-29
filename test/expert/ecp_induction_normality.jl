@@ -184,6 +184,21 @@ end
     @test supplied_nested.normality_certificate == qq.certificate.normality_certificate
     @test supplied_nested.final_factors == qq.certificate.final_factors
 
+    mismatched_nested = Suslin.realize_conjugate_elementary_certificate(
+        qq.witness.conjugator,
+        length(qq.column),
+        1,
+        qq.witness.sl2_entry + one(qq.R),
+    )
+    @test_throws ArgumentError Suslin.ecp_induction_normality_certificate(
+        qq.column,
+        qq.R;
+        link_step = qq.link,
+        lower_reduction = qq.lower,
+        normality_witness = qq.witness,
+        normality_certificate = mismatched_nested,
+    )
+
     implicit_lower = Suslin.ecp_induction_normality_certificate(
         qq.column,
         qq.R;
@@ -236,6 +251,18 @@ end
         _tamper_nested_first_factor(qq.certificate.normality_certificate, qq.R, length(qq.column)),
     )
     @test !Suslin.verify_ecp_induction_normality_certificate(tampered_nested_factor)
+
+    tampered_rewrite_nested = _replace_rewrite_field(
+        qq.certificate.normality_rewrite,
+        :normality_certificate,
+        _tamper_nested_first_factor(qq.certificate.normality_certificate, qq.R, length(qq.column)),
+    )
+    tampered_rewrite_nested_certificate = _replace_record_field(
+        qq.certificate,
+        :normality_rewrite,
+        tampered_rewrite_nested,
+    )
+    @test !Suslin.verify_ecp_induction_normality_certificate(tampered_rewrite_nested_certificate)
 
     bad_target = copy(qq.certificate.normality_certificate.conjugation_target)
     bad_target[1, 1] += one(qq.R)
