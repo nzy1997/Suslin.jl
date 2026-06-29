@@ -14,6 +14,14 @@ const REQUIRED_QUILLEN_MAINLINE_NEGATIVE_IDS = Set([
     "quillen-mainline-tampered-local-evidence-control",
 ])
 const PARK_WOODBURN_SECTION_3_REF = "refs/arXiv-alg-geom9405003v1 Section 3"
+const QUILLEN_PATCH_CATALOG_PATH = joinpath(@__DIR__, "..", "fixtures", "quillen_patch_cases.jl")
+const ALLOWED_PATCH_SOURCE_SYMBOLS = Set([
+    :quillen_patch_cases,
+])
+const ALLOWED_LOCAL_EVIDENCE_SEQUENCE_STATUS = Set([
+    :recorded,
+    :placeholder_for_issue_214,
+])
 
 function _qml_field(entry, field::Symbol)
     hasproperty(entry, field) || throw(ArgumentError("mainline fixture entry missing field $(field)"))
@@ -60,6 +68,21 @@ function _qml_assert_patch_case(entry)
     patch_case.id == entry.id ||
         throw(ArgumentError("mainline fixture $(entry.id) patch_case id must match the wrapper id"))
     return patch_case
+end
+
+function _qml_assert_patch_source_metadata(entry, patch_case)
+    source_patch_catalog = _qml_field(entry, :source_patch_catalog)
+    source_patch_case_id = _qml_field(entry, :source_patch_case_id)
+
+    source_patch_catalog in ALLOWED_PATCH_SOURCE_SYMBOLS ||
+        throw(ArgumentError("mainline fixture $(entry.id) source_patch_catalog must point to quillen_patch_cases"))
+    isfile(QUILLEN_PATCH_CATALOG_PATH) ||
+        throw(ArgumentError("mainline fixture $(entry.id) must reference an existing quillen patch catalog file"))
+    source_patch_case_id == entry.id ||
+        throw(ArgumentError("mainline fixture $(entry.id) source_patch_case_id must match the wrapper id"))
+    source_patch_case_id == patch_case.id ||
+        throw(ArgumentError("mainline fixture $(entry.id) source_patch_case_id must match patch_case.id"))
+    return true
 end
 
 function _qml_assert_ring_metadata(entry, patch_case)
@@ -178,14 +201,28 @@ end
 
 function _qml_assert_local_evidence(entry, patch_case, R, n::Int)
     local_evidence = _qml_field(entry, :local_evidence)
-    for field in (:factors, :expected_product)
+    for field in (:factors, :expected_product, :records)
         _qml_field(local_evidence, field)
     end
     local_evidence.factors isa Tuple && !isempty(local_evidence.factors) ||
         throw(ArgumentError("mainline fixture $(entry.id) local evidence must include factors"))
+    local_evidence.records isa Tuple &&
+        length(local_evidence.records) == length(local_evidence.factors) ||
+        throw(ArgumentError("mainline fixture $(entry.id) local evidence records must align with factors"))
     _qml_require_matrix_over(local_evidence.expected_product, R, n, "local evidence expected product")
     all(factor -> _qml_require_matrix_over(factor, R, n, "local evidence factor"), local_evidence.factors) ||
         throw(ArgumentError("mainline fixture $(entry.id) local evidence factors are malformed"))
+    for (idx, factor) in enumerate(local_evidence.factors)
+        record = local_evidence.records[idx]
+        for field in (:kind, :source, :sequence_status, :factor)
+            _qml_field(record, field)
+        end
+        record.sequence_status in ALLOWED_LOCAL_EVIDENCE_SEQUENCE_STATUS ||
+            throw(ArgumentError("mainline fixture $(entry.id) local evidence record sequence_status is unsupported"))
+        _qml_require_matrix_over(record.factor, R, n, "local evidence record factor")
+        record.factor == factor ||
+            throw(ArgumentError("mainline fixture $(entry.id) local evidence record factor must match the corresponding matrix factor"))
+    end
     _qml_product(local_evidence.factors, R, n) == local_evidence.expected_product ||
         throw(ArgumentError("mainline fixture $(entry.id) local evidence factors do not replay"))
     local_evidence.expected_product == patch_case.expected.global_correction ||
@@ -195,22 +232,73 @@ end
 
 function _qml_assert_patched_chain(entry, patch_case, R, n::Int)
     patched_chain = _qml_field(entry, :patched_substitution_chain)
-    for field in (:variable, :denominator, :exponent, :shift, :expected_matrix)
+    for field in (:variable, :denominator, :exponent, :shift, :expected_matrix, :sign_convention, :start, :steps, :final_variable)
         _qml_field(patched_chain, field)
     end
+    patched_chain.sign_convention == :park_woodburn_minus ||
+        throw(ArgumentError("mainline fixture $(entry.id) patched substitution chain sign convention must be :park_woodburn_minus"))
     patched_chain.exponent isa Integer ||
         throw(ArgumentError("mainline fixture $(entry.id) patched substitution exponent must be an integer"))
     _qml_require_matrix_over(patched_chain.expected_matrix, R, n, "patched substitution expected matrix")
+    parent(patched_chain.variable) == R ||
+        throw(ArgumentError("mainline fixture $(entry.id) patched substitution variable must be an element of the fixture ring"))
+    parent(patched_chain.denominator) == R ||
+        throw(ArgumentError("mainline fixture $(entry.id) patched substitution denominator has wrong parent ring"))
+    parent(patched_chain.shift) == R ||
+        throw(ArgumentError("mainline fixture $(entry.id) patched substitution shift has wrong parent ring"))
     patched_chain.variable == patch_case.substitution_variable ||
         throw(ArgumentError("mainline fixture $(entry.id) patched substitution variable must match the patch case"))
+
+    patched_chain.steps isa Tuple && !isempty(patched_chain.steps) ||
+        throw(ArgumentError("mainline fixture $(entry.id) patched substitution chain must include at least one step"))
+    parent(patched_chain.start) == R ||
+        throw(ArgumentError("mainline fixture $(entry.id) patched substitution chain start must be in the fixture ring"))
+    parent(patched_chain.final_variable) == R ||
+        throw(ArgumentError("mainline fixture $(entry.id) patched substitution chain final_variable must be in the fixture ring"))
+
+    expected_chain_var = patched_chain.start
+    for step in patched_chain.steps
+        for field in (:input, :denominator, :exponent_l, :multiplier, :output)
+            _qml_field(step, field)
+        end
+        step.input == expected_chain_var ||
+            throw(ArgumentError("mainline fixture $(entry.id) patched substitution chain steps must be sequentially linked"))
+        parent(step.denominator) == R ||
+            throw(ArgumentError("mainline fixture $(entry.id) patched substitution chain denominator has wrong parent ring"))
+        parent(step.multiplier) == R ||
+            throw(ArgumentError("mainline fixture $(entry.id) patched substitution chain multiplier has wrong parent ring"))
+        parent(step.input) == R ||
+            throw(ArgumentError("mainline fixture $(entry.id) patched substitution chain step input must be in the fixture ring"))
+        parent(step.output) == R ||
+            throw(ArgumentError("mainline fixture $(entry.id) patched substitution chain step output must be in the fixture ring"))
+        step.exponent_l isa Integer ||
+            throw(ArgumentError("mainline fixture $(entry.id) patched substitution chain exponent_l must be an integer"))
+        expected_output = step.input - patched_chain.variable * step.denominator ^ step.exponent_l * step.multiplier
+        step.output == expected_output ||
+            throw(ArgumentError("mainline fixture $(entry.id) patched substitution chain step does not replay"))
+        expected_chain_var = step.output
+    end
+    patched_chain.final_variable == expected_chain_var ||
+        throw(ArgumentError("mainline fixture $(entry.id) patched substitution chain final_variable must match the replayed chain"))
+
     if hasproperty(patch_case, :patched_substitution_witness) && patch_case.patched_substitution_witness !== nothing
         witness = patch_case.patched_substitution_witness
+        patched_chain.variable == witness.variable ||
+            throw(ArgumentError("mainline fixture $(entry.id) patched substitution chain variable must match the patch witness variable"))
+        patched_chain.denominator == witness.denominator ||
+            throw(ArgumentError("mainline fixture $(entry.id) patched substitution chain denominator must match the patch witness denominator"))
+        patched_chain.exponent == witness.exponent ||
+            throw(ArgumentError("mainline fixture $(entry.id) patched substitution chain exponent must match the patch witness exponent"))
+        patched_chain.shift == witness.shift ||
+            throw(ArgumentError("mainline fixture $(entry.id) patched substitution chain shift must match the patch witness shift"))
+        patched_chain.expected_matrix == witness.expected_matrix ||
+            throw(ArgumentError("mainline fixture $(entry.id) patched substitution expected matrix must match the patch witness expected matrix"))
         actual = Suslin.patched_substitution(
             witness.matrix,
-            witness.variable,
-            witness.denominator,
-            witness.exponent,
-            witness.shift,
+            patched_chain.variable,
+            patched_chain.denominator,
+            patched_chain.exponent,
+            patched_chain.shift,
         )
         actual == witness.expected_matrix ||
             throw(ArgumentError("mainline fixture $(entry.id) patched substitution witness does not replay"))
@@ -252,6 +340,7 @@ end
 
 function validate_quillen_mainline_fixture(entry)
     patch_case = _qml_assert_patch_case(entry)
+    _qml_assert_patch_source_metadata(entry, patch_case)
     R, n = _qml_assert_ring_metadata(entry, patch_case)
     _qml_assert_denominator_cover(entry, R)
     _qml_assert_raw_denominator_provenance(entry, R)
