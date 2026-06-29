@@ -24,6 +24,9 @@ function replace_conjugate_certificate_field(cert, field::Symbol, value)
     idx = findfirst(==(field), names)
     idx === nothing && throw(ArgumentError("certificate field $(field) not found"))
     values = ntuple(k -> k == idx ? value : getfield(cert, names[k]), length(names))
+    if cert isa NamedTuple
+        return typeof(cert)(values)
+    end
     return typeof(cert)(values...)
 end
 
@@ -149,4 +152,8 @@ end
 
     tampered_convention_cert = replace_conjugate_certificate_field(cert, :conjugation_convention, :invA_E_A)
     @test !Suslin.verify_conjugate_elementary_certificate(tampered_convention_cert)
+
+    tampered_verification = replace_conjugate_certificate_field(cert.verification, :target_matches_product_ok, false)
+    tampered_verification_cert = replace_conjugate_certificate_field(cert, :verification, tampered_verification)
+    @test !Suslin.verify_conjugate_elementary_certificate(tampered_verification_cert)
 end
