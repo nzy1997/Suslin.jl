@@ -19,6 +19,10 @@ const ALLOWED_LOCAL_EVIDENCE_SEQUENCE_STATUS = Set([
     :recorded,
     :placeholder_for_issue_214,
 ])
+const ALLOWED_PATCHED_CHAIN_STATUS = Set([
+    :complete,
+    :staged,
+])
 
 if !isdefined(Main, :QuillenPatchFixtureCatalog)
     include(QUILLEN_PATCH_CATALOG_PATH)
@@ -258,9 +262,11 @@ end
 
 function _qml_assert_patched_chain(entry, patch_case, R, n::Int)
     patched_chain = _qml_field(entry, :patched_substitution_chain)
-    for field in (:variable, :denominator, :exponent, :shift, :expected_matrix, :sign_convention, :start, :steps, :final_variable)
+    for field in (:variable, :denominator, :exponent, :shift, :expected_matrix, :status, :sign_convention, :start, :steps, :final_variable)
         _qml_field(patched_chain, field)
     end
+    patched_chain.status in ALLOWED_PATCHED_CHAIN_STATUS ||
+        throw(ArgumentError("mainline fixture $(entry.id) patched substitution chain status is unsupported"))
     patched_chain.sign_convention == :park_woodburn_minus ||
         throw(ArgumentError("mainline fixture $(entry.id) patched substitution chain sign convention must be :park_woodburn_minus"))
     patched_chain.exponent isa Integer ||
@@ -283,6 +289,7 @@ function _qml_assert_patched_chain(entry, patch_case, R, n::Int)
         throw(ArgumentError("mainline fixture $(entry.id) patched substitution chain final_variable must be in the fixture ring"))
 
     expected_chain_var = patched_chain.start
+    powered_cover_sum = zero(R)
     for step in patched_chain.steps
         for field in (:input, :denominator, :exponent_l, :multiplier, :output)
             _qml_field(step, field)
@@ -302,10 +309,23 @@ function _qml_assert_patched_chain(entry, patch_case, R, n::Int)
         expected_output = step.input - patched_chain.variable * step.denominator ^ step.exponent_l * step.multiplier
         step.output == expected_output ||
             throw(ArgumentError("mainline fixture $(entry.id) patched substitution chain step does not replay"))
+        powered_cover_sum += step.denominator ^ step.exponent_l * step.multiplier
         expected_chain_var = step.output
     end
     patched_chain.final_variable == expected_chain_var ||
         throw(ArgumentError("mainline fixture $(entry.id) patched substitution chain final_variable must match the replayed chain"))
+    if patched_chain.status == :complete
+        powered_cover_sum == one(R) ||
+            throw(ArgumentError("mainline fixture $(entry.id) complete patched substitution chain must have powered cover sum one"))
+        patched_chain.final_variable == zero(R) ||
+            throw(ArgumentError("mainline fixture $(entry.id) complete patched substitution chain must telescope to zero"))
+    else
+        _qml_field(patched_chain, :staging_reason) isa AbstractString &&
+            !isempty(patched_chain.staging_reason) ||
+            throw(ArgumentError("mainline fixture $(entry.id) staged patched substitution chain must record a staging reason"))
+        _qml_field(entry, :base_term_evidence).status == :staged ||
+            throw(ArgumentError("mainline fixture $(entry.id) staged patched substitution chain requires staged base term evidence"))
+    end
 
     if hasproperty(patch_case, :patched_substitution_witness) && patch_case.patched_substitution_witness !== nothing
         witness = patch_case.patched_substitution_witness

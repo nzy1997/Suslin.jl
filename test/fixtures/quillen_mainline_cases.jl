@@ -112,6 +112,8 @@ function _patched_substitution_chain(
     coverage_terms,
     exponent_l::Int;
     start = variable,
+    status = :complete,
+    staging_reason = nothing,
 )
     steps = ()
     current = start
@@ -132,6 +134,8 @@ function _patched_substitution_chain(
         exponent = exponent,
         shift = shift,
         expected_matrix = expected_matrix,
+        status = status,
+        staging_reason = staging_reason,
         sign_convention = :park_woodburn_minus,
         start = start,
         steps = steps,
@@ -284,6 +288,8 @@ function catalog()
         patched.patched_substitution_witness.expected_matrix,
         patched_cover.coverage_terms,
         patched.patched_substitution_witness.exponent,
+        status = :staged,
+        staging_reason = "powered cover multipliers are staged until #183 supplies exponent-l cover evidence",
     )
     patched_mainline = _mainline_case(
         id = patched.id,
