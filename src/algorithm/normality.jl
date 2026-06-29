@@ -333,6 +333,7 @@ end
 function _conjugate_elementary_certificate_core_verification(cert)
     ring_ok = false
     checked_inputs_ok = false
+    n_ok = false
     determinant_ok = false
     inverse_replay_ok = false
     elementary_matrix_ok = false
@@ -349,6 +350,7 @@ function _conjugate_elementary_certificate_core_verification(cert)
     data = _conjugate_elementary_checked_data(cert.A, cert.i, cert.j, cert.a)
     checked_inputs_ok = true
     ring_ok = _same_base_ring(cert.ring, data.ring)
+    n_ok = cert.n == data.n
     determinant_ok = cert.determinant == one(data.ring) && cert.determinant == data.determinant
     identity = identity_matrix(data.ring, data.n)
     inverse_replay_ok =
@@ -382,6 +384,7 @@ function _conjugate_elementary_certificate_core_verification(cert)
     overall_core_ok =
         ring_ok &&
         checked_inputs_ok &&
+        n_ok &&
         determinant_ok &&
         inverse_replay_ok &&
         elementary_matrix_ok &&
@@ -397,6 +400,7 @@ function _conjugate_elementary_certificate_core_verification(cert)
     return (;
         ring_ok,
         checked_inputs_ok,
+        n_ok,
         determinant_ok,
         inverse_replay_ok,
         elementary_matrix_ok,

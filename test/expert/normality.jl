@@ -156,4 +156,7 @@ end
     tampered_verification = replace_conjugate_certificate_field(cert.verification, :target_matches_product_ok, false)
     tampered_verification_cert = replace_conjugate_certificate_field(cert, :verification, tampered_verification)
     @test !Suslin.verify_conjugate_elementary_certificate(tampered_verification_cert)
+
+    tampered_n_cert = replace_conjugate_certificate_field(cert, :n, cert.n + 1)
+    @test !Suslin.verify_conjugate_elementary_certificate(tampered_n_cert)
 end
