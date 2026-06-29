@@ -120,6 +120,7 @@ end
         cleared_replay.materialized_factors,
     )
     @test !Suslin.verify_sl3_local_elementary_factor_replay(bad_numerator_replay)
+    @test !Suslin.verify_sl3_local_elementary_factor_replay((; target = nothing))
 
     bad_row = Suslin.SL3LocalElementaryFactor(
         first_local.R,
