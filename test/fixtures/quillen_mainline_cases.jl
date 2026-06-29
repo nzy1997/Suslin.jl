@@ -22,11 +22,21 @@ function _negative_control(id, base_case_id, reason, entry)
     ))
 end
 
-function _raw_denominator_provenance(; denominator, coverage_multiplier, exponent_l::Integer, source_ref)
+function _raw_denominator_record(index::Int, data; source_ref)
     return (;
-        denominator = denominator,
-        coverage_multiplier = coverage_multiplier,
-        exponent_l = exponent_l,
+        local_index = index,
+        denominator = data.denominator,
+        coverage_multiplier = data.coverage_multiplier,
+        source_ref = source_ref,
+    )
+end
+
+function _raw_denominator_provenance(denominator_data; source_ref)
+    return (;
+        records = Tuple(
+            _raw_denominator_record(index, data; source_ref = source_ref)
+            for (index, data) in enumerate(denominator_data)
+        ),
         source_ref = source_ref,
     )
 end
@@ -201,9 +211,7 @@ function catalog()
         patch_case = two_open,
         denominator_cover = two_open_cover,
         raw_denominator_provenance = _raw_denominator_provenance(
-            denominator = two_open.denominator_data[1].denominator,
-            coverage_multiplier = two_open.denominator_data[1].coverage_multiplier,
-            exponent_l = 1,
+            two_open.denominator_data;
             source_ref = PARK_WOODBURN_SECTION_3_REF,
         ),
         local_evidence = two_open_local_evidence,
@@ -242,9 +250,7 @@ function catalog()
         patch_case = nontrivial,
         denominator_cover = nontrivial_cover,
         raw_denominator_provenance = _raw_denominator_provenance(
-            denominator = nontrivial.denominator_data[1].denominator,
-            coverage_multiplier = nontrivial.denominator_data[1].coverage_multiplier,
-            exponent_l = 1,
+            nontrivial.denominator_data;
             source_ref = PARK_WOODBURN_SECTION_3_REF,
         ),
         local_evidence = nontrivial_local_evidence,
@@ -284,9 +290,7 @@ function catalog()
         patch_case = patched,
         denominator_cover = patched_cover,
         raw_denominator_provenance = _raw_denominator_provenance(
-            denominator = patched.denominator_data[2].denominator,
-            coverage_multiplier = patched.denominator_data[2].coverage_multiplier,
-            exponent_l = patched.patched_substitution_witness.exponent,
+            patched.denominator_data;
             source_ref = PARK_WOODBURN_SECTION_3_REF,
         ),
         local_evidence = patched_local_evidence,
@@ -330,9 +334,7 @@ function catalog()
         patch_case = constructive,
         denominator_cover = constructive_cover,
         raw_denominator_provenance = _raw_denominator_provenance(
-            denominator = constructive.denominator_data[1].denominator,
-            coverage_multiplier = constructive.denominator_data[1].coverage_multiplier,
-            exponent_l = 1,
+            constructive.denominator_data;
             source_ref = PARK_WOODBURN_SECTION_3_REF,
         ),
         local_evidence = constructive_local_evidence,

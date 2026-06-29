@@ -129,9 +129,8 @@ function _qml_assert_ring_metadata(entry, patch_case)
     return R, size
 end
 
-function _qml_assert_denominator_cover(entry, R)
+function _qml_assert_denominator_cover(entry, patch_case, R)
     denominator_cover = _qml_field(entry, :denominator_cover)
-    raw_denominator_provenance = _qml_field(entry, :raw_denominator_provenance)
     for field in (:denominators, :multipliers, :coverage_terms, :coverage_sum)
         _qml_field(denominator_cover, field)
     end
@@ -145,6 +144,12 @@ function _qml_assert_denominator_cover(entry, R)
         throw(ArgumentError("mainline fixture $(entry.id) denominator cover collections must align"))
     !isempty(denominators) ||
         throw(ArgumentError("mainline fixture $(entry.id) denominator cover must not be empty"))
+    source_denominators = Tuple(data.denominator for data in patch_case.denominator_data)
+    source_multipliers = Tuple(data.coverage_multiplier for data in patch_case.denominator_data)
+    denominators == source_denominators ||
+        throw(ArgumentError("mainline fixture $(entry.id) denominator cover denominators must match the #99 patch denominator data"))
+    multipliers == source_multipliers ||
+        throw(ArgumentError("mainline fixture $(entry.id) denominator cover multipliers must match the #99 patch denominator data"))
 
     for denominator in denominators
         parent(denominator) == R ||
@@ -181,28 +186,39 @@ function _qml_assert_denominator_cover(entry, R)
         throw(ArgumentError("mainline fixture $(entry.id) denominator cover sum does not replay"))
     denominator_cover.coverage_sum == one(R) ||
         throw(ArgumentError("mainline fixture $(entry.id) denominator cover must sum to one"))
-    any(
-        idx -> denominators[idx] == raw_denominator_provenance.denominator &&
-            multipliers[idx] == raw_denominator_provenance.coverage_multiplier,
-        eachindex(denominators),
-    ) ||
-        throw(ArgumentError("mainline fixture $(entry.id) raw denominator provenance must match a denominator cover pair"))
     return true
 end
 
-function _qml_assert_raw_denominator_provenance(entry, R)
+function _qml_assert_raw_denominator_provenance(entry, patch_case, R)
     provenance = _qml_field(entry, :raw_denominator_provenance)
-    for field in (:denominator, :coverage_multiplier, :exponent_l, :source_ref)
+    for field in (:records, :source_ref)
         _qml_field(provenance, field)
     end
-    parent(provenance.denominator) == R ||
-        throw(ArgumentError("mainline fixture $(entry.id) raw denominator has wrong parent ring"))
-    parent(provenance.coverage_multiplier) == R ||
-        throw(ArgumentError("mainline fixture $(entry.id) raw denominator coverage multiplier has wrong parent ring"))
-    provenance.exponent_l isa Integer ||
-        throw(ArgumentError("mainline fixture $(entry.id) raw denominator exponent_l must be an integer"))
+    !hasproperty(provenance, :exponent_l) ||
+        throw(ArgumentError("mainline fixture $(entry.id) raw denominator provenance must keep exponent_l separate"))
     provenance.source_ref == PARK_WOODBURN_SECTION_3_REF ||
         throw(ArgumentError("mainline fixture $(entry.id) raw denominator provenance must cite Park-Woodburn Section 3"))
+    provenance.records isa Tuple && length(provenance.records) == length(patch_case.denominator_data) ||
+        throw(ArgumentError("mainline fixture $(entry.id) raw denominator provenance records must align with #99 denominator data"))
+    for (index, record) in enumerate(provenance.records)
+        for field in (:local_index, :denominator, :coverage_multiplier, :source_ref)
+            _qml_field(record, field)
+        end
+        !hasproperty(record, :exponent_l) ||
+            throw(ArgumentError("mainline fixture $(entry.id) raw denominator records must not include exponent_l"))
+        record.local_index == index ||
+            throw(ArgumentError("mainline fixture $(entry.id) raw denominator record local_index must match its position"))
+        parent(record.denominator) == R ||
+            throw(ArgumentError("mainline fixture $(entry.id) raw denominator has wrong parent ring"))
+        parent(record.coverage_multiplier) == R ||
+            throw(ArgumentError("mainline fixture $(entry.id) raw denominator coverage multiplier has wrong parent ring"))
+        record.denominator == patch_case.denominator_data[index].denominator ||
+            throw(ArgumentError("mainline fixture $(entry.id) raw denominator must match the #99 patch denominator data"))
+        record.coverage_multiplier == patch_case.denominator_data[index].coverage_multiplier ||
+            throw(ArgumentError("mainline fixture $(entry.id) raw denominator multiplier must match the #99 patch denominator data"))
+        record.source_ref == PARK_WOODBURN_SECTION_3_REF ||
+            throw(ArgumentError("mainline fixture $(entry.id) raw denominator record must cite Park-Woodburn Section 3"))
+    end
     return true
 end
 
@@ -219,6 +235,9 @@ function _qml_assert_local_evidence(entry, patch_case, R, n::Int)
     _qml_require_matrix_over(local_evidence.expected_product, R, n, "local evidence expected product")
     all(factor -> _qml_require_matrix_over(factor, R, n, "local evidence factor"), local_evidence.factors) ||
         throw(ArgumentError("mainline fixture $(entry.id) local evidence factors are malformed"))
+    source_factors = Tuple(factor.factor for factor in patch_case.local_factors)
+    local_evidence.factors == source_factors ||
+        throw(ArgumentError("mainline fixture $(entry.id) local evidence factors must match the #99 patch local factors"))
     for (idx, factor) in enumerate(local_evidence.factors)
         record = local_evidence.records[idx]
         for field in (:kind, :source, :sequence_status, :factor)
@@ -348,8 +367,8 @@ end
 function validate_quillen_mainline_fixture(entry; require_positive_metadata::Bool = true)
     patch_case = _qml_assert_patch_case(entry)
     R, n = _qml_assert_ring_metadata(entry, patch_case)
-    _qml_assert_denominator_cover(entry, R)
-    _qml_assert_raw_denominator_provenance(entry, R)
+    _qml_assert_denominator_cover(entry, patch_case, R)
+    _qml_assert_raw_denominator_provenance(entry, patch_case, R)
     _qml_assert_local_evidence(entry, patch_case, R, n)
     _qml_assert_patched_chain(entry, patch_case, R, n)
     _qml_assert_base_term_evidence(entry)
