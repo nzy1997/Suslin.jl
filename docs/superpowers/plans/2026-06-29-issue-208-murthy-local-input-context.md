@@ -129,7 +129,7 @@ end
     nonmonic_err = _captured_error(() -> Suslin.sl3_local_murthy_input_context(
         2 * X + one(R),
         X,
-        one(R),
+        R(2),
         one(R),
         X,
     ))
