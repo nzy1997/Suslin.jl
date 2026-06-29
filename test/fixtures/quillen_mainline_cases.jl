@@ -221,7 +221,7 @@ function catalog()
         local_evidence = two_open_local_evidence,
         patched_substitution_chain = two_open_chain,
         base_term_evidence = _base_term_evidence(
-            status = :assumes_identity,
+            status = :staged,
             source_ref = PARK_WOODBURN_SECTION_3_REF,
         ),
         source_refs = (PARK_WOODBURN_SECTION_3_REF, "Issue 99 two-open cover"),
@@ -346,7 +346,7 @@ function catalog()
         local_evidence = constructive_local_evidence,
         patched_substitution_chain = constructive_chain,
         base_term_evidence = _base_term_evidence(
-            status = :supplied_factors,
+            status = :assumes_identity,
             source_ref = PARK_WOODBURN_SECTION_3_REF,
         ),
         source_refs = (PARK_WOODBURN_SECTION_3_REF, "Issue 99 constructive acceptance"),

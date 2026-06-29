@@ -56,7 +56,7 @@ function _qml_quillen_patch_cases_by_id()
     return Base.invokelatest(getfield(catalog_module, :cases_by_id))
 end
 
-function _qml_assert_patch_case(entry)
+function _qml_assert_patch_case(entry; require_positive_metadata::Bool = true)
     patch_case = _qml_field(entry, :patch_case)
     source_patch_catalog = _qml_field(entry, :source_patch_catalog)
     source_patch_case_id = _qml_field(entry, :source_patch_case_id)
@@ -64,8 +64,13 @@ function _qml_assert_patch_case(entry)
         throw(ArgumentError("mainline fixture $(entry.id) source_patch_catalog must be :quillen_patch_cases"))
     source_patch_case_id isa AbstractString ||
         throw(ArgumentError("mainline fixture $(entry.id) source_patch_case_id must be a string"))
-    source_patch_case_id == entry.id ||
-        throw(ArgumentError("mainline fixture $(entry.id) source_patch_case_id must match the wrapper id"))
+    expected_source_id = if require_positive_metadata
+        entry.id
+    else
+        _qml_field(entry, :base_case_id)
+    end
+    source_patch_case_id == expected_source_id ||
+        throw(ArgumentError("mainline fixture $(entry.id) source_patch_case_id must match its source patch id"))
 
     source_entries = _qml_quillen_patch_cases_by_id()
     haskey(source_entries, source_patch_case_id) ||
@@ -91,8 +96,8 @@ function _qml_assert_patch_case(entry)
     patch_case == source_entries[source_patch_case_id] ||
         throw(ArgumentError("mainline fixture $(entry.id) patch_case must match the referenced #99 entry"))
 
-    patch_case.id == entry.id ||
-        throw(ArgumentError("mainline fixture $(entry.id) patch_case id must match wrapper id"))
+    patch_case.id == source_patch_case_id ||
+        throw(ArgumentError("mainline fixture $(entry.id) patch_case id must match source patch id"))
     return patch_case
 end
 
@@ -352,7 +357,7 @@ function _qml_assert_patched_chain(entry, patch_case, R, n::Int)
     return true
 end
 
-function _qml_assert_base_term_evidence(entry)
+function _qml_assert_base_term_evidence(entry, patch_case, R, n::Int)
     base_term_evidence = _qml_field(entry, :base_term_evidence)
     for field in (:status, :source_ref)
         _qml_field(base_term_evidence, field)
@@ -361,6 +366,18 @@ function _qml_assert_base_term_evidence(entry)
         throw(ArgumentError("mainline fixture $(entry.id) base term evidence has an unsupported status"))
     base_term_evidence.source_ref == PARK_WOODBURN_SECTION_3_REF ||
         throw(ArgumentError("mainline fixture $(entry.id) base term evidence must cite Park-Woodburn Section 3"))
+    if base_term_evidence.status == :assumes_identity
+        patch_case.base_matrix == identity_matrix(R, n) ||
+            throw(ArgumentError("mainline fixture $(entry.id) base term evidence assumes identity but #99 base matrix is not identity"))
+    elseif base_term_evidence.status == :supplied_factors
+        _qml_field(base_term_evidence, :factors)
+        base_term_evidence.factors isa Tuple ||
+            throw(ArgumentError("mainline fixture $(entry.id) supplied base term factors must be a tuple"))
+        all(factor -> _qml_require_matrix_over(factor, R, n, "base term factor"), base_term_evidence.factors) ||
+            throw(ArgumentError("mainline fixture $(entry.id) supplied base term factors are malformed"))
+        _qml_product(base_term_evidence.factors, R, n) == patch_case.base_matrix ||
+            throw(ArgumentError("mainline fixture $(entry.id) supplied base term factors do not replay"))
+    end
     return true
 end
 
@@ -385,18 +402,47 @@ function _qml_assert_consumer_ids(entry)
 end
 
 function validate_quillen_mainline_fixture(entry; require_positive_metadata::Bool = true)
-    patch_case = _qml_assert_patch_case(entry)
+    patch_case = _qml_assert_patch_case(entry; require_positive_metadata = require_positive_metadata)
     R, n = _qml_assert_ring_metadata(entry, patch_case)
     _qml_assert_denominator_cover(entry, patch_case, R)
     _qml_assert_raw_denominator_provenance(entry, patch_case, R)
     _qml_assert_local_evidence(entry, patch_case, R, n)
     _qml_assert_patched_chain(entry, patch_case, R, n)
-    _qml_assert_base_term_evidence(entry)
+    _qml_assert_base_term_evidence(entry, patch_case, R, n)
     if require_positive_metadata
         _qml_assert_source_refs(entry)
         _qml_assert_consumer_ids(entry)
     end
     return true
+end
+
+function _qml_expected_negative_failure_fragment(entry)
+    if entry.id == "quillen-mainline-uncovered-denominator-control"
+        return "denominator cover"
+    elseif entry.id == "quillen-mainline-tampered-local-evidence-control"
+        return "local evidence"
+    end
+    return ""
+end
+
+function _qml_assert_murthy_handoff_case(cases)
+    for entry in cases
+        hasproperty(entry, :murthy_adapter_handoff) || continue
+        handoff = entry.murthy_adapter_handoff
+        handoff === nothing && continue
+        entry.id == "quillen-constructive-acceptance-gf2" ||
+            throw(ArgumentError("Murthy handoff metadata must live on the constructive GF(2) mainline case"))
+        _qml_field(handoff, :status) == :staged_until_adapter ||
+            throw(ArgumentError("Murthy handoff metadata must be staged until the adapter"))
+        _qml_field(handoff, :issue_id) == "#211" ||
+            throw(ArgumentError("Murthy handoff metadata must reference #211"))
+        _qml_field(handoff, :accepts_denominator_one_factors) === true ||
+            throw(ArgumentError("Murthy handoff metadata must accept denominator-one factors"))
+        "#211" in entry.consumer_issue_ids ||
+            throw(ArgumentError("Murthy handoff mainline case must be consumable by #211"))
+        return true
+    end
+    throw(ArgumentError("catalog must include a Murthy-adapter-shaped handoff case"))
 end
 
 function validate_quillen_mainline_fixture_catalog(catalog)
@@ -417,6 +463,7 @@ function validate_quillen_mainline_fixture_catalog(catalog)
     for entry in catalog.cases
         validate_quillen_mainline_fixture(entry)
     end
+    _qml_assert_murthy_handoff_case(catalog.cases)
     isempty(catalog.negative_controls) &&
         throw(ArgumentError("catalog must contain negative controls"))
     for entry in catalog.negative_controls
@@ -424,6 +471,10 @@ function validate_quillen_mainline_fixture_catalog(catalog)
             validate_quillen_mainline_fixture(entry; require_positive_metadata = false)
         catch err
             err isa ArgumentError || rethrow()
+            expected_fragment = _qml_expected_negative_failure_fragment(entry)
+            !isempty(expected_fragment) &&
+                occursin(expected_fragment, sprint(showerror, err)) ||
+                throw(ArgumentError("negative control $(entry.id) failed for the wrong reason: $(sprint(showerror, err))"))
             continue
         end
         throw(ArgumentError("negative control $(entry.id) unexpectedly validated"))
