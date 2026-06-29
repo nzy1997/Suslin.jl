@@ -84,14 +84,49 @@ end
 
 function qlfs_sequence_fields(factors, R, n)
     raw_denominators = [factor.denominator for factor in factors]
+    normalized_local_contributions = [
+        Suslin.QuillenLocalContribution(
+            factor.local_certificate,
+            factor.denominator,
+            factor.coverage_multiplier,
+            Suslin.QuillenElementaryCorrection(factor.row, factor.col, factor.numerator),
+        )
+        for factor in factors
+    ]
     normalized_global_elementary_factors =
         [qlfs_replay_factor(factor, R, n) for factor in factors]
     local_product = qlfs_product(normalized_global_elementary_factors, R, n)
     return (;
         raw_denominators = raw_denominators,
         product_denominator = prod(raw_denominators; init = one(R)),
+        normalized_local_contributions = normalized_local_contributions,
         normalized_global_elementary_factors = normalized_global_elementary_factors,
         local_product = local_product,
+    )
+end
+
+function qlfs_denominator_data(contributions)
+    return [
+        Suslin.QuillenDenominatorData(
+            contribution.denominator,
+            contribution.coverage_multiplier,
+        )
+        for contribution in contributions
+    ]
+end
+
+function qlfs_replay_metadata(fields)
+    return (;
+        factor_count = length(fields.factors),
+        raw_denominators = [factor.denominator for factor in fields.factors],
+        denominator_data = qlfs_denominator_data(fields.normalized_local_contributions),
+        factor_provenance = [factor.provenance for factor in fields.factors],
+        factor_metadata = [factor.metadata for factor in fields.factors],
+        factor_local_certificates = [factor.local_certificate for factor in fields.factors],
+        has_patched_substitution_witness = fields.patched_substitution_witness !== nothing,
+        has_chain_witness = fields.chain_witness !== nothing,
+        chain_witness = fields.chain_witness,
+        witness_metadata = fields.witness_metadata,
     )
 end
 
@@ -99,15 +134,21 @@ function qlfs_rebuild_sequence_certificate(cert; recompute_derived::Bool = false
     overrides = NamedTuple(kwargs)
     derived = recompute_derived ? qlfs_sequence_fields(cert.factors, cert.ring, cert.size) : (;)
     fields = merge((
+        original_input = cert.original_input,
         ring = cert.ring,
         size = cert.size,
         selected_variable = cert.selected_variable,
         factors = cert.factors,
         raw_denominators = cert.raw_denominators,
         product_denominator = cert.product_denominator,
+        normalized_local_contributions = cert.normalized_local_contributions,
         normalized_global_elementary_factors = cert.normalized_global_elementary_factors,
         local_product = cert.local_product,
         local_correction = cert.local_correction,
+        patched_substitution_witness = cert.patched_substitution_witness,
+        chain_witness = cert.chain_witness,
+        witness_metadata = cert.witness_metadata,
+        replay_metadata = cert.replay_metadata,
         verification = cert.verification,
     ), derived, overrides)
     if recompute_derived && !(:factors in keys(overrides))
@@ -116,21 +157,31 @@ function qlfs_rebuild_sequence_certificate(cert; recompute_derived::Bool = false
     elseif :factors in keys(overrides) &&
            !(:raw_denominators in keys(overrides)) &&
            !(:product_denominator in keys(overrides)) &&
+           !(:normalized_local_contributions in keys(overrides)) &&
            !(:normalized_global_elementary_factors in keys(overrides)) &&
            !(:local_product in keys(overrides))
         recomputed = qlfs_sequence_fields(fields.factors, fields.ring, fields.size)
         fields = merge(fields, recomputed)
     end
+    if recompute_derived && !(:replay_metadata in keys(overrides))
+        fields = merge(fields, (; replay_metadata = qlfs_replay_metadata(fields)))
+    end
     return Suslin.QuillenLocalFactorSequenceCertificate(
+        fields.original_input,
         fields.ring,
         fields.size,
         fields.selected_variable,
         fields.factors,
         fields.raw_denominators,
         fields.product_denominator,
-        fields.normalized_global_elementary_factors,
         fields.local_product,
         fields.local_correction,
+        fields.normalized_local_contributions,
+        fields.normalized_global_elementary_factors,
+        fields.patched_substitution_witness,
+        fields.chain_witness,
+        fields.witness_metadata,
+        fields.replay_metadata,
         fields.verification,
     )
 end
@@ -212,10 +263,19 @@ end
         modified = collect(cert.factors)
         modified[1] = qlfs_rebuild_factor(
             modified[1];
-            provenance = merge(modified[1].provenance, (; source = :tampered_source)),
+            provenance = merge(modified[1].provenance, (; factor_index = 99)),
         )
         modified
-    end)
+    end, recompute_derived = true)
+    bad_provenance = qlfs_rebuild_sequence_certificate(
+        bad_provenance;
+        verification = Suslin.replay_quillen_local_factor_sequence(bad_provenance),
+    )
+    bad_provenance_replay = Suslin.replay_quillen_local_factor_sequence(bad_provenance)
+    @test !bad_provenance_replay.factor_provenance_ok
+    @test bad_provenance_replay.product_denominator_ok
+    @test bad_provenance_replay.replay_metadata_ok
+    @test !bad_provenance_replay.overall_ok
     @test !Suslin.verify_quillen_local_factor_sequence_certificate(bad_provenance)
 
     reversed_order = qlfs_rebuild_sequence_certificate(
