@@ -259,9 +259,13 @@ end
                     determinant_strategy = $(repr(determinant_strategy)),
                     correction_side = $(repr(determinant_strategy == :lazy ? correction_side : :not_run)),
                     determinant_source = $(repr(determinant_strategy == :lazy ? :deferred_submatrix : :not_run)),
+                    toricbuilder_a = "synthetic_a",
+                    toricbuilder_b = "synthetic_b",
                     verified = true,
                     factor_count = 3,
                     decomposed_base_matrix_count = 3,
+                    factor_max_monomial_degree = 2,
+                    factor_total_offdiagonal_monomials = 3,
                     runtime_seconds = 0.01,
                     error_details = "none",
                     evidence = "fake bounded worker success",
@@ -301,9 +305,13 @@ end
                     determinant_strategy = $(repr(determinant_strategy)),
                     correction_side = $(repr(determinant_strategy == :lazy ? correction_side : :not_run)),
                     determinant_source = $(repr(determinant_strategy == :lazy ? :deferred_submatrix : :not_run)),
+                    toricbuilder_a = "synthetic_a",
+                    toricbuilder_b = "synthetic_b",
                     verified = true,
                     factor_count = 3,
                     decomposed_base_matrix_count = 3,
+                    factor_max_monomial_degree = 2,
+                    factor_total_offdiagonal_monomials = 3,
                     runtime_seconds = 0.01,
                     error_details = "none",
                     evidence = "fake noisy bounded worker success",
@@ -350,12 +358,20 @@ end
     @test by_id["case_001"].determinant_strategy == :eager
     @test by_id["case_001"].correction_side == :not_run
     @test by_id["case_001"].determinant_source == :not_run
+    @test by_id["case_001"].toricbuilder_a == "x*y"
+    @test by_id["case_001"].toricbuilder_b == "x*y"
+    @test by_id["case_001"].factor_max_monomial_degree isa Int
+    @test by_id["case_001"].factor_max_monomial_degree > 0
+    @test by_id["case_001"].factor_total_offdiagonal_monomials isa Int
+    @test by_id["case_001"].factor_total_offdiagonal_monomials > 0
 
     @test by_id["case_002"].route_status == :gl_certificate_pass
     @test by_id["case_002"].public_elementary_status == :staged_boundary
     @test by_id["case_002"].verified == true
     @test by_id["case_002"].decomposed_base_matrix_count == 186
     @test by_id["case_002"].runtime_seconds > 0
+    @test by_id["case_002"].toricbuilder_a == "x^-1*y"
+    @test by_id["case_002"].toricbuilder_b == "x*y"
 
     @test by_id["case_003"].route_status == :gl_certificate_pass
     @test by_id["case_003"].public_elementary_status == :staged_boundary
@@ -395,21 +411,31 @@ end
     @test by_id["case_009"].determinant_strategy == :not_run
     @test by_id["case_009"].correction_side == :not_run
     @test by_id["case_009"].determinant_source == :not_run
+    @test by_id["case_009"].toricbuilder_a == "x^-1*y"
+    @test by_id["case_009"].toricbuilder_b == "x^-1*y^-1"
+    @test by_id["case_009"].factor_max_monomial_degree == :not_run
+    @test by_id["case_009"].factor_total_offdiagonal_monomials == :not_run
 
     markdown = ToricBuilderCacheQBlockStatusReport.render_markdown(report)
     @test occursin("# ToricBuilder Cache Q-Block Status Report", markdown)
+    @test occursin(
+        "| Case | ToricBuilder a | ToricBuilder b | Matrix size | Sparse nnz | Test level | Status | Decomposed base matrices | Runtime seconds | Determinant | Max factor monomial degree | Total factor offdiag monomials |",
+        markdown,
+    )
     @test occursin("Matrix size", markdown)
     @test occursin("Decomposed base matrices", markdown)
     @test occursin("Runtime seconds", markdown)
-    @test occursin(r"\| case_001 \| 6x6 \| 30 \| default_contract \| gl_certificate_pass \| staged_boundary \| laurent_monomial_unit \| 50 \| [0-9]+\.[0-9]{3} \|", markdown)
-    @test occursin(r"\| case_002 \| 14x14 \| 79 \| default_contract \| gl_certificate_pass \| staged_boundary \| laurent_monomial_unit \| 186 \| [0-9]+\.[0-9]{3} \|", markdown)
-    @test occursin(r"\| case_003 \| 6x6 \| 27 \| default_contract \| gl_certificate_pass \| staged_boundary \| laurent_monomial_unit \| 49 \| [0-9]+\.[0-9]{3} \|", markdown)
-    @test occursin(r"\| case_004 \| 18x18 \| 73 \| default_contract \| gl_certificate_pass \| staged_boundary \| laurent_monomial_unit \| 189 \| [0-9]+\.[0-9]{3} \|", markdown)
-    @test occursin(r"\| case_005 \| 14x14 \| 90 \| default_contract \| gl_certificate_pass \| staged_boundary \| laurent_monomial_unit \| 168 \| [0-9]+\.[0-9]{3} \|", markdown)
-    @test occursin(r"\| case_006 \| 18x18 \| 99 \| default_contract \| gl_certificate_pass \| staged_boundary \| laurent_monomial_unit \| 212 \| [0-9]+\.[0-9]{3} \|", markdown)
-    @test occursin(r"\| case_010 \| 6x6 \| 34 \| default_contract \| gl_certificate_pass \| staged_boundary \| laurent_monomial_unit \| [1-9][0-9]* \| [0-9]+\.[0-9]{3} \|", markdown)
-    @test occursin("| case_011 | 288x288 | 14713 | optional_slow | not_exercised_in_default_report | not_run | not_run | not_run | not_run |", markdown)
-    @test occursin("| case_009 | 62x62 | 739 | default_contract | not_exercised_in_default_report | not_run | not_run | not_run | not_run |", markdown)
+    @test !occursin("Public elementary status", markdown)
+    @test !occursin("Determinant class |", markdown)
+    @test occursin(r"\| case_001 \| x\*y \| x\*y \| 6x6 \| 30 \| default_contract \| gl_certificate_pass / staged_boundary \| 50 \| [0-9]+\.[0-9]{3} \| u\*v \| [1-9][0-9]* \| [1-9][0-9]* \|", markdown)
+    @test occursin(r"\| case_002 \| x\^-1\*y \| x\*y \| 14x14 \| 79 \| default_contract \| gl_certificate_pass / staged_boundary \| 186 \| [0-9]+\.[0-9]{3} \| u\*v\^2 \| [1-9][0-9]* \| [1-9][0-9]* \|", markdown)
+    @test occursin(r"\| case_003 \| x\^2 \| x\^2 \| 6x6 \| 27 \| default_contract \| gl_certificate_pass / staged_boundary \| 49 \| [0-9]+\.[0-9]{3} \| u\*v \| [1-9][0-9]* \| [1-9][0-9]* \|", markdown)
+    @test occursin(r"\| case_004 \| x\^-1 \| y\^-1 \| 18x18 \| 73 \| default_contract \| gl_certificate_pass / staged_boundary \| 189 \| [0-9]+\.[0-9]{3} \| u\^2\*v\^2 \| [1-9][0-9]* \| [1-9][0-9]* \|", markdown)
+    @test occursin(r"\| case_005 \| x\*y \| x\*y\^-1 \| 14x14 \| 90 \| default_contract \| gl_certificate_pass / staged_boundary \| 168 \| [0-9]+\.[0-9]{3} \| u\^2\*v \| [1-9][0-9]* \| [1-9][0-9]* \|", markdown)
+    @test occursin(r"\| case_006 \| x\^-1 \| x\^3\*y\^2 \| 18x18 \| 99 \| default_contract \| gl_certificate_pass / staged_boundary \| 212 \| [0-9]+\.[0-9]{3} \| u\*v\^4 \| [1-9][0-9]* \| [1-9][0-9]* \|", markdown)
+    @test occursin(r"\| case_010 \| x\^-2\*y\^-1 \| x\^2\*y \| 6x6 \| 34 \| default_contract \| gl_certificate_pass / staged_boundary \| [1-9][0-9]* \| [0-9]+\.[0-9]{3} \| u\*v \| [1-9][0-9]* \| [1-9][0-9]* \|", markdown)
+    @test occursin("| case_011 | x^-1*y^3 | x^3*y^-1 | 288x288 | 14713 | optional_slow | not_exercised_in_default_report / not_run | not_run | not_run | not_run | not_run | not_run |", markdown)
+    @test occursin("| case_009 | x^-1*y | x^-1*y^-1 | 62x62 | 739 | default_contract | not_exercised_in_default_report / not_run | not_run | not_run | not_run | not_run | not_run |", markdown)
     @test hasproperty(by_id["case_001"], :stage_timings)
     @test by_id["case_001"].stage_timings.determinant_classification.status == :pass
     @test by_id["case_001"].stage_timings.normalization.status == :pass
@@ -530,7 +556,7 @@ end
     ])
     @test timeout_path == timeout_output
     timeout_markdown = read(timeout_output, String)
-    @test occursin("| case_007 | 42x42 | 546 | default_contract | timed_out |", timeout_markdown)
+    @test occursin("| case_007 | y^-2 | x^-2 | 42x42 | 546 | default_contract | timed_out / not_run |", timeout_markdown)
     @test occursin("## Stage Timing Details", timeout_markdown)
     rm(timeout_output; force = true)
 
@@ -703,7 +729,7 @@ end
             timeout_seconds = synthetic_timeout_seconds,
             rows = [peel_timeout_row],
         ))
-        @test occursin("| case_peel_progress | 5x5 | 25 | default_contract | timed_out |", peel_timeout_markdown)
+        @test occursin("| case_peel_progress | not_run | not_run | 5x5 | 25 | default_contract | timed_out / not_run |", peel_timeout_markdown)
         @test occursin("peel progress:", peel_timeout_markdown)
         @test occursin("current d=21", peel_timeout_markdown)
         @test occursin("completed steps=9", peel_timeout_markdown)
@@ -741,7 +767,7 @@ end
             rows = [partial_peel_timeout_row],
         ))
         @test occursin(
-            "| case_partial_peel_progress | 5x5 | 25 | default_contract | timed_out |",
+            "| case_partial_peel_progress | not_run | not_run | 5x5 | 25 | default_contract | timed_out / not_run |",
             partial_peel_timeout_markdown,
         )
         @test occursin("peel progress:", partial_peel_timeout_markdown)
