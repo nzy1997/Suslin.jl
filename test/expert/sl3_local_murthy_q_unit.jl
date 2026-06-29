@@ -151,6 +151,10 @@ end
     )
     _assert_q0_certificate(fixture_cert; normalization_expected = false)
     @test fixture_cert.target == fixture.target
+    fixture_context = Suslin.sl3_local_murthy_input_context(fixture.target, fixture.variable)
+    fixture_context_cert = Suslin.realize_sl3_local_certificate(fixture_context)
+    _assert_q0_certificate(fixture_context_cert; normalization_expected = false)
+    @test fixture_context_cert.target == fixture.target
     @test Suslin.realize_sl3_local(
         fixture.entries.p,
         fixture.entries.q,
@@ -218,6 +222,35 @@ end
     _assert_local_q0_certificate(local_cert)
     @test local_cert.target == local_fixture.target
     local_reduction = local_cert.witness.reduction
+    C, (u_model,) = Oscar.polynomial_ring(QQ, ["u"])
+    @test_throws ArgumentError Suslin._sl3_local_coefficient_model_to_ring(
+        u_model,
+        local_context,
+        ["u", "v"],
+    )
+    source_certificate = local_reduction.source_certificate
+    nested_source_certificate = Suslin.SL3LocalRealizationCertificate(
+        source_certificate.target,
+        :murthy_q0_unit,
+        source_certificate.factors,
+        source_certificate.selected_variable,
+        (; reduction = nothing, normalized_certificate = source_certificate),
+    )
+    @test Suslin._sl3_local_source_q0_reduction(nested_source_certificate) ==
+        Suslin._sl3_local_source_q0_reduction(source_certificate)
+    empty_source_certificate = Suslin.SL3LocalRealizationCertificate(
+        source_certificate.target,
+        :murthy_q0_unit,
+        source_certificate.factors,
+        source_certificate.selected_variable,
+        (; reduction = nothing, normalized_certificate = nothing),
+    )
+    @test_throws ArgumentError Suslin._sl3_local_source_q0_reduction(empty_source_certificate)
+    foreign_source_reduction = _local_q0_reduction_copy(
+        local_reduction;
+        source_certificate = fixture_context_cert,
+    )
+    @test !Suslin.verify_sl3_local_murthy_q_unit_reduction(foreign_source_reduction)
 
     bad_q0_inverse = _local_q0_reduction_copy(
         local_reduction;

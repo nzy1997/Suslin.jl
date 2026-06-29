@@ -95,6 +95,10 @@ end
     @test local_cert.branch == :murthy_q_degree_normalization
     @test local_cert.target == local_fixture.target
     @test Suslin.verify_sl3_local_realization(local_cert)
+    routed_local_cert = Suslin.realize_sl3_local_certificate(local_context)
+    @test routed_local_cert.branch == :murthy_q_degree_normalization
+    @test routed_local_cert.witness.normalization == local_record
+    @test Suslin.verify_sl3_local_realization(routed_local_cert)
 
     matrix_record = Suslin.sl3_local_q_degree_normalization(fixture.target, fixture.variable)
     @test matrix_record == record

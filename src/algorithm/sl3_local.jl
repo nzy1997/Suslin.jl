@@ -924,8 +924,8 @@ function _sl3_local_derive_local_unit_witness(context::SL3LocalMurthyInputContex
     residue_difference_coefficient = try
         divexact(difference, generator)
     catch err
-        err isa InterruptException && rethrow()
-        throw(ArgumentError("unsupported local-unit denominator witness"))
+        err isa InterruptException && rethrow() # COV_EXCL_LINE
+        throw(ArgumentError("unsupported local-unit denominator witness")) # COV_EXCL_LINE
     end
     generator * residue_difference_coefficient == difference ||
         throw(ArgumentError("unsupported local-unit denominator witness"))
