@@ -86,6 +86,27 @@ struct SL3LocalMurthyInputContext
     bezout_witness
 end
 
+struct SL3LocalElementaryFactor
+    R
+    n::Int
+    row::Int
+    col::Int
+    numerator
+    denominator
+    selected_variable
+    local_unit_witness
+end
+
+struct SL3LocalElementaryFactorReplay
+    target
+    factors::Vector{SL3LocalElementaryFactor}
+    selected_variable
+    mode::Symbol
+    denominator_product
+    cleared_product
+    materialized_factors
+end
+
 function Base.:(==)(left::SL3LocalQDegreeNormalization, right::SL3LocalQDegreeNormalization)
     return left.target == right.target &&
         left.quotient == right.quotient &&
@@ -1315,6 +1336,223 @@ function _sl3_local_factor_product(factors, R)
         product *= factor
     end
     return product
+end
+
+function sl3_local_elementary_factor(row, col, numerator, denominator, X;
+        local_unit_witness=nothing, n::Int=3)
+    R = parent(X)
+    record = SL3LocalElementaryFactor(
+        R,
+        n,
+        Int(row),
+        Int(col),
+        _coerce_into_ring(R, numerator, "local elementary factor numerator"),
+        _coerce_into_ring(R, denominator, "local elementary factor denominator"),
+        X,
+        local_unit_witness,
+    )
+    _require_sl3_local_elementary_factor(record)
+    return record
+end
+
+function verify_sl3_local_elementary_factor(record)::Bool
+    try
+        _require_sl3_local_elementary_factor(record)
+        return true
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function sl3_local_materialize_elementary_factor(record)
+    _require_sl3_local_elementary_factor(record)
+    record.denominator == one(record.R) ||
+        throw(ArgumentError("local elementary factor cannot materialize over the ordinary base ring"))
+    return elementary_matrix(record.n, record.row, record.col, record.numerator, record.R)
+end
+
+function sl3_local_denominator_one_records_from_matrices(factors, X)
+    return [
+        _sl3_local_denominator_one_record_from_matrix(factor, X)
+        for factor in factors
+    ]
+end
+
+function sl3_local_elementary_factor_replay(target, records, X)
+    collected = SL3LocalElementaryFactor[records...]
+    replay = _sl3_local_elementary_factor_replay(target, collected, X)
+    verify_sl3_local_elementary_factor_replay(replay) ||
+        error("internal local elementary factor replay verification failed")
+    return replay
+end
+
+function verify_sl3_local_elementary_factor_replay(replay)::Bool
+    try
+        return _sl3_local_elementary_factor_replay_verification(replay).overall_ok
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function _require_sl3_local_elementary_factor(record)
+    record.n == 3 || throw(ArgumentError("local elementary factor size must be 3"))
+    1 <= record.row <= record.n || throw(ArgumentError("local elementary factor row is out of bounds"))
+    1 <= record.col <= record.n || throw(ArgumentError("local elementary factor column is out of bounds"))
+    record.row != record.col || throw(ArgumentError("local elementary factor row and column must differ"))
+    parent(record.selected_variable) === record.R ||
+        throw(ArgumentError("local elementary factor variable must lie in the factor ring"))
+    record.selected_variable in collect(gens(record.R)) ||
+        throw(ArgumentError("local elementary factor variable must be a ring generator"))
+    parent(record.numerator) === record.R ||
+        throw(ArgumentError("local elementary factor numerator ring mismatch"))
+    parent(record.denominator) === record.R ||
+        throw(ArgumentError("local elementary factor denominator ring mismatch"))
+    iszero(record.denominator) &&
+        throw(ArgumentError("local elementary factor denominator must be nonzero"))
+    if record.denominator == one(record.R)
+        record.local_unit_witness === nothing ||
+            _sl3_local_murthy_verify_local_unit_witness(
+                record.R,
+                record.selected_variable,
+                record.local_unit_witness,
+                record.denominator;
+                label = "local elementary factor denominator witness",
+            )
+    else
+        record.local_unit_witness === nothing &&
+            throw(ArgumentError("local elementary factor denominator requires a local-unit witness"))
+        _sl3_local_murthy_verify_local_unit_witness(
+            record.R,
+            record.selected_variable,
+            record.local_unit_witness,
+            record.denominator;
+            label = "local elementary factor denominator witness",
+        )
+    end
+    return record
+end
+
+function _sl3_local_cleared_elementary_factor(record)
+    _require_sl3_local_elementary_factor(record)
+    cleared = record.denominator * identity_matrix(record.R, record.n)
+    cleared[record.row, record.col] += record.numerator
+    return cleared
+end
+
+function _sl3_local_denominator_one_record_from_matrix(factor, X)
+    nrows(factor) == 3 || throw(ArgumentError("ordinary elementary factor must be 3x3"))
+    ncols(factor) == 3 || throw(ArgumentError("ordinary elementary factor must be 3x3"))
+    R = base_ring(factor)
+    parent(X) === R || throw(ArgumentError("ordinary elementary factor variable ring mismatch"))
+    row = 0
+    col = 0
+    coefficient = zero(R)
+    for i in 1:3, j in 1:3
+        if i == j
+            factor[i, j] == one(R) || throw(ArgumentError("ordinary factor diagonal is not identity"))
+        elseif factor[i, j] != zero(R)
+            row == 0 || throw(ArgumentError("ordinary factor has more than one off-diagonal entry"))
+            row = i
+            col = j
+            coefficient = factor[i, j]
+        end
+    end
+    row != 0 || throw(ArgumentError("ordinary identity factor has no elementary row/column data"))
+    return sl3_local_elementary_factor(row, col, coefficient, one(R), X)
+end
+
+function _sl3_local_elementary_factor_replay(target, records::Vector{SL3LocalElementaryFactor}, X)
+    nrows(target) == 3 || throw(ArgumentError("local elementary factor replay target must be 3x3"))
+    ncols(target) == 3 || throw(ArgumentError("local elementary factor replay target must be 3x3"))
+    R = base_ring(target)
+    parent(X) === R || throw(ArgumentError("local elementary factor replay variable ring mismatch"))
+    denominator_product = one(R)
+    cleared_product = identity_matrix(R, 3)
+    all_materializable = true
+    materialized = Any[]
+    for record in records
+        _require_sl3_local_elementary_factor(record)
+        record.R === R || throw(ArgumentError("local elementary factor replay ring mismatch"))
+        record.selected_variable == X ||
+            throw(ArgumentError("local elementary factor replay variable mismatch"))
+        denominator_product *= record.denominator
+        cleared_product *= _sl3_local_cleared_elementary_factor(record)
+        if record.denominator == one(R)
+            push!(materialized, sl3_local_materialize_elementary_factor(record))
+        else
+            all_materializable = false
+        end
+    end
+    mode = all_materializable ? :ordinary : :denominator_cleared
+    return SL3LocalElementaryFactorReplay(
+        target,
+        records,
+        X,
+        mode,
+        denominator_product,
+        cleared_product,
+        all_materializable ? collect(materialized) : nothing,
+    )
+end
+
+function _sl3_local_elementary_factor_replay_verification(replay)
+    target_size_ok = nrows(replay.target) == 3 && ncols(replay.target) == 3
+    cleared_size_ok = nrows(replay.cleared_product) == 3 && ncols(replay.cleared_product) == 3
+    size_ok = target_size_ok && cleared_size_ok
+    R = size_ok ? base_ring(replay.target) : nothing
+    cleared_ring_ok = size_ok && _same_base_ring(base_ring(replay.cleared_product), R)
+    variable_ok = size_ok &&
+        parent(replay.selected_variable) === R &&
+        replay.selected_variable in collect(gens(R))
+    factors_ok = replay.factors isa Vector{SL3LocalElementaryFactor} &&
+        all(verify_sl3_local_elementary_factor, replay.factors)
+
+    recomputed_ok = false
+    denominator_product_ok = false
+    cleared_product_ok = false
+    mode_ok = false
+    materialized_factors_ok = false
+    denominator_cleared_ok = false
+    ordinary_ok = false
+    if cleared_ring_ok && variable_ok && factors_ok
+        expected = _sl3_local_elementary_factor_replay(replay.target, replay.factors, replay.selected_variable)
+        expected_materialized = expected.materialized_factors
+        recomputed_ok = true
+        denominator_product_ok = replay.denominator_product == expected.denominator_product
+        cleared_product_ok = replay.cleared_product == expected.cleared_product
+        mode_ok = replay.mode == expected.mode
+        materialized_factors_ok = replay.materialized_factors == expected_materialized
+
+        denominator_cleared_ok =
+            expected.cleared_product == replay.denominator_product * replay.target
+        ordinary_ok =
+            replay.mode == :ordinary &&
+            replay.materialized_factors !== nothing &&
+            _sl3_local_factor_product(replay.materialized_factors, R) == replay.target
+    end
+
+    overall_ok = size_ok && cleared_ring_ok && variable_ok && factors_ok &&
+        recomputed_ok && denominator_product_ok && cleared_product_ok && mode_ok &&
+        materialized_factors_ok && (
+            ordinary_ok ||
+            denominator_cleared_ok
+        )
+    return (;
+        overall_ok,
+        size_ok,
+        cleared_ring_ok,
+        variable_ok,
+        factors_ok,
+        recomputed_ok,
+        denominator_product_ok,
+        cleared_product_ok,
+        mode_ok,
+        materialized_factors_ok,
+        ordinary_ok,
+        denominator_cleared_ok,
+    )
 end
 
 function _sl3_local_split_lemma_reassembled_product(
