@@ -362,6 +362,8 @@ function _sl3_mg_assert_local_unit_witness(entry, witness, expected_unit; label)
         throw(ArgumentError("fixture $(entry.id) $(label) local context kind is unsupported"))
     context.selected_variable == entry.variable ||
         throw(ArgumentError("fixture $(entry.id) $(label) local context variable mismatch"))
+    context.maximal_ideal_generators == generators ||
+        throw(ArgumentError("fixture $(entry.id) $(label) local context maximal_ideal_generators mismatch"))
     unit == expected_unit ||
         throw(ArgumentError("fixture $(entry.id) $(label) local unit does not match expected value"))
     length(generators) == length(coefficients) ||
@@ -585,6 +587,29 @@ end
         ),
     )
     @test_throws ArgumentError validate_sl3_murthy_gupta_fixture(q0_unit_bad)
+
+    local_q0_unit_entry = by_id["mg-local-q0-unit-at-u"]
+    local_q0_unit_witness = first(local_q0_unit_entry.witnesses)
+    local_q0_unit_context_bad = merge(
+        local_q0_unit_entry,
+        (;
+            witnesses = (merge(
+                local_q0_unit_witness,
+                (;
+                    local_unit_witness = merge(
+                        local_q0_unit_witness.local_unit_witness,
+                        (;
+                            context = merge(
+                                local_q0_unit_witness.local_unit_witness.context,
+                                (; maximal_ideal_generators = (local_q0_unit_entry.variable,)),
+                            ),
+                        ),
+                    ),
+                ),
+            ),),
+        ),
+    )
+    @test_throws ArgumentError validate_sl3_murthy_gupta_fixture(local_q0_unit_context_bad)
 
     RU, (u, X) = Oscar.polynomial_ring(QQ, ["u", "X"])
     synthetic_q0_unit = (;
