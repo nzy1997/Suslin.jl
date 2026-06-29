@@ -81,6 +81,61 @@ function _assert_q0_certificate(cert; normalization_expected::Bool)
     end
 end
 
+function _assert_local_q0_certificate(cert)
+    @test cert.branch == :murthy_q0_unit
+    @test Suslin.verify_sl3_local_realization(cert)
+    @test !isempty(cert.factors)
+    @test all(factor -> factor isa Suslin.SL3LocalElementaryFactor, cert.factors)
+    reduction = cert.witness.reduction
+    @test reduction isa Suslin.SL3LocalMurthyQUnitLocalReduction
+    @test reduction.local_factor_replay.mode == :denominator_cleared
+    @test reduction.local_factor_replay.target == cert.target
+    @test reduction.local_factor_replay.factors == cert.factors
+    @test Suslin.verify_sl3_local_elementary_factor_replay(reduction.local_factor_replay)
+    @test Suslin.verify_sl3_local_realization(reduction.source_certificate)
+    @test reduction.split_certificate.branch == :murthy_split_lemma
+    @test Suslin.verify_sl3_local_realization(reduction.split_certificate)
+    @test Suslin.verify_sl3_local_realization(
+        reduction.split_certificate.witness.first_child_certificate,
+    )
+    @test Suslin.verify_sl3_local_realization(
+        reduction.split_certificate.witness.second_child_certificate,
+    )
+end
+
+function _local_q0_reduction_copy(reduction;
+        target = reduction.target,
+        context = reduction.context,
+        q0 = reduction.q0,
+        q0_inverse = reduction.q0_inverse,
+        p0 = reduction.p0,
+        right_e21_coefficient = reduction.right_e21_coefficient,
+        elimination_factor = reduction.elimination_factor,
+        inverse_elimination_factor = reduction.inverse_elimination_factor,
+        source_certificate = reduction.source_certificate,
+        split_certificate = reduction.split_certificate,
+        local_factor_replay = reduction.local_factor_replay,
+        selected_variable = reduction.selected_variable,
+        degree_p = reduction.degree_p,
+        degree_q = reduction.degree_q)
+    return Suslin.SL3LocalMurthyQUnitLocalReduction(
+        target,
+        context,
+        q0,
+        q0_inverse,
+        p0,
+        right_e21_coefficient,
+        elimination_factor,
+        inverse_elimination_factor,
+        source_certificate,
+        split_certificate,
+        local_factor_replay,
+        selected_variable,
+        degree_p,
+        degree_q,
+    )
+end
+
 @testset "Murthy q(0)-unit recursive branch for local SL3" begin
     include(SL3_Q0_UNIT_FIXTURE_PATH)
     catalog = SL3MurthyGuptaFixtureCatalog.catalog()
@@ -96,6 +151,10 @@ end
     )
     _assert_q0_certificate(fixture_cert; normalization_expected = false)
     @test fixture_cert.target == fixture.target
+    fixture_context = Suslin.sl3_local_murthy_input_context(fixture.target, fixture.variable)
+    fixture_context_cert = Suslin.realize_sl3_local_certificate(fixture_context)
+    _assert_q0_certificate(fixture_context_cert; normalization_expected = false)
+    @test fixture_context_cert.target == fixture.target
     @test Suslin.realize_sl3_local(
         fixture.entries.p,
         fixture.entries.q,
@@ -152,6 +211,127 @@ end
     )
     _assert_q0_certificate(normalizing_cert; normalization_expected = true)
     @test normalizing_cert.target == normalizing_fixture.target
+
+    local_fixture = by_id["mg-local-q0-unit-at-u"]
+    local_context = Suslin.sl3_local_murthy_input_context(
+        local_fixture.target,
+        local_fixture.variable;
+        witness = first(local_fixture.witnesses),
+    )
+    local_cert = Suslin.realize_sl3_local_certificate(local_context)
+    _assert_local_q0_certificate(local_cert)
+    @test local_cert.target == local_fixture.target
+    local_reduction = local_cert.witness.reduction
+    C, (u_model,) = Oscar.polynomial_ring(QQ, ["u"])
+    @test_throws ArgumentError Suslin._sl3_local_coefficient_model_to_ring(
+        u_model,
+        local_context,
+        ["u", "v"],
+    )
+    source_certificate = local_reduction.source_certificate
+    nested_source_certificate = Suslin.SL3LocalRealizationCertificate(
+        source_certificate.target,
+        :murthy_q0_unit,
+        source_certificate.factors,
+        source_certificate.selected_variable,
+        (; reduction = nothing, normalized_certificate = source_certificate),
+    )
+    @test Suslin._sl3_local_source_q0_reduction(nested_source_certificate) ==
+        Suslin._sl3_local_source_q0_reduction(source_certificate)
+    empty_source_certificate = Suslin.SL3LocalRealizationCertificate(
+        source_certificate.target,
+        :murthy_q0_unit,
+        source_certificate.factors,
+        source_certificate.selected_variable,
+        (; reduction = nothing, normalized_certificate = nothing),
+    )
+    @test_throws ArgumentError Suslin._sl3_local_source_q0_reduction(empty_source_certificate)
+    foreign_source_reduction = _local_q0_reduction_copy(
+        local_reduction;
+        source_certificate = fixture_context_cert,
+    )
+    @test !Suslin.verify_sl3_local_murthy_q_unit_reduction(foreign_source_reduction)
+
+    bad_q0_inverse = _local_q0_reduction_copy(
+        local_reduction;
+        q0_inverse = local_reduction.q0_inverse + one(parent(local_reduction.q0_inverse)),
+    )
+    @test !Suslin.verify_sl3_local_murthy_q_unit_reduction(bad_q0_inverse)
+
+    bad_e21 = _local_q0_reduction_copy(
+        local_reduction;
+        right_e21_coefficient =
+            local_reduction.right_e21_coefficient +
+            one(parent(local_reduction.right_e21_coefficient)),
+    )
+    @test !Suslin.verify_sl3_local_murthy_q_unit_reduction(bad_e21)
+
+    replay = local_reduction.local_factor_replay
+    bad_factors = copy(replay.factors)
+    original_factor = first(bad_factors)
+    bad_factors[1] = Suslin.SL3LocalElementaryFactor(
+        original_factor.R,
+        original_factor.n,
+        original_factor.row,
+        original_factor.col,
+        original_factor.numerator + one(original_factor.R),
+        original_factor.denominator,
+        original_factor.selected_variable,
+        original_factor.local_unit_witness,
+    )
+    bad_replay = Suslin.SL3LocalElementaryFactorReplay(
+        replay.target,
+        bad_factors,
+        replay.selected_variable,
+        replay.mode,
+        replay.denominator_product,
+        replay.cleared_product,
+        replay.materialized_factors,
+    )
+    bad_factor_reduction = _local_q0_reduction_copy(
+        local_reduction;
+        local_factor_replay = bad_replay,
+    )
+    @test !Suslin.verify_sl3_local_murthy_q_unit_reduction(bad_factor_reduction)
+    bad_factor_certificate = Suslin.SL3LocalRealizationCertificate(
+        local_cert.target,
+        local_cert.branch,
+        bad_replay.factors,
+        local_cert.selected_variable,
+        (;
+            normalization = nothing,
+            normalized_certificate = nothing,
+            reduction = bad_factor_reduction,
+        ),
+    )
+    @test !Suslin.verify_sl3_local_realization(bad_factor_certificate)
+
+    split_certificate = local_reduction.split_certificate
+    split_witness = split_certificate.witness
+    first_child = split_witness.first_child_certificate
+    bad_first_child = Suslin.SL3LocalRealizationCertificate(
+        split_witness.split.second_child_target,
+        first_child.branch,
+        first_child.factors,
+        first_child.selected_variable,
+        first_child.witness,
+    )
+    bad_split_certificate = Suslin.SL3LocalRealizationCertificate(
+        split_certificate.target,
+        split_certificate.branch,
+        split_certificate.factors,
+        split_certificate.selected_variable,
+        (;
+            split = split_witness.split,
+            first_child_certificate = bad_first_child,
+            second_child_certificate = split_witness.second_child_certificate,
+        ),
+    )
+    bad_split_reduction = _local_q0_reduction_copy(
+        local_reduction;
+        split_certificate = bad_split_certificate,
+    )
+    @test !Suslin.verify_sl3_local_murthy_q_unit_reduction(bad_split_reduction)
 
     nonunit_q0_p = X^2 + one(R)
     nonunit_q0_q = X
