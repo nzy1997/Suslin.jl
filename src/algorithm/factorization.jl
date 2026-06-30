@@ -49,6 +49,22 @@ function _factorization_ring_profile(R)
     end
 end
 
+function _polynomial_exact_field_backed_ring(R)::Bool
+    try
+        return Oscar.is_exact_type(typeof(zero(coefficient_ring(R)))) &&
+               coefficient_ring(R) isa Field
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function _polynomial_unsupported_coefficient_ring_message()
+    return "ordinary polynomial factorization currently requires an exact " *
+           "field-backed coefficient ring; coefficient-ring support beyond " *
+           "exact field-backed ordinary polynomial rings remains staged"
+end
+
 function _normalize_factorization_input(A, ring_profile::Symbol)
     if ring_profile == :laurent
         normalization = normalize_laurent_gl_matrix(A)
@@ -88,6 +104,10 @@ function _throw_staged_factorization_failure(A, ring_profile::Symbol, normalizat
         throw(ArgumentError("Laurent GL_n normalization boundary succeeded with determinant classification $(classification), but the determinant-correction/driver path cannot yet return elementary factors that reconstruct the original input"))
     end
 
+    if !_polynomial_exact_field_backed_ring(base_ring(A))
+        throw(ArgumentError(_polynomial_unsupported_coefficient_ring_message()))
+    end
+
     length(collect(gens(base_ring(A)))) > 1 &&
         throw(ArgumentError("determinant-one polynomial input is outside the implemented Quillen/local evidence route: missing Quillen/local realizability witness"))
 
@@ -110,6 +130,15 @@ function _polynomial_factorization_route_certificate(
     ring_profile == :polynomial ||
         throw(ArgumentError("polynomial route certificates are only supported for ordinary polynomial inputs"))
     _require_polynomial_sl_determinant(A)
+    if !_polynomial_exact_field_backed_ring(R)
+        if route === nothing || route == :staged_failure
+            return _polynomial_staged_failure_route_certificate(
+                A;
+                allow_recursive_column_peel = allow_recursive_column_peel,
+            )
+        end
+        throw(ArgumentError(_polynomial_unsupported_coefficient_ring_message()))
+    end
 
     if route === nothing
         quillen_patch === nothing ||
@@ -235,6 +264,7 @@ function _polynomial_quillen_elementary_entry(A)
     nrows(A) == 3 && ncols(A) == 3 || return nothing
     R = base_ring(A)
     _factorization_ring_profile(R) == :polynomial || return nothing
+    _polynomial_exact_field_backed_ring(R) || return nothing
     ring_gens = collect(gens(R))
     length(ring_gens) >= 2 || return nothing
     row = 0
@@ -611,6 +641,13 @@ end
 function _polynomial_staged_failure_evidence(A; allow_recursive_column_peel::Bool = true)
     R = base_ring(A)
     ring_profile = _factorization_ring_profile(R)
+    if !_polynomial_exact_field_backed_ring(R)
+        return (;
+            error_type = :ArgumentError,
+            message = _polynomial_unsupported_coefficient_ring_message(),
+        )
+    end
+
     X = _supported_local_sl3_generator(A, R, ring_profile)
     if X !== nothing
         return (; error_type = :none, message = "")

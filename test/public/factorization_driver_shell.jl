@@ -94,6 +94,15 @@ end
     @test multivariate_err isa ArgumentError
     @test occursin("missing Quillen/local realizability witness", sprint(showerror, multivariate_err))
 
+    ZR, (ZX, Zr) = Oscar.polynomial_ring(ZZ, ["X", "r"])
+    unsupported_coefficient_quillen =
+        elementary_matrix(3, 1, 2, ZX * Zr + one(ZR), ZR)
+    unsupported_coefficient_err =
+        _captured_error(() -> elementary_factorization(unsupported_coefficient_quillen))
+    @test unsupported_coefficient_err isa ArgumentError
+    @test occursin("exact field-backed", sprint(showerror, unsupported_coefficient_err))
+    @test occursin("coefficient-ring support", sprint(showerror, unsupported_coefficient_err))
+
     nonlocal_sl3 = matrix(R, [
         one(R)  zero(R) X;
         zero(R) one(R)  zero(R);

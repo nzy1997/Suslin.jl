@@ -28,12 +28,15 @@ verify_factorization(A, factors)
   ordinary-polynomial matrices, selected `n > 3` ordinary-polynomial matrices
   through block-local reduction and recursive polynomial column peel,
   and the #183 ordinary-polynomial Quillen patching gate. Automatic #183
-  Quillen patching is supported only for ordinary-polynomial cases with
-  verified supplied or Murthy-adapter local evidence, exact cover replay,
-  sequence replay, substitution-chain replay, and trivial or supplied
-  elementary `A(0)` base-term handling. Supplied and Murthy-adapter local
-  evidence can also be adapted explicitly through the internal Quillen patch
-  route. This #183 gate does not broaden Laurent or ToricBuilder acceptance.
+  Quillen patching is supported only for exact field-backed `3 x 3`
+  single-elementary ordinary-polynomial inputs whose first generator is the
+  substitution variable and whose second generator supplies the two-open cover
+  `s, 1-s`. That route verifies local sequence evidence, exact cover replay,
+  substitution-chain replay, and trivial or supplied elementary `A(0)`
+  base-term handling before returning factors. Supplied and Murthy-adapter
+  local evidence can also be adapted explicitly through the internal Quillen
+  patch route. This #183 gate does not broaden coefficient-ring, Laurent, or
+  ToricBuilder acceptance.
 - `verify_factorization(A, factors)` checks exact multiplication against `A`.
 - `laurent_gl_factorization_certificate(A)` defaults to the eager Laurent
   normalization/core certificate. With `determinant_strategy = :lazy`, it
