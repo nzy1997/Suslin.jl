@@ -39,14 +39,21 @@ verify_factorization(A, factors)
   normality certificates, and conjugated-elementary normality certificates. The
   staged ECP induction/normality adapter replays a nested
   conjugated-elementary certificate for its normality step.
+- The Murthy local `SL_3` solver (#182) is supported for the proven
+  ordinary/local-witness contract: ordinary factor vectors are exposed only
+  when the certificate can materialize them over the base ring, while
+  nontrivial local-witness cases are verified through localized
+  denominator-cleared certificate replay.
 - The implementation is not yet the full Park-Woodburn algorithm for arbitrary
-  `SL_n(k[x_1, ..., x_m])`, `n >= 3`: Park-Woodburn `SL_n(k[x_1, ..., x_m])`
-  factorization remains staged until #182 through #187 are complete. Murthy
-  local solving, general Quillen local realizability, the general ECP reducer,
-  coefficient-ring support beyond exact field-backed ordinary polynomial
-  rings, arbitrary Laurent `GL_n` determinant correction, Laurent/ToricBuilder
-  mainline acceptance, and Steinberg factor-count optimization remain staged
+  `SL_n(k[x_1, ..., x_m])`, `n >= 3`: Quillen automatic patching (#183),
+  general `SL_3` (#184), the general ECP reducer (#185), recursive `SL_n`
+  (#186), full public Park-Woodburn acceptance (#187), coefficient-ring
+  support beyond exact field-backed ordinary polynomial rings, arbitrary
+  Laurent `GL_n` determinant correction, Laurent/ToricBuilder mainline
+  acceptance, and Steinberg factor-count optimization remain staged
   boundaries.
+- Park-Woodburn `SL_n(k[x_1, ..., x_m])` factorization remains staged beyond
+  the supported #182 ordinary/local-witness boundary.
 
 ## Testing
 
