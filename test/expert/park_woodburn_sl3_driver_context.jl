@@ -65,6 +65,16 @@ end
     @test fast_context.exact_field_status == :supported
     @test Suslin._verify_sl3_realization_input_context(fast_context)
 
+    fast_local_context = Suslin._sl3_realization_input_context(
+        fast_entry.matrix;
+        selected_variable = fast_entry.selected_variable,
+        catalog_metadata = _catalog_metadata(fast_entry),
+    )
+    @test fast_local_context.support_status == :supported
+    @test fast_local_context.evidence_status == :replayable
+    @test fast_local_context.local_form_status == :fast_local
+    @test Suslin._verify_sl3_realization_input_context(fast_local_context)
+
     legacy_entry = entries["sl3-driver-legacy-quillen-patched-substitution-qq"]
     legacy_context = Suslin._sl3_realization_input_context(
         legacy_entry.matrix;
@@ -127,6 +137,21 @@ end
     @test variable_change_context.variable_change_status == :replayed
     @test Suslin._verify_sl3_realization_input_context(variable_change_context)
 
+    scalar_payload_context = Suslin._sl3_realization_input_context(
+        staged_entry.matrix;
+        selected_variable = staged_entry.selected_variable,
+        catalog_metadata = (; fixture_id = "synthetic-scalar-replay-payload"),
+        variable_change_metadata = (;
+            replay_id = "scalar-variable-change-replay",
+            target_matrix = staged_entry.matrix,
+            replay_payload = :supplied_scalar_replay_metadata,
+        ),
+    )
+    @test scalar_payload_context.support_status == :supported
+    @test scalar_payload_context.evidence_status == :replayable
+    @test scalar_payload_context.variable_change_status == :replayed
+    @test Suslin._verify_sl3_realization_input_context(scalar_payload_context)
+
     variable_change_recorded_context = Suslin._sl3_realization_input_context(
         staged_entry.matrix;
         selected_variable = staged_entry.selected_variable,
@@ -140,6 +165,17 @@ end
     @test variable_change_recorded_context.evidence_status == :partial
     @test variable_change_recorded_context.variable_change_status == :recorded
     @test Suslin._verify_sl3_realization_input_context(variable_change_recorded_context)
+
+    variable_change_shell_context = Suslin._sl3_realization_input_context(
+        staged_entry.matrix;
+        selected_variable = staged_entry.selected_variable,
+        catalog_metadata = _catalog_metadata(staged_entry),
+        variable_change_metadata = (; note = "recorded shell without replay boundary"),
+    )
+    @test variable_change_shell_context.support_status == :staged
+    @test variable_change_shell_context.evidence_status == :partial
+    @test variable_change_shell_context.variable_change_status == :recorded
+    @test Suslin._verify_sl3_realization_input_context(variable_change_shell_context)
 
     normality_context = Suslin._sl3_realization_input_context(
         staged_entry.matrix;
