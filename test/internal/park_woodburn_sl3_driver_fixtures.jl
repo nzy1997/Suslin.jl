@@ -198,7 +198,7 @@ function _sl3d_assert_supplied_witness(entry, R)
     return true
 end
 
-function _sl3d_replay_case_matrix(entry, mainline_case)
+function _sl3d_replay_case_matrix(mainline_case)
     if hasproperty(mainline_case, :expected_global_product)
         return mainline_case.expected_global_product
     end
@@ -324,9 +324,9 @@ function _sl3d_assert_metadata(entry)
     selected_variable_status = _sl3d_field(entry, :selected_variable_status)
     selected_variable_status in ALLOWED_EVIDENCE_STATUS ||
         throw(ArgumentError("fixture $(entry.id) selected_variable_status must be an evidence status symbol"))
-    selected.status in ALLOWED_EVIDENCE_STATUS ||
+    selected_variable.status in ALLOWED_EVIDENCE_STATUS ||
         throw(ArgumentError("fixture $(entry.id) selected variable status must be an evidence status symbol"))
-    selected.status == selected_variable_status ||
+    selected_variable.status == selected_variable_status ||
         throw(ArgumentError("fixture $(entry.id) selected variable status metadata is inconsistent"))
 
     entry.source_refs isa Tuple && !isempty(entry.source_refs) ||
