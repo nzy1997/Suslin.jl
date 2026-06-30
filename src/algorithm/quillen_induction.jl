@@ -17,6 +17,85 @@ function patched_substitution(A, X, r, l::Integer, g)
     return matrix(R, nrows(A), ncols(A), vec(entries))
 end
 
+function _quillen_substitute_matrix_scaled_variable(A, X, coefficient)
+    R = base_ring(A)
+    selected = _require_substitution_generator(R, X)
+    scaled_coefficient = _coerce_into_ring(R, coefficient, "substitution coefficient")
+    ring_gens = collect(gens(R))
+    variable_idx = findfirst(gen -> gen == selected, ring_gens)
+    variable_idx === nothing &&
+        throw(ArgumentError("X must be a generator of the matrix base ring"))
+
+    values = copy(ring_gens)
+    values[variable_idx] = scaled_coefficient * ring_gens[variable_idx]
+    entries = [
+        _coerce_into_ring(R, evaluate(A[row, col], values), "scaled substitution entry")
+        for col in 1:ncols(A), row in 1:nrows(A)
+    ]
+    return matrix(R, nrows(A), ncols(A), vec(entries))
+end
+
+struct QuillenPatchSubstitutionStep
+    step_index::Int
+    selected_variable
+    raw_denominator
+    exponent::Int
+    powered_denominator
+    coverage_multiplier
+    sign_convention::Symbol
+    previous_coefficient
+    next_coefficient
+    previous_matrix
+    next_matrix
+    bracket_target
+    replay_metadata
+end
+
+struct QuillenPatchSubstitutionChainVerification
+    solver_result_ok::Bool
+    ring_ok::Bool
+    matrix_ok::Bool
+    selected_variable_ok::Bool
+    sign_convention_ok::Bool
+    coefficient_count::Int
+    step_count::Int
+    bracket_count::Int
+    cumulative_coefficients::Vector
+    cumulative_coefficients_ok::Bool
+    intermediate_matrices::Vector
+    intermediate_matrices_ok::Bool
+    expected_steps::Vector{QuillenPatchSubstitutionStep}
+    steps_ok::Bool
+    bracket_matrices::Vector
+    bracket_matrices_ok::Bool
+    final_coefficient
+    final_coefficient_ok::Bool
+    base_term
+    base_term_ok::Bool
+    telescope_product
+    telescope_ok::Bool
+    replay_metadata
+    replay_metadata_ok::Bool
+    overall_ok::Bool
+end
+
+struct QuillenPatchSubstitutionChain
+    original_matrix
+    ring
+    size::Int
+    selected_variable
+    sign_convention::Symbol
+    solver_result
+    cumulative_coefficients::Vector
+    intermediate_matrices::Vector
+    steps::Vector{QuillenPatchSubstitutionStep}
+    bracket_matrices::Vector
+    base_term
+    metadata
+    replay_metadata
+    verification::QuillenPatchSubstitutionChainVerification
+end
+
 struct QuillenDenominatorCoverVerification
     denominator_count::Int
     multiplier_count::Int
@@ -1599,6 +1678,378 @@ function solve_quillen_denominator_cover(
         coverage_multipliers,
         supplied_multipliers,
         source_candidate = candidate,
+    )
+end
+
+function _quillen_patch_substitution_step_metadata(
+    solver_result::QuillenDenominatorCoverSolverResult,
+    selected_variable,
+    sign_convention::Symbol,
+    step_index::Int,
+)
+    return (;
+        source = :park_woodburn_substitution_chain,
+        step_index = step_index,
+        selected_variable = selected_variable,
+        raw_denominator = solver_result.raw_denominators[step_index],
+        exponent = solver_result.exponent,
+        powered_denominator = solver_result.powered_denominators[step_index],
+        coverage_multiplier = solver_result.coverage_multipliers[step_index],
+        coverage_term = solver_result.coverage_terms[step_index],
+        sign_convention = sign_convention,
+    )
+end
+
+function _quillen_patch_substitution_chain_metadata(
+    solver_result::QuillenDenominatorCoverSolverResult,
+    selected_variable,
+    sign_convention::Symbol,
+    metadata,
+)
+    return (;
+        source = :park_woodburn_substitution_chain,
+        selected_variable = selected_variable,
+        exponent = solver_result.exponent,
+        denominator_count = length(solver_result.raw_denominators),
+        coverage_sum = solver_result.coverage_sum,
+        sign_convention = sign_convention,
+        metadata = metadata,
+    )
+end
+
+function _quillen_patch_next_coefficient(
+    previous,
+    powered_denominator,
+    coverage_multiplier,
+    sign_convention::Symbol,
+)
+    sign_convention == :park_woodburn_minus ||
+        throw(ArgumentError("unsupported Park-Woodburn substitution sign convention"))
+    return previous - coverage_multiplier * powered_denominator
+end
+
+function _same_quillen_patch_substitution_step(
+    left::QuillenPatchSubstitutionStep,
+    right::QuillenPatchSubstitutionStep,
+)::Bool
+    return left.step_index == right.step_index &&
+           left.selected_variable == right.selected_variable &&
+           left.raw_denominator == right.raw_denominator &&
+           left.exponent == right.exponent &&
+           left.powered_denominator == right.powered_denominator &&
+           left.coverage_multiplier == right.coverage_multiplier &&
+           left.sign_convention == right.sign_convention &&
+           left.previous_coefficient == right.previous_coefficient &&
+           left.next_coefficient == right.next_coefficient &&
+           left.previous_matrix == right.previous_matrix &&
+           left.next_matrix == right.next_matrix &&
+           left.bracket_target == right.bracket_target &&
+           left.replay_metadata == right.replay_metadata
+end
+
+function _same_quillen_patch_substitution_steps(left, right)::Bool
+    length(left) == length(right) || return false
+    return all(
+        _same_quillen_patch_substitution_step(left[idx], right[idx])
+        for idx in eachindex(left)
+    )
+end
+
+function _quillen_patch_expected_substitution_chain(
+    A,
+    selected_variable,
+    solver_result::QuillenDenominatorCoverSolverResult,
+    sign_convention::Symbol,
+    metadata,
+)
+    R = base_ring(A)
+    cumulative_coefficients = Any[one(R)]
+    intermediate_matrices = Any[
+        _quillen_substitute_matrix_scaled_variable(A, selected_variable, one(R)),
+    ]
+    steps = QuillenPatchSubstitutionStep[]
+    bracket_matrices = Any[]
+
+    for idx in eachindex(solver_result.raw_denominators)
+        previous_coefficient = last(cumulative_coefficients)
+        next_coefficient = _quillen_patch_next_coefficient(
+            previous_coefficient,
+            solver_result.powered_denominators[idx],
+            solver_result.coverage_multipliers[idx],
+            sign_convention,
+        )
+        previous_matrix = last(intermediate_matrices)
+        next_matrix = _quillen_substitute_matrix_scaled_variable(
+            A,
+            selected_variable,
+            next_coefficient,
+        )
+        bracket_target = inv(previous_matrix) * next_matrix
+        push!(cumulative_coefficients, next_coefficient)
+        push!(intermediate_matrices, next_matrix)
+        push!(bracket_matrices, bracket_target)
+        push!(
+            steps,
+            QuillenPatchSubstitutionStep(
+                idx,
+                selected_variable,
+                solver_result.raw_denominators[idx],
+                solver_result.exponent,
+                solver_result.powered_denominators[idx],
+                solver_result.coverage_multipliers[idx],
+                sign_convention,
+                previous_coefficient,
+                next_coefficient,
+                previous_matrix,
+                next_matrix,
+                bracket_target,
+                _quillen_patch_substitution_step_metadata(
+                    solver_result,
+                    selected_variable,
+                    sign_convention,
+                    idx,
+                ),
+            ),
+        )
+    end
+
+    base_term = _quillen_substitute_matrix_scaled_variable(A, selected_variable, zero(R))
+    telescope_product = A
+    for bracket in bracket_matrices
+        telescope_product *= bracket
+    end
+
+    return (;
+        cumulative_coefficients = cumulative_coefficients,
+        intermediate_matrices = intermediate_matrices,
+        steps = steps,
+        bracket_matrices = bracket_matrices,
+        final_coefficient = last(cumulative_coefficients),
+        base_term = base_term,
+        telescope_product = telescope_product,
+        replay_metadata = _quillen_patch_substitution_chain_metadata(
+            solver_result,
+            selected_variable,
+            sign_convention,
+            metadata,
+        ),
+    )
+end
+
+function _same_quillen_patch_substitution_chain_verification(
+    left::QuillenPatchSubstitutionChainVerification,
+    right::QuillenPatchSubstitutionChainVerification,
+)::Bool
+    return left.solver_result_ok == right.solver_result_ok &&
+           left.ring_ok == right.ring_ok &&
+           left.matrix_ok == right.matrix_ok &&
+           left.selected_variable_ok == right.selected_variable_ok &&
+           left.sign_convention_ok == right.sign_convention_ok &&
+           left.coefficient_count == right.coefficient_count &&
+           left.step_count == right.step_count &&
+           left.bracket_count == right.bracket_count &&
+           left.cumulative_coefficients == right.cumulative_coefficients &&
+           left.cumulative_coefficients_ok == right.cumulative_coefficients_ok &&
+           left.intermediate_matrices == right.intermediate_matrices &&
+           left.intermediate_matrices_ok == right.intermediate_matrices_ok &&
+           _same_quillen_patch_substitution_steps(left.expected_steps, right.expected_steps) &&
+           left.steps_ok == right.steps_ok &&
+           left.bracket_matrices == right.bracket_matrices &&
+           left.bracket_matrices_ok == right.bracket_matrices_ok &&
+           left.final_coefficient == right.final_coefficient &&
+           left.final_coefficient_ok == right.final_coefficient_ok &&
+           left.base_term == right.base_term &&
+           left.base_term_ok == right.base_term_ok &&
+           left.telescope_product == right.telescope_product &&
+           left.telescope_ok == right.telescope_ok &&
+           left.replay_metadata == right.replay_metadata &&
+           left.replay_metadata_ok == right.replay_metadata_ok &&
+           left.overall_ok == right.overall_ok
+end
+
+function _quillen_patch_substitution_chain_verification(
+    A,
+    R,
+    size::Int,
+    selected_variable,
+    sign_convention::Symbol,
+    solver_result::QuillenDenominatorCoverSolverResult,
+    cumulative_coefficients,
+    intermediate_matrices,
+    steps,
+    bracket_matrices,
+    base_term,
+    metadata,
+    replay_metadata,
+)
+    solver_result_ok = verify_quillen_denominator_cover_solver_result(solver_result)
+    ring_ok = solver_result_ok && solver_result.ring == R
+    matrix_ok = nrows(A) == size && ncols(A) == size && base_ring(A) == R
+    selected = _require_substitution_generator(R, selected_variable)
+    selected_variable_ok = selected == selected_variable
+    sign_convention_ok = sign_convention == :park_woodburn_minus
+    expected = _quillen_patch_expected_substitution_chain(
+        A,
+        selected,
+        solver_result,
+        sign_convention,
+        metadata,
+    )
+
+    coefficient_count = length(cumulative_coefficients)
+    step_count = length(steps)
+    bracket_count = length(bracket_matrices)
+    cumulative_coefficients_ok =
+        collect(cumulative_coefficients) == expected.cumulative_coefficients
+    intermediate_matrices_ok =
+        collect(intermediate_matrices) == expected.intermediate_matrices
+    steps_ok = _same_quillen_patch_substitution_steps(steps, expected.steps)
+    bracket_matrices_ok = collect(bracket_matrices) == expected.bracket_matrices
+    final_coefficient_ok = expected.final_coefficient == zero(R)
+    base_term_ok = base_term == expected.base_term &&
+                   base_term == last(expected.intermediate_matrices)
+    telescope_ok = expected.telescope_product == expected.base_term
+    replay_metadata_ok = replay_metadata == expected.replay_metadata
+    overall_ok =
+        solver_result_ok &&
+        ring_ok &&
+        matrix_ok &&
+        selected_variable_ok &&
+        sign_convention_ok &&
+        coefficient_count == length(expected.cumulative_coefficients) &&
+        step_count == length(expected.steps) &&
+        bracket_count == length(expected.bracket_matrices) &&
+        cumulative_coefficients_ok &&
+        intermediate_matrices_ok &&
+        steps_ok &&
+        bracket_matrices_ok &&
+        final_coefficient_ok &&
+        base_term_ok &&
+        telescope_ok &&
+        replay_metadata_ok
+
+    return QuillenPatchSubstitutionChainVerification(
+        solver_result_ok,
+        ring_ok,
+        matrix_ok,
+        selected_variable_ok,
+        sign_convention_ok,
+        coefficient_count,
+        step_count,
+        bracket_count,
+        expected.cumulative_coefficients,
+        cumulative_coefficients_ok,
+        expected.intermediate_matrices,
+        intermediate_matrices_ok,
+        expected.steps,
+        steps_ok,
+        expected.bracket_matrices,
+        bracket_matrices_ok,
+        expected.final_coefficient,
+        final_coefficient_ok,
+        expected.base_term,
+        base_term_ok,
+        expected.telescope_product,
+        telescope_ok,
+        expected.replay_metadata,
+        replay_metadata_ok,
+        overall_ok,
+    )
+end
+
+function replay_quillen_patch_substitution_chain(
+    chain::QuillenPatchSubstitutionChain,
+)
+    R = _require_quillen_denominator_cover_ring(chain.ring)
+    _require_square_matrix(chain.original_matrix, "substitution-chain original matrix") ==
+        chain.size || throw(DimensionMismatch("substitution-chain size must match original matrix"))
+    return _quillen_patch_substitution_chain_verification(
+        chain.original_matrix,
+        R,
+        chain.size,
+        chain.selected_variable,
+        chain.sign_convention,
+        chain.solver_result,
+        chain.cumulative_coefficients,
+        chain.intermediate_matrices,
+        chain.steps,
+        chain.bracket_matrices,
+        chain.base_term,
+        chain.metadata,
+        chain.replay_metadata,
+    )
+end
+
+function verify_quillen_patch_substitution_chain(chain)::Bool
+    try
+        replay = replay_quillen_patch_substitution_chain(chain)
+        return replay.overall_ok &&
+               _same_quillen_patch_substitution_chain_verification(
+                   chain.verification,
+                   replay,
+               )
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function quillen_patch_substitution_chain(
+    A,
+    selected_variable,
+    solver_result::QuillenDenominatorCoverSolverResult;
+    sign_convention::Symbol = :park_woodburn_minus,
+    metadata = (;),
+)
+    R = _require_quillen_denominator_cover_ring(base_ring(A))
+    solver_result.ring == R ||
+        throw(ArgumentError("substitution-chain solver result ring must match matrix ring"))
+    verify_quillen_denominator_cover_solver_result(solver_result) ||
+        throw(ArgumentError("substitution-chain solver result must replay"))
+    n = _require_square_matrix(A, "substitution-chain original matrix")
+    selected = _require_substitution_generator(R, selected_variable)
+    sign_convention == :park_woodburn_minus ||
+        throw(ArgumentError("unsupported Park-Woodburn substitution sign convention"))
+
+    expected = _quillen_patch_expected_substitution_chain(
+        A,
+        selected,
+        solver_result,
+        sign_convention,
+        metadata,
+    )
+    verification = _quillen_patch_substitution_chain_verification(
+        A,
+        R,
+        n,
+        selected,
+        sign_convention,
+        solver_result,
+        expected.cumulative_coefficients,
+        expected.intermediate_matrices,
+        expected.steps,
+        expected.bracket_matrices,
+        expected.base_term,
+        metadata,
+        expected.replay_metadata,
+    )
+    verification.overall_ok ||
+        throw(ArgumentError("Park-Woodburn substitution chain does not replay"))
+    return QuillenPatchSubstitutionChain(
+        A,
+        R,
+        n,
+        selected,
+        sign_convention,
+        solver_result,
+        expected.cumulative_coefficients,
+        expected.intermediate_matrices,
+        expected.steps,
+        expected.bracket_matrices,
+        expected.base_term,
+        metadata,
+        expected.replay_metadata,
+        verification,
     )
 end
 
