@@ -130,7 +130,7 @@ function catalog()
         upstream_evidence_status = :absent,
         local_form_witness = (;
             entry = fast_local_entry,
-            monic_entry_position = 1,
+            monic_entry_position = (1, 2),
         ),
         source_refs = (
             PARK_WOODBURN_SECTION_5_REF,
@@ -154,7 +154,7 @@ function catalog()
         upstream_evidence_status = :absent,
         local_form_witness = (;
             polynomial = multivariate_entry,
-            monic_entry_position = 2,
+            monic_entry_position = (2, 3),
         ),
         source_refs = (
             PARK_WOODBURN_SECTION_5_REF,
@@ -308,6 +308,15 @@ function catalog()
         )),
     )
 
+    legacy_supported_shortcut_control = _negative_control(
+        "sl3-driver-negative-legacy-supported-shortcut",
+        legacy_quillen_case.id,
+        "legacy patched-substitution coverage must not become supported by fixture-id replay alone",
+        merge(legacy_quillen_case, (;
+            expected_status = :supported,
+        )),
+    )
+
     return (;
         cases = [
             fast_local_case,
@@ -322,6 +331,7 @@ function catalog()
             bad_selected_variable_control,
             missing_local_evidence_control,
             supported_without_witness_control,
+            legacy_supported_shortcut_control,
         ],
     )
 end

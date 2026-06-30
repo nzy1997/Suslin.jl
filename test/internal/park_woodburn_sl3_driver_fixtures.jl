@@ -25,6 +25,7 @@ const REQUIRED_SL3_DRIVER_NEGATIVE_IDS = Set([
     "sl3-driver-negative-selected-variable-not-generator",
     "sl3-driver-negative-claimed-local-evidence-missing",
     "sl3-driver-negative-supported-without-witness",
+    "sl3-driver-negative-legacy-supported-shortcut",
 ])
 
 const REQUIRED_DRIVER_FIELDS = (
@@ -98,6 +99,14 @@ function _sl3d_monic_in_variable(p, selected_variable, selected_index::Int)
     return leading == one(R)
 end
 
+function _sl3d_product(factors, R, n::Int)
+    product = identity_matrix(R, n)
+    for factor in factors
+        product *= factor
+    end
+    return product
+end
+
 function _sl3d_quillen_patch_cases_by_id()
     isfile(QUILLEN_PATCH_CATALOG_PATH) ||
         throw(ArgumentError("validator requires the quillen patch catalog at $(QUILLEN_PATCH_CATALOG_PATH)"))
@@ -165,11 +174,16 @@ function _sl3d_assert_local_form_witness(entry, R, selected_variable, selected_i
         throw(ArgumentError("fixture $(entry.id) local-form replay polynomial must lie in the fixture ring"))
     _sl3d_monic_in_variable(monic_value, selected_variable, selected_index) ||
         throw(ArgumentError("fixture $(entry.id) local-form replay polynomial is not monic in selected variable"))
-    if hasproperty(witness, :monic_entry_position)
-        witness.monic_entry_position isa Int &&
-            1 <= witness.monic_entry_position <= nrows(_sl3d_field(entry, :matrix)) ||
-            throw(ArgumentError("fixture $(entry.id) local-form witness position is out of range"))
-    end
+    hasproperty(witness, :monic_entry_position) ||
+        throw(ArgumentError("fixture $(entry.id) local-form witness must name the certified matrix entry"))
+    position = _sl3d_field(witness, :monic_entry_position)
+    position isa Tuple && length(position) == 2 ||
+        throw(ArgumentError("fixture $(entry.id) local-form witness position must be a row/column tuple"))
+    row, col = position
+    row isa Int && col isa Int && 1 <= row <= 3 && 1 <= col <= 3 ||
+        throw(ArgumentError("fixture $(entry.id) local-form witness position is out of range"))
+    _sl3d_field(entry, :matrix)[row, col] == monic_value ||
+        throw(ArgumentError("fixture $(entry.id) local-form witness polynomial does not match the matrix entry"))
     return true
 end
 
@@ -211,6 +225,67 @@ function _sl3d_replay_case_matrix(mainline_case)
     return nothing
 end
 
+function _sl3d_assert_upstream_mainline_replay(entry, mainline_case, patch_cases, patch_id, R)
+    hasproperty(mainline_case, :patch_case) ||
+        throw(ArgumentError("fixture $(entry.id) upstream mainline case must expose patch_case"))
+    hasproperty(mainline_case, :expected_global_product) ||
+        throw(ArgumentError("fixture $(entry.id) upstream mainline case must expose expected_global_product"))
+    patch_case = mainline_case.patch_case
+    patch_case.size == 3 ||
+        throw(ArgumentError("fixture $(entry.id) upstream patch case must be 3 x 3"))
+    patch_case == patch_cases[patch_id] ||
+        throw(ArgumentError("fixture $(entry.id) upstream patch_case_id does not match the mainline patch case"))
+    _sl3d_require_matrix_over(mainline_case.expected_global_product, R, 3, "upstream expected global product")
+    mainline_case.expected_global_product == patch_case.target_matrix ||
+        throw(ArgumentError("fixture $(entry.id) upstream expected product must match the patch target"))
+
+    denominator_cover = _sl3d_field(mainline_case, :denominator_cover)
+    for field in (:denominators, :multipliers, :coverage_terms, :coverage_sum)
+        _sl3d_field(denominator_cover, field)
+    end
+    source_denominators = Tuple(data.denominator for data in patch_case.denominator_data)
+    source_multipliers = Tuple(data.coverage_multiplier for data in patch_case.denominator_data)
+    denominator_cover.denominators == source_denominators ||
+        throw(ArgumentError("fixture $(entry.id) upstream denominators do not match patch data"))
+    denominator_cover.multipliers == source_multipliers ||
+        throw(ArgumentError("fixture $(entry.id) upstream coverage multipliers do not match patch data"))
+    length(denominator_cover.coverage_terms) == length(source_denominators) ||
+        throw(ArgumentError("fixture $(entry.id) upstream coverage terms do not align"))
+    coverage_sum = zero(R)
+    for idx in eachindex(denominator_cover.coverage_terms)
+        term = denominator_cover.coverage_terms[idx]
+        _sl3d_field(term, :denominator) == source_denominators[idx] ||
+            throw(ArgumentError("fixture $(entry.id) upstream coverage term denominator mismatch"))
+        _sl3d_field(term, :multiplier) == source_multipliers[idx] ||
+            throw(ArgumentError("fixture $(entry.id) upstream coverage term multiplier mismatch"))
+        parent(term.denominator) == R && parent(term.multiplier) == R ||
+            throw(ArgumentError("fixture $(entry.id) upstream coverage term parent mismatch"))
+        if hasproperty(term, :term)
+            term.term == term.multiplier * term.denominator ||
+                throw(ArgumentError("fixture $(entry.id) upstream coverage term does not replay"))
+        end
+        coverage_sum += term.multiplier * term.denominator
+    end
+    coverage_sum == denominator_cover.coverage_sum && coverage_sum == one(R) ||
+        throw(ArgumentError("fixture $(entry.id) upstream denominator cover does not replay"))
+
+    local_evidence = _sl3d_field(mainline_case, :local_evidence)
+    for field in (:factors, :expected_product, :records)
+        _sl3d_field(local_evidence, field)
+    end
+    source_factors = Tuple(factor.factor for factor in patch_case.local_factors)
+    local_evidence.factors == source_factors ||
+        throw(ArgumentError("fixture $(entry.id) upstream local evidence factors do not match patch data"))
+    length(local_evidence.records) == length(local_evidence.factors) ||
+        throw(ArgumentError("fixture $(entry.id) upstream local evidence records do not align"))
+    local_product = _sl3d_product(local_evidence.factors, R, 3)
+    local_product == local_evidence.expected_product ||
+        throw(ArgumentError("fixture $(entry.id) upstream local factor product does not replay"))
+    local_product == mainline_case.expected_global_product ||
+        throw(ArgumentError("fixture $(entry.id) upstream local product does not match target"))
+    return true
+end
+
 function _sl3d_assert_upstream_evidence(entry, R)
     status = _sl3d_field(entry, :upstream_evidence_status)
     status in ALLOWED_EVIDENCE_STATUS || throw(
@@ -244,12 +319,13 @@ function _sl3d_assert_upstream_evidence(entry, R)
     _sl3d_require_matrix_over(replay_matrix, R, 3, "upstream replay matrix")
     replay_matrix == _sl3d_field(entry, :matrix) ||
         throw(ArgumentError("fixture $(entry.id) upstream replay matrix does not match the fixture matrix"))
-    if hasproperty(evidence, :patch_case_id)
-        patch_cases = _sl3d_quillen_patch_cases_by_id()
-        patch_id = _sl3d_field(evidence, :patch_case_id)
-        haskey(patch_cases, patch_id) ||
-            throw(ArgumentError("fixture $(entry.id) upstream patch_case_id must exist in the Quillen patch catalog"))
-    end
+    patch_id = _sl3d_field(evidence, :patch_case_id)
+    patch_id isa AbstractString && !isempty(patch_id) ||
+        throw(ArgumentError("fixture $(entry.id) upstream patch_case_id must be a non-empty string"))
+    patch_cases = _sl3d_quillen_patch_cases_by_id()
+    haskey(patch_cases, patch_id) ||
+        throw(ArgumentError("fixture $(entry.id) upstream patch_case_id must exist in the Quillen patch catalog"))
+    _sl3d_assert_upstream_mainline_replay(entry, mainline_case, patch_cases, patch_id, R)
     return true
 end
 
@@ -265,6 +341,8 @@ function _sl3d_assert_metadata(entry)
         throw(ArgumentError("fixture $(entry.id) expected_status must be a symbol"))
     entry.expected_status in ALLOWED_DRIVER_STATUS ||
         throw(ArgumentError("fixture $(entry.id) expected_status must be :supported or :staged"))
+    entry.role == :legacy_quillen_patch_replay && entry.expected_status != :staged &&
+        throw(ArgumentError("fixture $(entry.id) legacy patched-substitution coverage must remain staged"))
 
     ring_constructor = _sl3d_field(entry, :ring_constructor)
     _sl3d_field(ring_constructor, :function_name) == :polynomial_ring ||
