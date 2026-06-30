@@ -2374,6 +2374,238 @@ function verify_quillen_local_contribution_normalization(normalized)::Bool
     end
 end
 
+struct QuillenSequenceContributionExpansionVerification
+    local_certificate_ok::Bool
+    solver_result_ok::Bool
+    local_index_ok::Bool
+    solver_context_ok::Bool
+    powered_denominator
+    coverage_multiplier
+    cover_term
+    cover_term_ok::Bool
+    factor_provenance::Vector
+    global_elementary_factors::Vector
+    global_elementary_factors_ok::Bool
+    replay_metadata
+    replay_metadata_ok::Bool
+    overall_ok::Bool
+end
+
+struct QuillenSequenceContributionExpansion
+    local_certificate::QuillenLocalFactorSequenceCertificate
+    solver_result::QuillenDenominatorCoverSolverResult
+    local_index::Int
+    powered_denominator
+    coverage_multiplier
+    cover_term
+    factor_provenance::Vector
+    global_elementary_factors::Vector
+    replay_metadata
+    verification::QuillenSequenceContributionExpansionVerification
+end
+
+function _quillen_sequence_expansion_metadata(
+    certificate::QuillenLocalFactorSequenceCertificate,
+    solver_result::QuillenDenominatorCoverSolverResult,
+    local_index::Int,
+    factor_provenance,
+)
+    return (;
+        source = :quillen_supplied_local_sequence_expansion,
+        local_index = local_index,
+        factor_count = length(certificate.factors),
+        raw_denominator = solver_result.raw_denominators[local_index],
+        powered_denominator = solver_result.powered_denominators[local_index],
+        coverage_multiplier = solver_result.coverage_multipliers[local_index],
+        cover_term = solver_result.coverage_terms[local_index],
+        factor_provenance = factor_provenance,
+        local_replay_metadata = certificate.replay_metadata,
+    )
+end
+
+function _quillen_sequence_expansion_factors(
+    certificate::QuillenLocalFactorSequenceCertificate,
+    cover_term,
+)
+    R = _require_supported_quillen_ring(certificate.ring)
+    n = certificate.size
+    factor_type = typeof(identity_matrix(R, n))
+    factors = factor_type[]
+    for factor in certificate.factors
+        push!(
+            factors,
+            elementary_matrix(
+                n,
+                factor.row,
+                factor.col,
+                _coerce_into_ring(R, cover_term * factor.numerator, "sequence expansion entry"),
+                R,
+            ),
+        )
+    end
+    return factors
+end
+
+function _same_quillen_sequence_expansion_verification(
+    left::QuillenSequenceContributionExpansionVerification,
+    right::QuillenSequenceContributionExpansionVerification,
+)::Bool
+    return left.local_certificate_ok == right.local_certificate_ok &&
+           left.solver_result_ok == right.solver_result_ok &&
+           left.local_index_ok == right.local_index_ok &&
+           left.solver_context_ok == right.solver_context_ok &&
+           left.powered_denominator == right.powered_denominator &&
+           left.coverage_multiplier == right.coverage_multiplier &&
+           left.cover_term == right.cover_term &&
+           left.cover_term_ok == right.cover_term_ok &&
+           left.factor_provenance == right.factor_provenance &&
+           _same_quillen_factors(left.global_elementary_factors, right.global_elementary_factors) &&
+           left.global_elementary_factors_ok == right.global_elementary_factors_ok &&
+           left.replay_metadata == right.replay_metadata &&
+           left.replay_metadata_ok == right.replay_metadata_ok &&
+           left.overall_ok == right.overall_ok
+end
+
+function replay_quillen_sequence_contribution_expansion(
+    expansion::QuillenSequenceContributionExpansion,
+)
+    certificate = expansion.local_certificate
+    solver_result = expansion.solver_result
+    R = _require_supported_quillen_ring(certificate.ring)
+    n = certificate.size
+    local_certificate_ok = verify_quillen_local_factor_sequence_certificate(certificate)
+    solver_result_ok = verify_quillen_denominator_cover_solver_result(solver_result)
+    local_index_ok = 1 <= expansion.local_index <= length(solver_result.raw_denominators)
+    solver_context_ok =
+        solver_result_ok &&
+        solver_result.ring == R &&
+        local_index_ok &&
+        solver_result.raw_denominators[expansion.local_index] == certificate.product_denominator
+    powered_denominator = local_index_ok ? solver_result.powered_denominators[expansion.local_index] : zero(R)
+    coverage_multiplier = local_index_ok ? solver_result.coverage_multipliers[expansion.local_index] : zero(R)
+    cover_term = local_index_ok ? solver_result.coverage_terms[expansion.local_index] : zero(R)
+    cover_term_ok =
+        expansion.powered_denominator == powered_denominator &&
+        expansion.coverage_multiplier == coverage_multiplier &&
+        expansion.cover_term == cover_term &&
+        cover_term == coverage_multiplier * powered_denominator
+    factor_provenance = _quillen_local_sequence_factor_provenance(certificate.factors)
+    global_elementary_factors = _quillen_sequence_expansion_factors(certificate, cover_term)
+    global_elementary_factors_ok =
+        _same_quillen_factors(expansion.global_elementary_factors, global_elementary_factors)
+    replay_metadata = _quillen_sequence_expansion_metadata(
+        certificate,
+        solver_result,
+        expansion.local_index,
+        factor_provenance,
+    )
+    replay_metadata_ok = expansion.replay_metadata == replay_metadata
+    overall_ok =
+        local_certificate_ok &&
+        solver_result_ok &&
+        local_index_ok &&
+        solver_context_ok &&
+        cover_term_ok &&
+        global_elementary_factors_ok &&
+        replay_metadata_ok
+    return QuillenSequenceContributionExpansionVerification(
+        local_certificate_ok,
+        solver_result_ok,
+        local_index_ok,
+        solver_context_ok,
+        powered_denominator,
+        coverage_multiplier,
+        cover_term,
+        cover_term_ok,
+        factor_provenance,
+        global_elementary_factors,
+        global_elementary_factors_ok,
+        replay_metadata,
+        replay_metadata_ok,
+        overall_ok,
+    )
+end
+
+function quillen_sequence_contribution_expansion(
+    certificate::QuillenLocalFactorSequenceCertificate,
+    solver_result::QuillenDenominatorCoverSolverResult,
+    local_index::Int,
+)
+    verify_quillen_local_factor_sequence_certificate(certificate) ||
+        throw(ArgumentError("Quillen supplied evidence assembly requires verified local sequence certificates"))
+    verify_quillen_denominator_cover_solver_result(solver_result) ||
+        throw(ArgumentError("Quillen supplied evidence assembly requires a verified denominator-cover solver result"))
+    1 <= local_index <= length(solver_result.raw_denominators) ||
+        throw(ArgumentError("Quillen supplied evidence assembly local index is outside the solver result"))
+    solver_result.ring == certificate.ring &&
+        solver_result.raw_denominators[local_index] == certificate.product_denominator ||
+        throw(ArgumentError("Quillen supplied evidence assembly solver denominator must match local sequence provenance"))
+    factor_provenance = _quillen_local_sequence_factor_provenance(certificate.factors)
+    powered_denominator = solver_result.powered_denominators[local_index]
+    coverage_multiplier = solver_result.coverage_multipliers[local_index]
+    cover_term = solver_result.coverage_terms[local_index]
+    global_elementary_factors = _quillen_sequence_expansion_factors(certificate, cover_term)
+    replay_metadata = _quillen_sequence_expansion_metadata(
+        certificate,
+        solver_result,
+        local_index,
+        factor_provenance,
+    )
+    provisional = QuillenSequenceContributionExpansion(
+        certificate,
+        solver_result,
+        Int(local_index),
+        powered_denominator,
+        coverage_multiplier,
+        cover_term,
+        factor_provenance,
+        global_elementary_factors,
+        replay_metadata,
+        QuillenSequenceContributionExpansionVerification(
+            false,
+            false,
+            false,
+            false,
+            powered_denominator,
+            coverage_multiplier,
+            cover_term,
+            false,
+            factor_provenance,
+            typeof(identity_matrix(certificate.ring, certificate.size))[],
+            false,
+            replay_metadata,
+            false,
+            false,
+        ),
+    )
+    verification = replay_quillen_sequence_contribution_expansion(provisional)
+    verification.overall_ok ||
+        throw(ArgumentError("Quillen supplied evidence sequence expansion does not replay"))
+    return QuillenSequenceContributionExpansion(
+        provisional.local_certificate,
+        provisional.solver_result,
+        provisional.local_index,
+        provisional.powered_denominator,
+        provisional.coverage_multiplier,
+        provisional.cover_term,
+        provisional.factor_provenance,
+        provisional.global_elementary_factors,
+        provisional.replay_metadata,
+        verification,
+    )
+end
+
+function verify_quillen_sequence_contribution_expansion(expansion)::Bool
+    try
+        replay = replay_quillen_sequence_contribution_expansion(expansion)
+        return replay.overall_ok &&
+               _same_quillen_sequence_expansion_verification(expansion.verification, replay)
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
 struct QuillenGlobalPatchAssemblyVerification
     cover_certificate_ok::Bool
     local_certificates_ok::Bool
