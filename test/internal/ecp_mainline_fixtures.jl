@@ -46,6 +46,30 @@ const ECP_MAINLINE_SUPPORT_STATUS_FIELDS = (
     :normality_status,
     :sl3_status,
 )
+const ECP_MAINLINE_STAGE_EXPECTATION_FIELDS = (
+    :link_witness,
+    :link_step,
+    :lower_variable,
+    :normality,
+    :sl3,
+    :monicity,
+)
+const ECP_MAINLINE_STAGE_EXPECTATION_STATUS_FIELDS = Dict(
+    :link_witness => :link_witness_status,
+    :link_step => :link_step_status,
+    :lower_variable => :lower_variable_status,
+    :normality => :normality_status,
+    :sl3 => :sl3_status,
+    :monicity => :status,
+)
+const ECP_MAINLINE_MISSING_EVIDENCE_OBLIGATIONS = (
+    :link_witness,
+    :link_step,
+    :lower_variable,
+    :normality,
+    :sl3,
+    :monicity,
+)
 const ECP_MAINLINE_EVIDENCE_FIELD_CANDIDATES = Dict(
     :link_witness_status => (:link_witness, :link_witness_evidence, :link_witness_record),
     :link_step_status => (:link_step, :link_step_certificate, :link_step_evidence),
@@ -145,6 +169,56 @@ end
 
 function _ecp_mainline_is_replayable_status(status)
     return status in REPLAYABLE_ECP_MAINLINE_EVIDENCE_STATUS
+end
+
+function _ecp_mainline_expectation_has_context(expectation)
+    for field in (:reason, :issue, :boundary)
+        hasproperty(expectation, field) || continue
+        value = getproperty(expectation, field)
+        value === nothing && continue
+        value isa AbstractString && isempty(value) && continue
+        return true
+    end
+    return false
+end
+
+function _ecp_mainline_stage_expectation_status(entry, expectation_key::Symbol, support_evidence)
+    hasproperty(support_evidence, :stage_expectations) ||
+        throw(ArgumentError("fixture $(entry.id) support_evidence missing stage_expectations"))
+    stage_expectations = support_evidence.stage_expectations
+    stage_expectations isa NamedTuple ||
+        throw(ArgumentError("fixture $(entry.id) stage_expectations must be a NamedTuple"))
+    hasproperty(stage_expectations, expectation_key) ||
+        throw(ArgumentError("fixture $(entry.id) stage_expectations missing $(expectation_key)"))
+    expectation = getproperty(stage_expectations, expectation_key)
+    expectation isa NamedTuple ||
+        throw(ArgumentError("fixture $(entry.id) stage expectation $(expectation_key) must be a NamedTuple"))
+    hasproperty(expectation, :status) ||
+        throw(ArgumentError("fixture $(entry.id) stage expectation $(expectation_key) missing status"))
+    expected_field = ECP_MAINLINE_STAGE_EXPECTATION_STATUS_FIELDS[expectation_key]
+    actual_status = expectation_key == :monicity ?
+        _ecp_mainline_field(_ecp_mainline_field(entry, :monicity), expected_field) :
+        _ecp_mainline_support_evidence_status(support_evidence, expected_field, entry.id)
+    expectation.status == actual_status ||
+        throw(ArgumentError("fixture $(entry.id) stage expectation $(expectation_key) status must match $(expected_field)"))
+    if !_ecp_mainline_is_replayable_status(expectation.status)
+        _ecp_mainline_expectation_has_context(expectation) ||
+            throw(ArgumentError("fixture $(entry.id) stage expectation $(expectation_key) must explain non-replayable status"))
+    end
+    return expectation.status
+end
+
+function _ecp_mainline_missing_evidence_set(entry, support_evidence)
+    missing = Symbol[]
+    for obligation in ECP_MAINLINE_MISSING_EVIDENCE_OBLIGATIONS
+        obligation == :monicity && continue
+        status_field = ECP_MAINLINE_STAGE_EXPECTATION_STATUS_FIELDS[obligation]
+        status = _ecp_mainline_support_evidence_status(support_evidence, status_field, entry.id)
+        status == :missing && push!(missing, obligation)
+    end
+    monicity = _ecp_mainline_field(entry, :monicity)
+    _ecp_mainline_field(monicity, :status) == :missing && push!(missing, :monicity)
+    return Set(missing)
 end
 
 function _ecp_mainline_replay_link_witness(entry, witness)
@@ -387,6 +461,8 @@ function _ecp_mainline_assert_monicity(entry)
     if entry.expected_status == :supported
         status in (:passes, :replayed) ||
             throw(ArgumentError("fixture $(entry.id) supported entry must replay monicity"))
+    end
+    if _ecp_mainline_is_replayable_status(status)
         selected_variable = _ecp_mainline_field(entry, :selected_variable)
         selected_name = Symbol(String(_ecp_mainline_field(selected_variable, :name)))
         transformed_entry = _ecp_mainline_field(monicity, :transformed_entry)
@@ -398,6 +474,62 @@ function _ecp_mainline_assert_monicity(entry)
     return true
 end
 
+function _ecp_mainline_assert_coupled_support(entry)
+    support_evidence = _ecp_mainline_field(entry, :support_evidence)
+    needs_coupled_support = entry.role == :length4_all_entry_boundary || hasproperty(support_evidence, :coupled_support)
+    needs_coupled_support || return true
+
+    hasproperty(support_evidence, :coupled_support) ||
+        throw(ArgumentError("fixture $(entry.id) coupled_support metadata is required for the length-4 all-entry boundary"))
+    coupled_support = support_evidence.coupled_support
+    coupled_support isa NamedTuple ||
+        throw(ArgumentError("fixture $(entry.id) coupled_support must be a NamedTuple"))
+    hasproperty(coupled_support, :all_entries_required) ||
+        throw(ArgumentError("fixture $(entry.id) coupled_support missing all_entries_required"))
+    coupled_support.all_entries_required === true ||
+        throw(ArgumentError("fixture $(entry.id) coupled_support must require all entries"))
+    hasproperty(coupled_support, :omitted_corner_points) ||
+        throw(ArgumentError("fixture $(entry.id) coupled_support missing omitted_corner_points"))
+
+    column_order = _ecp_mainline_field(entry, :column_order)
+    column_entries = _ecp_mainline_field(entry, :column_entries)
+    omitted_corner_points = coupled_support.omitted_corner_points
+    omitted_corner_points isa Tuple ||
+        throw(ArgumentError("fixture $(entry.id) coupled_support omitted_corner_points must be a tuple"))
+    length(omitted_corner_points) == length(column_order) ||
+        throw(ArgumentError("fixture $(entry.id) coupled_support must provide one omitted-corner record per entry"))
+
+    R = _ecp_mainline_field(_ecp_mainline_field(entry, :ring), :object)
+    generators = _ecp_mainline_field(_ecp_mainline_field(entry, :ring), :generators)
+    omitted_symbols = Symbol[]
+    for record in omitted_corner_points
+        record isa NamedTuple ||
+            throw(ArgumentError("fixture $(entry.id) omitted-corner record must be a NamedTuple"))
+        hasproperty(record, :omitted) ||
+            throw(ArgumentError("fixture $(entry.id) omitted-corner record missing omitted"))
+        hasproperty(record, :common_zero) ||
+            throw(ArgumentError("fixture $(entry.id) omitted-corner record missing common_zero"))
+        omitted = record.omitted
+        omitted in column_order ||
+            throw(ArgumentError("fixture $(entry.id) omitted-corner record must name a column entry"))
+        push!(omitted_symbols, omitted)
+        point = record.common_zero
+        point isa Tuple ||
+            throw(ArgumentError("fixture $(entry.id) omitted-corner point must be a tuple"))
+        length(point) == length(generators) ||
+            throw(ArgumentError("fixture $(entry.id) omitted-corner point arity must match ring generators"))
+        values = collect(point)
+        for symbol in column_order
+            symbol == omitted && continue
+            Oscar.evaluate(getproperty(column_entries, symbol), values) == zero(R) ||
+                throw(ArgumentError("fixture $(entry.id) omitted-corner point for $(omitted) must zero every non-omitted entry"))
+        end
+    end
+    Set(omitted_symbols) == Set(column_order) ||
+        throw(ArgumentError("fixture $(entry.id) omitted-corner records must match column_order"))
+    return true
+end
+
 function _ecp_mainline_assert_stage_evidence(entry)
     support_evidence = _ecp_mainline_field(entry, :support_evidence)
     column = _ecp_mainline_column(entry)
@@ -405,7 +537,11 @@ function _ecp_mainline_assert_stage_evidence(entry)
     for field in ECP_MAINLINE_SUPPORT_STATUS_FIELDS
         _ecp_mainline_support_evidence_status(support_evidence, field, entry.id)
     end
+    for expectation_key in ECP_MAINLINE_STAGE_EXPECTATION_FIELDS
+        _ecp_mainline_stage_expectation_status(entry, expectation_key, support_evidence)
+    end
     _ecp_mainline_validate_supported_evidence(entry, support_evidence, column, R)
+    _ecp_mainline_assert_coupled_support(entry)
     if entry.expected_status == :staged
         hasproperty(entry, :missing_evidence) ||
             throw(ArgumentError("fixture $(entry.id) staged entry must declare missing_evidence"))
@@ -413,6 +549,8 @@ function _ecp_mainline_assert_stage_evidence(entry)
             throw(ArgumentError("fixture $(entry.id) staged missing_evidence must be a tuple"))
         isempty(entry.missing_evidence) &&
             throw(ArgumentError("fixture $(entry.id) staged missing_evidence must not be empty"))
+        Set(entry.missing_evidence) == _ecp_mainline_missing_evidence_set(entry, support_evidence) ||
+            throw(ArgumentError("fixture $(entry.id) staged missing_evidence must match missing support statuses"))
     end
     return true
 end

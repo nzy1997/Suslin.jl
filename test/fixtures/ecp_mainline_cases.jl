@@ -23,6 +23,14 @@ function _selected_variable(name, generator, index::Int; status = :passes)
     )
 end
 
+function _stage_expectation(status::Symbol; reason = nothing, issue = nothing, boundary = nothing, extras = NamedTuple())
+    expectation = (; status = status)
+    reason === nothing || (expectation = merge(expectation, (; reason = reason)))
+    issue === nothing || (expectation = merge(expectation, (; issue = issue)))
+    boundary === nothing || (expectation = merge(expectation, (; boundary = boundary)))
+    return merge(expectation, extras)
+end
+
 function _column(entry)
     return tuple((getproperty(entry.column_entries, name) for name in entry.column_order)...)
 end
@@ -200,6 +208,14 @@ function catalog()
             link_witness = gf2_link_record,
             link_step = gf2_link_step,
             lower_variable = gf2_lower,
+            stage_expectations = (;
+                link_witness = _stage_expectation(:replayed; boundary = :supplied_link_witness_fixture),
+                link_step = _stage_expectation(:replayed; boundary = :exact_link_step_fixture),
+                lower_variable = _stage_expectation(:replayed; boundary = :exact_lower_variable_fixture),
+                normality = _stage_expectation(:absent; boundary = :normality_not_required_for_fixture_support),
+                sl3 = _stage_expectation(:inapplicable; boundary = :gf2_case_has_no_sl3_route),
+                monicity = _stage_expectation(:replayed; boundary = :variable_change_replay_fixture),
+            ),
         ),
         source_refs = (
             PARK_WOODBURN_SECTION_4_REF,
@@ -233,14 +249,25 @@ function catalog()
             lower_variable_status = :missing,
             normality_status = :absent,
             sl3_status = :absent,
-            link_expectation = only(qq_link_bezout_base.witnesses),
+            stage_expectations = (;
+                link_witness = _stage_expectation(
+                    :missing;
+                    boundary = :exact_bezout_link_witness_pending,
+                    extras = (; provenance = only(qq_link_bezout_base.witnesses)),
+                ),
+                link_step = _stage_expectation(:missing; boundary = :exact_link_step_pending),
+                lower_variable = _stage_expectation(:missing; boundary = :lower_variable_reduction_pending),
+                normality = _stage_expectation(:absent; boundary = :normality_not_yet_required_for_this_boundary),
+                sl3 = _stage_expectation(:absent; boundary = :sl3_not_part_of_link_bezout_boundary),
+                monicity = _stage_expectation(:passes; boundary = :selected_entry_already_monic),
+            ),
         ),
         source_refs = (
             PARK_WOODBURN_SECTION_4_REF,
             "Provenance: ecp-link-bezout-nonunit-witness-qq exact Bezout/resultant witness data",
         ),
         consumer_issue_ids = ("#185", "#88"),
-        missing_evidence = (:selected_first_entry_monicity, :link_step, :lower_variable),
+        missing_evidence = (:link_witness, :link_step, :lower_variable),
     )
 
     R4, (x4, y4) = Oscar.polynomial_ring(QQ, ["x", "y"])
@@ -289,13 +316,21 @@ function catalog()
             lower_variable_status = :missing,
             normality_status = :absent,
             sl3_status = :absent,
+            stage_expectations = (;
+                link_witness = _stage_expectation(:missing; boundary = :all_entry_link_witness_pending),
+                link_step = _stage_expectation(:missing; boundary = :all_entry_link_step_pending),
+                lower_variable = _stage_expectation(:missing; boundary = :all_entry_lower_variable_pending),
+                normality = _stage_expectation(:absent; boundary = :normality_not_part_of_length4_boundary),
+                sl3 = _stage_expectation(:absent; boundary = :sl3_not_part_of_length4_boundary),
+                monicity = _stage_expectation(:missing; boundary = :no_first_entry_monic_after_all_entry_coupling),
+            ),
             coupled_support = (;
                 all_entries_required = true,
                 omitted_corner_points = (
-                    (; omitted = :a, common_zero = (zero(R4), zero(R4))),
+                    (; omitted = :a, common_zero = (one(R4), one(R4))),
                     (; omitted = :b, common_zero = (one(R4), zero(R4))),
                     (; omitted = :c, common_zero = (zero(R4), one(R4))),
-                    (; omitted = :d, common_zero = (one(R4), one(R4))),
+                    (; omitted = :d, common_zero = (zero(R4), zero(R4))),
                 ),
             ),
         ),
@@ -304,7 +339,7 @@ function catalog()
             "Lagrange-style partition-of-unity boundary requiring all four entries",
         ),
         consumer_issue_ids = ("#185",),
-        missing_evidence = (:first_entry_monicity, :link_witness, :link_step, :lower_variable),
+        missing_evidence = (:link_witness, :link_step, :lower_variable, :monicity),
     )
 
     gf2_permuted_base = base_cases["ecp-variable-change-permuted-gf2"]
@@ -332,14 +367,25 @@ function catalog()
             lower_variable_status = :missing,
             normality_status = :absent,
             sl3_status = :inapplicable,
-            monicity_provenance = "replayed substitution metadata from ecp-variable-change-permuted-gf2",
+            stage_expectations = (;
+                link_witness = _stage_expectation(:missing; boundary = :monicity_change_link_witness_pending),
+                link_step = _stage_expectation(:missing; boundary = :monicity_change_link_step_pending),
+                lower_variable = _stage_expectation(:missing; boundary = :monicity_change_lower_variable_pending),
+                normality = _stage_expectation(:absent; boundary = :normality_not_part_of_monicity_change_boundary),
+                sl3 = _stage_expectation(:inapplicable; boundary = :gf2_case_has_no_sl3_route),
+                monicity = _stage_expectation(
+                    :replayed;
+                    boundary = :permuted_variable_change_replay,
+                    extras = (; provenance = "replayed substitution metadata from ecp-variable-change-permuted-gf2"),
+                ),
+            ),
         ),
         source_refs = (
             PARK_WOODBURN_SECTION_4_REF,
             "Provenance: ecp-variable-change-permuted-gf2 monicity-changing substitution",
         ),
         consumer_issue_ids = ("#185", "#85"),
-        missing_evidence = (:selected_first_entry_monicity, :link_step, :lower_variable),
+        missing_evidence = (:link_witness, :link_step, :lower_variable),
     )
 
     qq_sl3_base = base_cases["ecp-monic-first-entry-qq"]
@@ -370,9 +416,17 @@ function catalog()
             normality_status = :missing,
             sl3_status = :missing,
             link_witness = qq_sl3_record,
-            sl3_expectation = (;
-                route_issue = "#184",
-                boundary = :link_realization_before_sl3_driver,
+            stage_expectations = (;
+                link_witness = _stage_expectation(:replayed; boundary = :supplied_link_witness_fixture),
+                link_step = _stage_expectation(:missing; boundary = :exact_link_step_pending),
+                lower_variable = _stage_expectation(:missing; boundary = :lower_variable_reduction_pending),
+                normality = _stage_expectation(:missing; boundary = :normality_certificate_pending),
+                sl3 = _stage_expectation(
+                    :missing;
+                    issue = "#184",
+                    boundary = :link_realization_before_sl3_driver,
+                ),
+                monicity = _stage_expectation(:passes; boundary = :selected_entry_already_monic),
             ),
         ),
         source_refs = (
@@ -380,7 +434,7 @@ function catalog()
             "Provenance: ecp-monic-first-entry-qq staged toward #184 SL_3 link realization",
         ),
         consumer_issue_ids = ("#185", "#184"),
-        missing_evidence = (:link_step, :lower_variable, :normality, :sl3_realization),
+        missing_evidence = (:link_step, :lower_variable, :normality, :sl3),
     )
 
     negative_non_unimodular = _negative_control(
