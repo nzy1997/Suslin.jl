@@ -10,6 +10,17 @@ function _selection_as_namedtuple(selection)
     return NamedTuple{names}(Tuple(getproperty(selection, name) for name in names))
 end
 
+function _context_as_namedtuple(context)
+    names = propertynames(context)
+    return NamedTuple{names}(Tuple(getproperty(context, name) for name in names))
+end
+
+function _corrupt_context(context, updates)
+    return Suslin.SL3RealizationInputContext(
+        values(merge(_context_as_namedtuple(context), updates))...,
+    )
+end
+
 function _corrupt_selection(selection, updates)
     return Suslin.SL3LocalFormWitnessSelection(
         values(merge(_selection_as_namedtuple(selection), updates))...,
@@ -157,6 +168,39 @@ end
         ),
     )
 
+    normality_replay_metadata = (;
+        replay_id = "issue-236-normality-replay",
+        source_matrix,
+        selected_variable = staged_entry.selected_variable.generator,
+        local_form_matrix = multivariate_target,
+        replay_steps = ((; kind = :supplied_normality_conjugation),),
+    )
+    normality_context = Suslin._sl3_realization_input_context(
+        source_matrix;
+        selected_variable = staged_entry.selected_variable,
+        catalog_metadata = (; fixture_id = "issue-236-supplied-normality"),
+        normality_conjugation_metadata = normality_replay_metadata,
+    )
+    normality_selection = Suslin._select_sl3_local_form_witness(normality_context)
+    @test normality_selection.support_status == :supported
+    @test normality_selection.replay_status == :replayed
+    @test normality_selection.witness_source == :normality_conjugation
+    @test normality_selection.normality_conjugation_status == :replayed
+    @test normality_selection.entries == (; p, q, r, s)
+    @test Suslin._verify_sl3_local_form_witness_selection(normality_selection)
+
+    dual_replay_context = Suslin._sl3_realization_input_context(
+        source_matrix;
+        selected_variable = staged_entry.selected_variable,
+        catalog_metadata = (; fixture_id = "issue-236-dual-supplied-replay"),
+        variable_change_metadata,
+        normality_conjugation_metadata = normality_replay_metadata,
+    )
+    dual_replay_selection = Suslin._select_sl3_local_form_witness(dual_replay_context)
+    @test dual_replay_selection.support_status == :supported
+    @test dual_replay_selection.witness_source == :variable_change
+    @test dual_replay_selection.normality_conjugation_status == :replayed
+
     normality_shell_context = Suslin._sl3_realization_input_context(
         source_matrix;
         selected_variable = staged_entry.selected_variable,
@@ -180,6 +224,16 @@ end
         multivariate_context;
         selected_variable = X + one(R),
     )
+    @test_throws ArgumentError Suslin._select_sl3_local_form_witness(
+        multivariate_context;
+        selected_variable = u,
+    )
+    mismatched_index_context =
+        _corrupt_context(multivariate_context, (; selected_variable_index = 2,))
+    @test_throws ArgumentError Suslin._sl3_local_witness_selected_variable(
+        mismatched_index_context,
+        X,
+    )
 
     nonmonic_p = 2 * X + u * v + one(R)
     nonmonic_r = nonmonic_p - one(R)
@@ -198,6 +252,29 @@ end
         multivariate_context;
         local_form_witness = (; entries = (; p = p + one(R), q, r, s)),
     )
+    @test Suslin._sl3_local_witness_entries_from_data((; p, q, r, s)) == (; p, q, r, s)
+    @test_throws ArgumentError Suslin._sl3_local_witness_status_from_data(
+        R,
+        (; local_form_matrix = multivariate_target,
+           entries = (; p = conflicting_p, q, r = conflicting_r, s)),
+        X,
+        1,
+        "direct local-form witness",
+    )
+    @test Suslin._sl3_local_witness_require_replay_consistency(
+        :replayed,
+        (; p, q, r, s),
+        multivariate_target,
+        multivariate_selection.monicity_witness,
+        (; p, q, r, s),
+        multivariate_target,
+        multivariate_selection.monicity_witness,
+        "direct local-form witness",
+    ) === nothing
+    zero_monicity = Suslin._sl3_local_monicity_witness(zero(R), 1, R)
+    @test zero_monicity.variable == X
+    @test zero_monicity.degree == -1
+    @test zero_monicity.is_monic == false
 
     @test_throws ArgumentError Suslin._select_sl3_local_form_witness(
         variable_context;
@@ -309,4 +386,7 @@ end
         variable_selection,
         (; variable_change_status = :missing,),
     )
+    selected_variable_corruption =
+        _corrupt_selection(multivariate_selection, (; selected_variable = X + one(R),))
+    @test !Suslin._verify_sl3_local_form_witness_selection(selected_variable_corruption)
 end
