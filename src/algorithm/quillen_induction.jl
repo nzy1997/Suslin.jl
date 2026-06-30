@@ -1611,10 +1611,21 @@ function _murthy_quillen_local_adapter_summary(adapter::MurthyQuillenLocalAdapte
             adapter.quillen_factor_sequence.local_correction == adapter.local_factor_replay.target :
         adapter.quillen_factor_sequence === nothing
     local_certificate_ok =
-        adapter.quillen_local_certificate === nothing ||
+        adapter.mode == :localized_replay_handoff ?
+        adapter.quillen_local_certificate === nothing :
         (
-            adapter.quillen_local_certificate isa QuillenLocalRealizationCertificate &&
-            verify_quillen_local_certificate(adapter.quillen_local_certificate)
+            adapter.quillen_local_certificate === nothing ||
+            (
+                adapter.quillen_local_certificate isa QuillenLocalRealizationCertificate &&
+                verify_quillen_local_certificate(adapter.quillen_local_certificate) &&
+                adapter.quillen_local_certificate.original_input == adapter.original_input &&
+                adapter.quillen_local_certificate.ring == adapter.ring &&
+                adapter.quillen_local_certificate.size == adapter.size &&
+                adapter.quillen_local_certificate.selected_variable == adapter.selected_variable &&
+                adapter.quillen_local_certificate.factors == adapter.materialized_factors &&
+                adapter.quillen_local_certificate.local_product == adapter.local_factor_replay.target &&
+                adapter.quillen_local_certificate.local_correction == adapter.local_factor_replay.target
+            )
         )
     product_ok =
         adapter.mode == :ordinary_quillen_factor_sequence ?

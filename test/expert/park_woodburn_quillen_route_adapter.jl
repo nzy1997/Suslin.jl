@@ -4,11 +4,16 @@ using Oscar
 
 const PW_QUILLEN_ROUTE_CATALOG_PATH =
     joinpath(@__DIR__, "..", "fixtures", "park_woodburn_polynomial_cases.jl")
+const QUILLEN_PATCH_FIXTURE_CATALOG_PATH =
+    joinpath(@__DIR__, "..", "fixtures", "quillen_patch_cases.jl")
 const SL3_MURTHY_QUILLEN_ADAPTER_FIXTURE_PATH =
     joinpath(@__DIR__, "..", "fixtures", "sl3_murthy_gupta_cases.jl")
 
 if !isdefined(Main, :ParkWoodburnPolynomialFixtureCatalog)
     include(PW_QUILLEN_ROUTE_CATALOG_PATH)
+end
+if !isdefined(Main, :QuillenPatchFixtureCatalog)
+    include(QUILLEN_PATCH_FIXTURE_CATALOG_PATH)
 end
 if !isdefined(Main, :SL3MurthyGuptaFixtureCatalog)
     include(SL3_MURTHY_QUILLEN_ADAPTER_FIXTURE_PATH)
@@ -91,6 +96,35 @@ function _pwq_replace_route_certificate(
         evidence,
         status,
         verification,
+    )
+end
+
+function _pwq_quillen_local_certificate_from_fixture(entry; local_index::Int = 1)
+    local_factor = entry.local_factors[local_index]
+    local_certificate = Suslin.LocalCertificate(
+        local_factor.certificate.indices,
+        local_factor.certificate.denominators,
+    )
+    correction = Suslin.QuillenElementaryCorrection(
+        local_factor.correction.row,
+        local_factor.correction.col,
+        local_factor.correction.entry,
+    )
+    return Suslin.quillen_local_realization_certificate(
+        entry.target_matrix,
+        entry.substitution_variable;
+        local_certificate = local_certificate,
+        denominator = local_factor.denominator,
+        coverage_multiplier = local_factor.coverage_multiplier,
+        correction = correction,
+        factors = [local_factor.factor],
+        patched_substitution_witness = entry.patched_substitution_witness,
+        witness_metadata = (;
+            fixture_id = entry.id,
+            local_index = local_index,
+            source_refs = entry.source_refs,
+            consumer_issue_ids = entry.consumer_issue_ids,
+        ),
     )
 end
 
@@ -228,6 +262,7 @@ end
 @testset "Murthy local SL3 Quillen handoff adapter" begin
     catalog = SL3MurthyGuptaFixtureCatalog.catalog()
     by_id = Dict(entry.id => entry for entry in catalog.cases)
+    quillen_fixture = QuillenPatchFixtureCatalog.cases_by_id()["quillen-two-open-cover-qq"]
 
     ordinary_fixture = by_id["mg-q0-unit-recursion"]
     ordinary_cert = Suslin.realize_sl3_local_certificate(
@@ -299,11 +334,38 @@ end
     @test localized_adapter.replay_metadata.denominator_product != one(base_ring(local_fixture.target))
     @test localized_adapter.replay_metadata.cleared_product ==
           localized_adapter.local_factor_replay.cleared_product
+    R = base_ring(ordinary_fixture.target)
+    unrelated_quillen_local = _pwq_quillen_local_certificate_from_fixture(quillen_fixture)
+    @test unrelated_quillen_local isa Suslin.QuillenLocalRealizationCertificate
+    @test Suslin.verify_quillen_local_certificate(unrelated_quillen_local)
     @test Suslin._verify_murthy_quillen_local_adapter(localized_adapter)
     @test_throws ArgumentError Suslin._murthy_quillen_local_factor_sequence_certificate(localized_adapter)
     @test_throws ArgumentError Suslin._murthy_quillen_local_realization_certificate(localized_adapter)
 
-    R = base_ring(ordinary_fixture.target)
+    injected_localized_adapter = _pwq_rebuild(
+        localized_adapter;
+        quillen_local_certificate = unrelated_quillen_local,
+    )
+    injected_localized_adapter = _pwq_rebuild(
+        injected_localized_adapter;
+        verification = Suslin._murthy_quillen_local_adapter_summary(injected_localized_adapter),
+    )
+    @test !Suslin._verify_murthy_quillen_local_adapter(injected_localized_adapter)
+    @test_throws ArgumentError Suslin._murthy_quillen_local_realization_certificate(injected_localized_adapter)
+
+    misaligned_ordinary_local = unrelated_quillen_local
+    @test Suslin.verify_quillen_local_certificate(misaligned_ordinary_local)
+    misaligned_ordinary_adapter = _pwq_rebuild(
+        ordinary_adapter;
+        quillen_local_certificate = misaligned_ordinary_local,
+    )
+    misaligned_ordinary_adapter = _pwq_rebuild(
+        misaligned_ordinary_adapter;
+        verification = Suslin._murthy_quillen_local_adapter_summary(misaligned_ordinary_adapter),
+    )
+    @test !Suslin._verify_murthy_quillen_local_adapter(misaligned_ordinary_adapter)
+    @test_throws ArgumentError Suslin._murthy_quillen_local_realization_certificate(misaligned_ordinary_adapter)
+
     tampered_factors = copy(ordinary_cert.factors)
     tampered_factors[1] =
         tampered_factors[1] * elementary_matrix(3, 1, 3, one(R), R)
