@@ -366,6 +366,101 @@ end
     @test !Suslin._verify_murthy_quillen_local_adapter(misaligned_ordinary_adapter)
     @test_throws ArgumentError Suslin._murthy_quillen_local_realization_certificate(misaligned_ordinary_adapter)
 
+    X = ordinary_fixture.variable
+    focused_target = elementary_matrix(3, 1, 2, X, R)
+    focused_records = [
+        Suslin.sl3_local_elementary_factor(1, 2, X, one(R), X),
+        Suslin.sl3_local_elementary_factor(2, 1, zero(R), one(R), X),
+    ]
+    focused_replay = Suslin.sl3_local_elementary_factor_replay(
+        focused_target,
+        focused_records,
+        X,
+    )
+    focused_murthy = Suslin.SL3LocalRealizationCertificate(
+        focused_target,
+        :open_s_one,
+        copy(focused_replay.materialized_factors),
+        X,
+        (; q = X, r = zero(R)),
+    )
+    @test Suslin.verify_sl3_local_realization(focused_murthy)
+    focused_metadata = (; fixture_id = :focused_open_s_one, consumer_issue = 211)
+    focused_sequence = Suslin._murthy_quillen_local_factor_sequence(
+        focused_target,
+        X,
+        focused_replay,
+        focused_metadata,
+        (; source = :issue_211_regression),
+    )
+    @test Suslin.verify_quillen_local_factor_sequence_certificate(focused_sequence)
+    exact_focused_local = Suslin.quillen_local_realization_certificate(
+        focused_target,
+        X;
+        local_certificate = Suslin.LocalCertificate([1, 2], [one(R), one(R)]),
+        denominator = one(R),
+        coverage_multiplier = one(R),
+        correction = Suslin.QuillenElementaryCorrection(1, 2, X),
+        factors = copy(focused_replay.materialized_factors),
+        local_correction = focused_target,
+        witness_metadata = focused_metadata,
+    )
+    @test Suslin.verify_quillen_local_certificate(exact_focused_local)
+    focused_adapter = Suslin.MurthyQuillenLocalAdapter(
+        focused_target,
+        R,
+        3,
+        X,
+        focused_murthy,
+        focused_replay,
+        :ordinary_quillen_factor_sequence,
+        focused_replay.materialized_factors,
+        focused_target,
+        focused_target,
+        focused_sequence,
+        exact_focused_local,
+        focused_metadata,
+        Suslin._murthy_quillen_local_replay_metadata(
+            focused_murthy,
+            focused_replay,
+            :ordinary_quillen_factor_sequence,
+            focused_metadata,
+        ),
+        nothing,
+    )
+    focused_adapter = _pwq_rebuild(
+        focused_adapter;
+        verification = Suslin._murthy_quillen_local_adapter_summary(focused_adapter),
+    )
+
+    mismatched_metadata_local = Suslin.quillen_local_realization_certificate(
+        exact_focused_local.original_input,
+        exact_focused_local.selected_variable;
+        local_certificate = exact_focused_local.local_certificate,
+        denominator = exact_focused_local.denominator,
+        coverage_multiplier = exact_focused_local.coverage_multiplier,
+        correction = exact_focused_local.correction,
+        factors = exact_focused_local.factors,
+        local_correction = exact_focused_local.local_correction,
+        patched_substitution_witness = exact_focused_local.patched_substitution_witness,
+        witness_metadata = (; fixture_id = :contradictory_metadata, consumer_issue = 211),
+        ring = exact_focused_local.ring,
+        size = exact_focused_local.size,
+    )
+    @test Suslin.verify_quillen_local_certificate(mismatched_metadata_local)
+    metadata_only_misaligned_adapter = _pwq_rebuild(
+        focused_adapter;
+        quillen_local_certificate = mismatched_metadata_local,
+    )
+    metadata_only_misaligned_adapter = _pwq_rebuild(
+        metadata_only_misaligned_adapter;
+        verification = Suslin._murthy_quillen_local_adapter_summary(metadata_only_misaligned_adapter),
+    )
+    @test !Suslin._verify_murthy_quillen_local_adapter(metadata_only_misaligned_adapter)
+    @test_throws ArgumentError Suslin._murthy_quillen_local_realization_certificate(
+        metadata_only_misaligned_adapter,
+    )
+
     tampered_factors = copy(ordinary_cert.factors)
     tampered_factors[1] =
         tampered_factors[1] * elementary_matrix(3, 1, 3, one(R), R)
