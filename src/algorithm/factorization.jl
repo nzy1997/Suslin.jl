@@ -315,15 +315,62 @@ function _sl3_realization_input_context_staged_diagnostic(
     )
 end
 
+function _sl3_realization_input_context_matrix_snapshot(matrix)
+    return (;
+        ring = base_ring(matrix),
+        rows = nrows(matrix),
+        cols = ncols(matrix),
+        entries = Tuple(matrix[row, col] for row in 1:nrows(matrix), col in 1:ncols(matrix)),
+    )
+end
+
+function _sl3_realization_input_context_creation_snapshot(
+    matrix,
+    selected_variable,
+    catalog_metadata,
+    local_form_witness,
+)
+    return (;
+        matrix = _sl3_realization_input_context_matrix_snapshot(matrix),
+        selected_variable,
+        catalog_metadata = deepcopy(catalog_metadata),
+        local_form_witness = deepcopy(local_form_witness),
+    )
+end
+
 function _sl3_realization_input_context_creation_identity(
     matrix,
     selected_variable,
     catalog_metadata,
+    local_form_witness,
 )
     return (;
+        source = :sl3_realization_input_context,
+        snapshot = _sl3_realization_input_context_creation_snapshot(
+            matrix,
+            selected_variable,
+            catalog_metadata,
+            local_form_witness,
+        ),
+    )
+end
+
+function _sl3_realization_input_context_creation_identity_ok(
+    creation_identity,
+    matrix,
+    selected_variable,
+    catalog_metadata,
+    local_form_witness,
+)::Bool
+    creation_identity isa NamedTuple || return false
+    hasproperty(creation_identity, :source) || return false
+    creation_identity.source == :sl3_realization_input_context || return false
+    hasproperty(creation_identity, :snapshot) || return false
+    return creation_identity.snapshot == _sl3_realization_input_context_creation_snapshot(
         matrix,
         selected_variable,
         catalog_metadata,
+        local_form_witness,
     )
 end
 
@@ -331,6 +378,7 @@ function _sl3_realization_input_context_fields(
     A;
     selected_variable = nothing,
     catalog_metadata = (;),
+    creation_identity = nothing,
     local_form_witness = nothing,
     variable_change_metadata = nothing,
     normality_conjugation_metadata = nothing,
@@ -419,11 +467,14 @@ function _sl3_realization_input_context_fields(
         determinant_status = :one,
         exact_field_status = :supported,
         catalog_metadata,
-        creation_identity = _sl3_realization_input_context_creation_identity(
-            A,
-            selected,
-            catalog_metadata,
-        ),
+        creation_identity = creation_identity === nothing ?
+            _sl3_realization_input_context_creation_identity(
+                A,
+                selected,
+                catalog_metadata,
+                local_form_witness,
+            ) :
+            creation_identity,
         local_form_witness,
         local_form_status,
         variable_change_metadata,
@@ -443,6 +494,7 @@ function _sl3_realization_input_context_core_verification(context)
         context.matrix;
         selected_variable = context.selected_variable,
         catalog_metadata = context.catalog_metadata,
+        creation_identity = context.creation_identity,
         local_form_witness = context.local_form_witness,
         variable_change_metadata = context.variable_change_metadata,
         normality_conjugation_metadata = context.normality_conjugation_metadata,
@@ -465,7 +517,15 @@ function _sl3_realization_input_context_core_verification(context)
     determinant_status_ok = context.determinant_status == recomputed.determinant_status
     exact_field_status_ok = context.exact_field_status == recomputed.exact_field_status
     catalog_metadata_ok = context.catalog_metadata == recomputed.catalog_metadata
-    creation_identity_ok = context.creation_identity == recomputed.creation_identity
+    creation_identity_ok =
+        context.creation_identity == recomputed.creation_identity &&
+        _sl3_realization_input_context_creation_identity_ok(
+            context.creation_identity,
+            context.matrix,
+            context.selected_variable,
+            context.catalog_metadata,
+            context.local_form_witness,
+        )
     local_form_witness_ok = context.local_form_witness == recomputed.local_form_witness
     local_form_status_ok = context.local_form_status == recomputed.local_form_status
     variable_change_metadata_ok =
@@ -483,8 +543,6 @@ function _sl3_realization_input_context_core_verification(context)
     evidence_status_ok = context.evidence_status == recomputed.evidence_status
     support_status_ok = context.support_status == recomputed.support_status
     staged_diagnostic_ok = context.staged_diagnostic == recomputed.staged_diagnostic
-    catalog_metadata_fingerprint = context.catalog_metadata
-
     overall_core_ok =
         matrix_ok &&
         base_ring_ok &&
@@ -540,7 +598,6 @@ function _sl3_realization_input_context_core_verification(context)
         evidence_status_ok,
         support_status_ok,
         staged_diagnostic_ok,
-        catalog_metadata_fingerprint,
         overall_core_ok,
     )
 end
@@ -1154,6 +1211,42 @@ function _sl3_murthy_quillen_local_provider_inputs(
     )
 end
 
+function _sl3_murthy_quillen_local_witness_payload_ok(
+    selection::SL3LocalFormWitnessSelection,
+)::Bool
+    data = selection.local_form_witness
+    data === nothing && return false
+    _sl3_realization_input_context_has_replay_payload(data) || return false
+
+    source_matrix = _sl3_local_witness_source_matrix(data)
+    source_matrix !== nothing && source_matrix == selection.context.matrix || return false
+
+    selected_variable_hint = _sl3_realization_input_context_extract(
+        data,
+        (:selected_variable, :selected_generator, :generator, :variable),
+    )
+    selected_variable_hint !== nothing || return false
+    replay_selected, replay_index, replay_status =
+        _sl3_realization_input_context_selected_variable(
+            selection.context.base_ring,
+            selected_variable_hint,
+        )
+    replay_status == :passes || return false
+    replay_selected == selection.selected_variable || return false
+    replay_index == selection.selected_variable_index || return false
+
+    entries, local_form_matrix, monicity_witness = _sl3_local_witness_status_from_data(
+        selection.context.base_ring,
+        data,
+        selection.selected_variable,
+        selection.selected_variable_index,
+        "SL_3 Murthy/Quillen local evidence provider #236 witness",
+    )
+    return entries == selection.entries &&
+           local_form_matrix == selection.local_form_matrix &&
+           monicity_witness == selection.monicity_witness
+end
+
 function _sl3_murthy_quillen_local_denominator_metadata(
     adapter,
     quillen_local_sequences,
@@ -1234,6 +1327,12 @@ function _sl3_murthy_quillen_local_evidence_provider_fields(
         throw(ArgumentError("SL_3 Murthy/Quillen local evidence provider requires selected special-form entries"))
     selection.local_form_matrix !== nothing ||
         throw(ArgumentError("SL_3 Murthy/Quillen local evidence provider requires a selected local-form matrix"))
+    selection.local_form_witness == selection.context.local_form_witness ||
+        throw(ArgumentError("SL_3 Murthy/Quillen local evidence provider requires #236 witness metadata bound to the realization context"))
+    _sl3_murthy_quillen_local_witness_payload_ok(selection) ||
+        throw(ArgumentError("SL_3 Murthy/Quillen local evidence provider requires a replayable #236 local-form witness payload"))
+    selection.local_form_matrix == selection.context.matrix ||
+        throw(ArgumentError("SL_3 Murthy/Quillen local evidence provider currently requires the selected local product to match the original SL_3 context matrix; transformed local-form replay remains staged"))
 
     provider_inputs = _sl3_murthy_quillen_local_provider_inputs(
         ;

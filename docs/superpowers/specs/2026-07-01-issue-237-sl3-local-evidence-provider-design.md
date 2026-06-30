@@ -6,7 +6,7 @@ Add an internal provider that starts from a verified `SL3LocalFormWitnessSelecti
 
 ## Chosen Approach
 
-Use a thin coordination layer in `src/algorithm/factorization.jl`. The provider will not compute Murthy branches, denominator covers, Quillen local sequences, or patch assemblies itself. It will validate the #235 input context and #236 witness selection, construct `SL3LocalMurthyInputContext` through `sl3_local_murthy_input_context`, realize it through `realize_sl3_local_certificate`, adapt it through `_murthy_quillen_local_adapter`, and, only for ordinary materializable adapter mode, call `consume_murthy_quillen_adapters_for_patch` from #219.
+Use a thin coordination layer in `src/algorithm/factorization.jl`. The provider will not compute Murthy branches, denominator covers, Quillen local-to-global patch assemblies, or transformed local-form composition itself. It will validate the #235 input context and #236 witness selection, construct `SL3LocalMurthyInputContext` through `sl3_local_murthy_input_context`, realize it through `realize_sl3_local_certificate`, adapt it through `_murthy_quillen_local_adapter`, and, only for ordinary materializable adapter mode, expose the verified Quillen local sequences that #219 consumers can use.
 
 Alternatives considered:
 
@@ -24,10 +24,9 @@ Add `SL3MurthyQuillenLocalEvidenceProvider` with these fields:
 - `SL3LocalRealizationCertificate`
 - `MurthyQuillenLocalAdapter`
 - optional ordinary Quillen local sequences
-- optional `QuillenMurthyAdapterConsumption`
 - local product, selected variable, denominator metadata, provider replay metadata, staged diagnostic, and verification
 
-The constructor `_sl3_murthy_quillen_local_evidence_provider(selection; ...)` will require a verified witness selection whose support is `:supported`. It will reject context/witness mismatches before calling Quillen consumption. It will accept optional Murthy witness data (`witness`, `local_unit_witnesses`, `split_witness`, `bezout_witness`) and optional Quillen consumption arguments, but will pass them to existing APIs unchanged.
+The constructor `_sl3_murthy_quillen_local_evidence_provider(selection; ...)` will require a verified witness selection whose support is `:supported` and whose #236 witness payload is replayable and bound to the #235 context. It will reject context/witness mismatches before returning Quillen-facing evidence. It will accept optional Murthy witness data (`witness`, `local_unit_witnesses`, `split_witness`, `bezout_witness`) and pass them to existing Murthy APIs unchanged.
 
 ## Data Flow
 
@@ -35,8 +34,8 @@ The constructor `_sl3_murthy_quillen_local_evidence_provider(selection; ...)` wi
 2. Require `selection.context` to verify and require `selection.local_form_matrix == context.matrix` for this provider. This keeps the issue scoped to driver contexts whose selected #236 witness is already the local target for the #235 matrix.
 3. Build the Murthy input context from `selection.entries` and `selection.selected_variable`.
 4. Realize the Murthy certificate using `realize_sl3_local_certificate`.
-5. Adapt the certificate with `_murthy_quillen_local_adapter`, carrying witness metadata that includes #237 provider source, #235 context metadata, #236 witness metadata, selected variable, local product, denominator product, and original matrix identity.
-6. If the adapter mode is `:ordinary_quillen_factor_sequence`, call `consume_murthy_quillen_adapters_for_patch` and expose the verified local sequences and consumption record.
+5. Adapt the certificate with `_murthy_quillen_local_adapter`, carrying adapter witness metadata for #235 context, #236 witness, selected variable, and selection status; the provider replay metadata carries the provider source, local product, denominator product, and original matrix identity.
+6. If the adapter mode is `:ordinary_quillen_factor_sequence`, expose the verified local sequences for the #219 consumption layer.
 7. If the adapter mode is `:localized_replay_handoff`, return a verified staged provider record with a diagnostic explaining that localized denominator-cleared replay is not ordinary Quillen factor-sequence evidence.
 
 ## Verification
@@ -49,7 +48,7 @@ The provider verification will recompute all provider fields from the stored sel
 - Murthy input context, certificate, and adapter replay
 - denominator product and denominator metadata match adapter/sequence replay
 - provider metadata ties back to #235 context metadata and #236 witness metadata
-- ordinary adapter records use #219 consumption and localized records do not enter ordinary Quillen sequences
+- ordinary adapter records expose verified local sequences and localized records do not enter ordinary Quillen sequences
 
 Tampering with the #236 witness record, Murthy local factors, selected variable, denominator/local-unit witness, or #235 context identity must make provider verification fail or provider construction throw before Quillen patch assembly can receive the evidence.
 
