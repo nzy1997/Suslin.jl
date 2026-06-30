@@ -143,7 +143,7 @@ end
         legacy_context,
         (; staged_diagnostic = merge(
             legacy_context.staged_diagnostic,
-            (; message = "corrupted diagnostic"),
+            (; partial_evidence = ("corrupted_evidence",)),
         )),
     )
 end
