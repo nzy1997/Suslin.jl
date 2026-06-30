@@ -326,6 +326,8 @@ function _sl3d_assert_metadata(entry)
         throw(ArgumentError("fixture $(entry.id) selected_variable_status must be an evidence status symbol"))
     selected.status in ALLOWED_EVIDENCE_STATUS ||
         throw(ArgumentError("fixture $(entry.id) selected variable status must be an evidence status symbol"))
+    selected.status == selected_variable_status ||
+        throw(ArgumentError("fixture $(entry.id) selected variable status metadata is inconsistent"))
 
     entry.source_refs isa Tuple && !isempty(entry.source_refs) ||
         throw(ArgumentError("fixture $(entry.id) must include source refs"))
