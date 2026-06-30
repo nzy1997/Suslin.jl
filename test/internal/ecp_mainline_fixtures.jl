@@ -38,6 +38,26 @@ const REQUIRED_ECP_MAINLINE_FIELDS = (
 
 const ALLOWED_ECP_MAINLINE_STATUS = Set([:supported, :staged])
 const ALLOWED_ECP_MAINLINE_EVIDENCE_STATUS = Set([:passes, :replayed, :missing, :absent, :inapplicable])
+const REPLAYABLE_ECP_MAINLINE_EVIDENCE_STATUS = Set([:passes, :replayed])
+const ECP_MAINLINE_SUPPORT_STATUS_FIELDS = (
+    :link_witness_status,
+    :link_step_status,
+    :lower_variable_status,
+    :normality_status,
+    :sl3_status,
+)
+const ECP_MAINLINE_EVIDENCE_FIELD_CANDIDATES = Dict(
+    :link_witness_status => (:link_witness, :link_witness_evidence, :link_witness_record),
+    :link_step_status => (:link_step, :link_step_certificate, :link_step_evidence),
+    :lower_variable_status => (
+        :lower_variable,
+        :lower_variable_reduction,
+        :lower_variable_certificate,
+        :lower_reduction,
+    ),
+    :normality_status => (:normality, :normality_witness, :normality_certificate),
+    :sl3_status => (:sl3, :sl3_route, :sl3_certificate, :sl3_evidence),
+)
 
 function _ecp_mainline_field(entry, field::Symbol)
     hasproperty(entry, field) || throw(ArgumentError("fixture entry missing field $(field)"))
@@ -94,6 +114,145 @@ function _ecp_mainline_monic_in_variable(p, R, variable_name::Symbol)
     return total == one(R)
 end
 
+function _ecp_mainline_support_evidence_fields(field::Symbol)
+    return get(
+        ECP_MAINLINE_EVIDENCE_FIELD_CANDIDATES,
+        field,
+        (Symbol(replace(String(field), r"_status$" => "")),),
+    )
+end
+
+function _ecp_mainline_support_evidence_status(evidence, field::Symbol, entry_id::AbstractString)
+    hasproperty(evidence, field) ||
+        throw(ArgumentError("fixture $(entry_id) support_evidence missing field $(field)"))
+    status = getproperty(evidence, field)
+    status isa Symbol ||
+        throw(ArgumentError("fixture $(entry_id) support_evidence field $(field) must be a symbol"))
+    status in ALLOWED_ECP_MAINLINE_EVIDENCE_STATUS ||
+        throw(ArgumentError("fixture $(entry_id) support_evidence field $(field) must be an evidence status symbol"))
+    return status
+end
+
+function _ecp_mainline_support_evidence_value(evidence, field::Symbol, entry_id::AbstractString)
+    for candidate in _ecp_mainline_support_evidence_fields(field)
+        hasproperty(evidence, candidate) || continue
+        value = getproperty(evidence, candidate)
+        value === nothing && continue
+        return value
+    end
+    return nothing
+end
+
+function _ecp_mainline_is_replayable_status(status)
+    return status in REPLAYABLE_ECP_MAINLINE_EVIDENCE_STATUS
+end
+
+function _ecp_mainline_replay_link_witness(entry, witness)
+    if hasproperty(witness, :record)
+        witness = witness.record
+    elseif hasproperty(witness, :certificate)
+        witness = witness.certificate
+    end
+    witness isa Suslin.ECPLinkWitnessRecord ||
+        throw(ArgumentError("fixture $(entry.id) link witness evidence must be a replayable link witness record"))
+    Suslin.verify_ecp_link_witness(witness) ||
+        throw(ArgumentError("fixture $(entry.id) link witness evidence does not replay"))
+    return true
+end
+
+function _ecp_mainline_replay_link_step(entry, link_step)
+    if hasproperty(link_step, :record)
+        link_step = link_step.record
+    elseif hasproperty(link_step, :certificate)
+        link_step = link_step.certificate
+    end
+    link_step isa Suslin.ECPLinkStepCertificate ||
+        throw(ArgumentError("fixture $(entry.id) link step evidence must be a replayable link-step certificate"))
+    Suslin.verify_ecp_link_step_certificate(link_step) ||
+        throw(ArgumentError("fixture $(entry.id) link step evidence does not replay"))
+    return true
+end
+
+function _ecp_mainline_replay_lower_variable(entry, lower_variable, column, R)
+    lower_candidate = lower_variable
+    if hasproperty(lower_candidate, :record)
+        lower_candidate = lower_candidate.record
+    elseif hasproperty(lower_candidate, :certificate)
+        lower_candidate = lower_candidate.certificate
+    end
+    if lower_candidate isa Suslin.ECPColumnReductionCertificate
+        Suslin.verify_ecp_column_reduction(lower_candidate) ||
+            throw(ArgumentError("fixture $(entry.id) lower-variable evidence does not replay"))
+        tuple(lower_candidate.original_column...) == column ||
+            throw(ArgumentError("fixture $(entry.id) lower-variable certificate does not match the fixture column"))
+        lower_candidate.ring == R ||
+            throw(ArgumentError("fixture $(entry.id) lower-variable certificate must use the fixture ring"))
+        return true
+    end
+    if hasproperty(lower_candidate, :factors)
+        lower_candidate = lower_candidate.factors
+    end
+    Suslin._ecp_verified_lower_reduction(lower_candidate, column, R)
+    return true
+end
+
+function _ecp_mainline_validate_supported_evidence(entry, support_evidence, column, R)
+    link_witness_status = _ecp_mainline_support_evidence_status(support_evidence, :link_witness_status, entry.id)
+    link_step_status = _ecp_mainline_support_evidence_status(support_evidence, :link_step_status, entry.id)
+    lower_variable_status = _ecp_mainline_support_evidence_status(support_evidence, :lower_variable_status, entry.id)
+    normality_status = _ecp_mainline_support_evidence_status(support_evidence, :normality_status, entry.id)
+    sl3_status = _ecp_mainline_support_evidence_status(support_evidence, :sl3_status, entry.id)
+
+    supported = entry.expected_status == :supported
+    if supported
+        link_step_status in REPLAYABLE_ECP_MAINLINE_EVIDENCE_STATUS ||
+            throw(ArgumentError("fixture $(entry.id) supported entry must replay link step evidence"))
+        lower_variable_status in REPLAYABLE_ECP_MAINLINE_EVIDENCE_STATUS ||
+            throw(ArgumentError("fixture $(entry.id) supported entry must replay lower-variable evidence"))
+    end
+
+    if _ecp_mainline_is_replayable_status(link_witness_status)
+        witness = _ecp_mainline_support_evidence_value(support_evidence, :link_witness_status, entry.id)
+        witness === nothing &&
+            throw(ArgumentError("fixture $(entry.id) link witness status requires replayable witness metadata"))
+        _ecp_mainline_replay_link_witness(entry, witness)
+    end
+
+    if _ecp_mainline_is_replayable_status(link_step_status)
+        link_step = _ecp_mainline_support_evidence_value(support_evidence, :link_step_status, entry.id)
+        link_step === nothing &&
+            throw(ArgumentError("fixture $(entry.id) link step status requires replayable link-step metadata"))
+        _ecp_mainline_replay_link_step(entry, link_step)
+    end
+
+    if _ecp_mainline_is_replayable_status(lower_variable_status)
+        lower_variable = _ecp_mainline_support_evidence_value(support_evidence, :lower_variable_status, entry.id)
+        lower_variable === nothing &&
+            throw(ArgumentError("fixture $(entry.id) lower-variable status requires replayable lower-variable metadata"))
+        _ecp_mainline_replay_lower_variable(entry, lower_variable, column, R)
+    end
+
+    if _ecp_mainline_is_replayable_status(normality_status)
+        normality = _ecp_mainline_support_evidence_value(support_evidence, :normality_status, entry.id)
+        normality === nothing &&
+            throw(ArgumentError("fixture $(entry.id) normality status requires replayable normality metadata"))
+        if hasproperty(normality, :verification) && hasproperty(normality, :overall_ok)
+            normality.overall_ok || throw(ArgumentError("fixture $(entry.id) normality evidence does not replay"))
+        end
+    end
+
+    if _ecp_mainline_is_replayable_status(sl3_status)
+        sl3 = _ecp_mainline_support_evidence_value(support_evidence, :sl3_status, entry.id)
+        sl3 === nothing &&
+            throw(ArgumentError("fixture $(entry.id) sl3 status requires replayable SL_3 metadata"))
+        if hasproperty(sl3, :verification) && hasproperty(sl3, :overall_ok)
+            sl3.overall_ok || throw(ArgumentError("fixture $(entry.id) SL_3 evidence does not replay"))
+        end
+    end
+
+    return true
+end
+
 function _ecp_mainline_selected_variable(entry)
     selected = _ecp_mainline_field(entry, :selected_variable)
     for field in (:name, :generator, :index, :status)
@@ -121,6 +280,12 @@ function _ecp_mainline_check_ring(entry)
     _ecp_mainline_field(ring, :description) isa AbstractString ||
         throw(ArgumentError("fixture $(entry.id) ring description must be a string"))
     R = _ecp_mainline_field(ring, :object)
+    R isa MPolyRing || R isa PolyRing ||
+        throw(ArgumentError("fixture $(entry.id) must use an ordinary polynomial ring"))
+    Oscar.is_exact_type(typeof(zero(coefficient_ring(R)))) ||
+        throw(ArgumentError("fixture $(entry.id) must use an exact coefficient type"))
+    coefficient_ring(R) isa Field ||
+        throw(ArgumentError("fixture $(entry.id) must be field-backed"))
     generator_names = _ecp_mainline_field(ring, :generator_names)
     generators = _ecp_mainline_field(ring, :generators)
     generator_names isa Tuple && generators isa Tuple && length(generator_names) == length(generators) ||
@@ -182,6 +347,7 @@ function _ecp_mainline_assert_metadata(entry)
     hasproperty(unimodularity, :status) || throw(ArgumentError("fixture $(entry.id) unimodularity missing status"))
     hasproperty(unimodularity, :witness) || throw(ArgumentError("fixture $(entry.id) unimodularity missing witness"))
     hasproperty(unimodularity, :coefficients) || throw(ArgumentError("fixture $(entry.id) unimodularity missing coefficients"))
+    _ecp_mainline_support_evidence_status(_ecp_mainline_field(entry, :support_evidence), :link_step_status, entry.id)
 
     if entry.expected_status == :staged
         hasproperty(entry, :missing_evidence) ||
@@ -189,7 +355,7 @@ function _ecp_mainline_assert_metadata(entry)
         entry.missing_evidence isa Tuple ||
             throw(ArgumentError("fixture $(entry.id) missing_evidence must be a tuple"))
     else
-        hasproperty(entry, :missing_evidence) && !isempty(entry.missing_evidence) &&
+        hasproperty(entry, :missing_evidence) &&
             throw(ArgumentError("fixture $(entry.id) supported entries must not claim missing_evidence"))
     end
 
@@ -234,21 +400,19 @@ end
 
 function _ecp_mainline_assert_stage_evidence(entry)
     support_evidence = _ecp_mainline_field(entry, :support_evidence)
-    for field in (:link_witness_status, :link_step_status, :lower_variable_status, :normality_status, :sl3_status)
-        hasproperty(support_evidence, field) || throw(
-            ArgumentError("fixture $(entry.id) support_evidence missing field $(field)")
-        )
-        getproperty(support_evidence, field) in ALLOWED_ECP_MAINLINE_EVIDENCE_STATUS ||
-            throw(ArgumentError("fixture $(entry.id) support_evidence field $(field) must be an evidence status symbol"))
+    column = _ecp_mainline_column(entry)
+    R = parent(column[1])
+    for field in ECP_MAINLINE_SUPPORT_STATUS_FIELDS
+        _ecp_mainline_support_evidence_status(support_evidence, field, entry.id)
     end
-    if entry.expected_status == :supported
-        for field in (:link_witness_status, :link_step_status, :lower_variable_status, :normality_status, :sl3_status)
-            getproperty(support_evidence, field) in (:passes, :replayed) ||
-                throw(ArgumentError("fixture $(entry.id) supported entry must replay $(field)"))
-        end
-    else
+    _ecp_mainline_validate_supported_evidence(entry, support_evidence, column, R)
+    if entry.expected_status == :staged
         hasproperty(entry, :missing_evidence) ||
             throw(ArgumentError("fixture $(entry.id) staged entry must declare missing_evidence"))
+        entry.missing_evidence isa Tuple ||
+            throw(ArgumentError("fixture $(entry.id) staged missing_evidence must be a tuple"))
+        isempty(entry.missing_evidence) &&
+            throw(ArgumentError("fixture $(entry.id) staged missing_evidence must not be empty"))
     end
     return true
 end
@@ -266,11 +430,10 @@ function validate_ecp_mainline_fixture_catalog(catalog)
     hasproperty(catalog, :negative_controls) || throw(ArgumentError("catalog missing negative_controls"))
     isempty(catalog.cases) && throw(ArgumentError("catalog must contain valid cases"))
     case_ids = [entry.id for entry in catalog.cases]
-    length(case_ids) == length(unique(case_ids)) ||
-        throw(ArgumentError("catalog valid case ids must be unique"))
     control_ids = [entry.id for entry in catalog.negative_controls]
-    length(control_ids) == length(unique(control_ids)) ||
-        throw(ArgumentError("catalog negative control ids must be unique"))
+    all_ids = vcat(case_ids, control_ids)
+    length(all_ids) == length(unique(all_ids)) ||
+        throw(ArgumentError("catalog case and negative control ids must be unique"))
     for entry in catalog.cases
         validate_ecp_mainline_fixture(entry)
     end
