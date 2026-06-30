@@ -13,6 +13,18 @@ function _mn_mainline_column(entry)
     return [getproperty(entry.column_entries, name) for name in entry.column_order]
 end
 
+function _mn_column_matrix(column, R)
+    return matrix(R, length(column), 1, collect(column))
+end
+
+function _mn_shift_inverse_column(entry)
+    column = _mn_column(entry)
+    R = entry.ring.object
+    x, y = gens(R)
+    inverse_values = (x + y^2, y)
+    return [evaluate(column_entry, inverse_values) for column_entry in column]
+end
+
 function _mn_factor_product(factors, R, n::Int)
     product = identity_matrix(R, n)
     for factor in factors
@@ -22,11 +34,17 @@ function _mn_factor_product(factors, R, n::Int)
 end
 
 function _mn_apply_factors(factors, column, R)
-    return _mn_factor_product(factors, R, length(column)) * matrix(R, length(column), 1, collect(column))
+    return _mn_factor_product(factors, R, length(column)) * _mn_column_matrix(column, R)
 end
 
 function _mn_map_values(substitution_map)
     return tuple((entry.value for entry in substitution_map)...)
+end
+
+function _mn_assert_square_factor_family(factors, R, n::Int)
+    @test all(factor -> base_ring(factor) == R, factors)
+    @test all(factor -> nrows(factor) == n, factors)
+    @test all(factor -> ncols(factor) == n, factors)
 end
 
 function _mn_replace_tuple_entry(values, idx::Int, value)
@@ -53,13 +71,20 @@ end
 function _mn_assert_replays(record, column, R)
     target = zero_matrix(R, length(column), 1)
     target[length(column), 1] = one(R)
+    normalized_column = _mn_column_matrix(record.normalized_column, R)
+    inverse_values = _mn_map_values(record.inverse_substitution)
+    inverse_normalized_column = _mn_column_matrix(
+        [evaluate(entry, inverse_values) for entry in record.normalized_column],
+        R,
+    )
 
     @test Suslin.verify_ecp_monicity_normalization(record)
-    if record.selected_monic_index == 1
-        @test isempty(record.coordinate_move_factors)
-    else
-        @test !isempty(record.coordinate_move_factors)
-    end
+    _mn_assert_square_factor_family(record.coordinate_move_factors, R, length(column))
+    _mn_assert_square_factor_family(record.inverse_substituted_coordinate_move_factors, R, length(column))
+    _mn_assert_square_factor_family(record.inverse_substituted_reduction_factors, R, length(column))
+    @test _mn_apply_factors(record.coordinate_move_factors, record.transformed_column, R) == normalized_column
+    @test _mn_apply_factors(record.inverse_substituted_coordinate_move_factors, column, R) == inverse_normalized_column
+    @test _mn_apply_factors(record.inverse_substituted_reduction_factors, inverse_normalized_column, R) == target
     @test _mn_apply_factors(record.factors, column, R) == target
     @test record.normalized_column[1] == record.selected_monic_entry
     _mn_assert_inverse_substitution_maps(record, R)
@@ -77,8 +102,7 @@ function _mn_context_from_mainline(entry)
     )
 end
 
-function _mn_context_from_column(entry; selected_variable)
-    column = _mn_column(entry)
+function _mn_context_from_column(column, entry; selected_variable)
     R = entry.ring.object
     return Suslin.ecp_input_context(
         column,
@@ -117,7 +141,9 @@ end
     )
 
     bounded_entry = column_cases["ecp-variable-change-monic-gf2"]
+    bounded_preimage_column = _mn_shift_inverse_column(bounded_entry)
     bounded_ctx = _mn_context_from_column(
+        bounded_preimage_column,
         bounded_entry;
         selected_variable = gens(bounded_entry.ring.object)[2],
     )
@@ -140,6 +166,7 @@ end
 
     permuted_entry = column_cases["ecp-variable-change-permuted-gf2"]
     permuted_ctx = _mn_context_from_column(
+        _mn_column(permuted_entry),
         permuted_entry;
         selected_variable = gens(permuted_entry.ring.object)[2],
     )
