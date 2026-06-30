@@ -87,6 +87,7 @@ function _mn_assert_replays(record, column, R)
     @test _mn_apply_factors(record.inverse_substituted_reduction_factors, inverse_normalized_column, R) == target
     @test _mn_apply_factors(record.factors, column, R) == target
     @test record.normalized_column[1] == record.selected_monic_entry
+    @test record.verification.substitution_inverse_ok
     _mn_assert_inverse_substitution_maps(record, R)
 end
 
@@ -188,4 +189,29 @@ end
             permuted_record.inverse_substitution[1].value + one(permuted_ctx.ring),
         )),
     )
+
+    @test_throws ArgumentError Suslin.ecp_monicity_normalization(
+        already_first_ctx;
+        selected_variable = gens(already_first_ctx.ring)[1],
+        selected_monic_index = 1,
+        max_shift_power = -1,
+    )
+
+    unsupported_entry = column_cases["ecp-unsupported-unimodular-gf2"]
+    unsupported_ctx = _mn_context_from_column(
+        _mn_column(unsupported_entry),
+        unsupported_entry;
+        selected_variable = gens(unsupported_entry.ring.object)[2],
+    )
+    exhausted = Suslin.ecp_monicity_normalization(
+        unsupported_ctx;
+        selected_variable = gens(unsupported_ctx.ring)[2],
+        max_shift_power = 0,
+    )
+    @test exhausted isa Suslin.ECPMonicityNormalizationFailure
+    @test exhausted.context === unsupported_ctx
+    @test exhausted.search_failure isa Suslin.ECPMonicitySearchFailure
+    @test exhausted.search_failure.kind == :monicity_search_exhausted
+    @test exhausted.max_shift_power == 0
+    @test exhausted.search_failure.attempted_candidates == 0
 end

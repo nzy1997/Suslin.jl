@@ -265,6 +265,7 @@ function ecp_monicity_normalization(
 )
     verify_ecp_input_context(context) ||
         throw(ArgumentError("ECP monicity normalization requires a verified ECP input context"))
+    max_shift_power < 0 && throw(ArgumentError("max_shift_power must be nonnegative"))
 
     R = context.ring
     resolved_selected_variable = selected_variable === nothing ? context.selected_variable : selected_variable
@@ -286,7 +287,6 @@ function ecp_monicity_normalization(
         return _ecp_monicity_normalization_record(context, variable_order, direct)
     end
 
-    max_shift_power < 0 && throw(ArgumentError("max_shift_power must be nonnegative"))
     signs = tuple((_coerce_into_ring(R, sign, "shift sign") for sign in shift_signs)...)
     attempted = 0
     for source_variable in variable_order[1:(end - 1)]
@@ -1485,6 +1485,11 @@ function _ecp_monicity_normalization_summary(
     inverse_substitution = _ecp_substitution_map_tuple(ring_gens, inverse_values)
     variable_change_verification = (;
         selected_monic_ok = _is_monic_in_variable(selected_monic_entry, R, target_variable_index),
+        substitution_inverse_ok = _ecp_substitution_maps_are_inverse(
+            R,
+            forward_substitution,
+            inverse_substitution,
+        ),
         transformed_reduction_ok = transformed_output == target,
         original_reduction_ok = original_output == target,
     )
@@ -2239,6 +2244,8 @@ function _ecp_monicity_normalization_replay_summary(record)
     summary_ok = summary !== nothing
     replayed_target = _target_reduced_column(record.ring, length(record.original_column))
     exact_reduction_ok = summary_ok && summary.original_output == replayed_target
+    substitution_inverse_ok = summary_ok &&
+        summary.variable_change_verification.substitution_inverse_ok
 
     fields_ok = summary_ok &&
         record.source_variable_index == summary.source_variable_index &&
@@ -2269,6 +2276,7 @@ function _ecp_monicity_normalization_replay_summary(record)
         selected_variable_ok &&
         variable_order_ok &&
         summary_ok &&
+        substitution_inverse_ok &&
         fields_ok &&
         exact_reduction_ok
     return (;
@@ -2279,6 +2287,7 @@ function _ecp_monicity_normalization_replay_summary(record)
         selected_variable_ok,
         variable_order_ok,
         summary_ok,
+        substitution_inverse_ok,
         fields_ok,
         exact_reduction_ok,
         replayed_selected_variable,
@@ -3357,6 +3366,7 @@ function _ecp_replay_stage(stage, input_column, R)
             _ecp_factor_sequences_equal(stage.factors, summary.inverse_substituted_factors) &&
             stage.variable_change_verification == summary.variable_change_verification &&
             summary.variable_change_verification.selected_monic_ok &&
+            summary.variable_change_verification.substitution_inverse_ok &&
             summary.variable_change_verification.transformed_reduction_ok &&
             summary.variable_change_verification.original_reduction_ok &&
             stage.output_column == summary.original_output
@@ -3491,6 +3501,40 @@ end
 
 function _ecp_substitution_map_tuple(variables, values)
     return tuple(((; variable = variables[idx], value = values[idx]) for idx in eachindex(variables))...)
+end
+
+function _ecp_substitution_map_values(substitution_map)
+    return tuple((entry.value for entry in substitution_map)...)
+end
+
+function _ecp_substitution_maps_are_inverse(R, forward_substitution, inverse_substitution)::Bool
+    try
+        ring_gens = tuple(gens(R)...)
+        forward_values = _ecp_substitution_map_values(forward_substitution)
+        inverse_values = _ecp_substitution_map_values(inverse_substitution)
+        length(forward_values) == length(ring_gens) || return false
+        length(inverse_values) == length(ring_gens) || return false
+        forward_then_inverse = tuple((
+            _coerce_into_ring(
+                R,
+                evaluate(evaluate(generator, collect(forward_values)), collect(inverse_values)),
+                "forward-inverse substitution generator",
+            )
+            for generator in ring_gens
+        )...)
+        inverse_then_forward = tuple((
+            _coerce_into_ring(
+                R,
+                evaluate(evaluate(generator, collect(inverse_values)), collect(forward_values)),
+                "inverse-forward substitution generator",
+            )
+            for generator in ring_gens
+        )...)
+        return forward_then_inverse == ring_gens && inverse_then_forward == ring_gens
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
 end
 
 function _ecp_public_staged_reduction_certificate(
