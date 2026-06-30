@@ -75,6 +75,7 @@ const TEST_GROUP_FILES = Dict(
         "expert/quillen_denominator_cover.jl",
         "expert/quillen_denominator_cover_solver.jl",
         "expert/quillen_patch_substitution_chain.jl",
+        "expert/quillen_supplied_evidence_patch_assembly.jl",
         "expert/quillen_local_factor_sequence.jl",
         "expert/quillen_denominator_extraction.jl",
         "expert/quillen_local_certificate.jl",
