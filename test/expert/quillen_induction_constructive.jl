@@ -63,6 +63,32 @@ function constructive_local_certificate_from_fixture(entry; local_index::Int)
     )
 end
 
+function constructive_sequence_certificate_from_fixture(entry; local_index::Int)
+    local_factor = entry.local_factors[local_index]
+    realization = constructive_local_certificate_from_fixture(entry; local_index)
+    return Suslin.quillen_local_factor_sequence_certificate(
+        realization;
+        factor_provenance = (;
+            factor_index = 1,
+            sequence_index = 1,
+            local_index = 1,
+            fixture_id = entry.id,
+            source = :constructive_supplied_evidence_regression,
+        ),
+        metadata = (;
+            source_refs = entry.source_refs,
+            consumer_issue_ids = entry.consumer_issue_ids,
+        ),
+    )
+end
+
+function constructive_sequence_certificates(entry)
+    return [
+        constructive_sequence_certificate_from_fixture(entry; local_index = idx)
+        for idx in eachindex(entry.local_factors)
+    ]
+end
+
 function constructive_cover(entry)
     denominators = [data.denominator for data in entry.denominator_data]
     multipliers = [data.coverage_multiplier for data in entry.denominator_data]
@@ -235,6 +261,26 @@ end
             patch = patch,
         )
     end
+
+    constructive_entry = entries["quillen-constructive-acceptance-gf2"]
+    supplied_sequence_certificates = constructive_sequence_certificates(constructive_entry)
+    supplied_patch = Suslin.assemble_quillen_patch_from_local_evidence(
+        constructive_entry.target_matrix,
+        constructive_entry.substitution_variable,
+        supplied_sequence_certificates;
+        max_exponent = 2,
+        base_term_policy = :already_handled,
+        metadata = (; fixture_id = constructive_entry.id, consumer_issue_id = "#218"),
+    )
+    @test supplied_patch isa Suslin.QuillenSuppliedEvidencePatchAssembly
+    @test Suslin.verify_quillen_patch(supplied_patch)
+    @test supplied_patch.product == constructive_entry.target_matrix
+    @test supplied_patch.global_elementary_factors ==
+          reduce(
+              vcat,
+              [expansion.global_elementary_factors for expansion in supplied_patch.sequence_expansions];
+              init = typeof(identity_matrix(supplied_patch.ring, supplied_patch.size))[],
+          )
 
     witness_bundle = built["quillen-patched-substitution-witness-qq"]
     witness_certificate = witness_bundle.local_certificates[1]
