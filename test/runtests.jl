@@ -29,6 +29,7 @@ const TEST_GROUP_FILES = Dict(
         "internal/toricbuilder_problem_catalog.jl",
         "internal/sl3_murthy_gupta_fixtures.jl",
         "internal/ecp_column_fixtures.jl",
+        "internal/ecp_mainline_fixtures.jl",
         "internal/quillen_patch_fixtures.jl",
         "internal/quillen_mainline_fixtures.jl",
         "internal/park_woodburn_polynomial_fixtures.jl",
