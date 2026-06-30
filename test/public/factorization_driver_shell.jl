@@ -102,6 +102,24 @@ end
     @test unsupported_coefficient_err isa ArgumentError
     @test occursin("exact field-backed", sprint(showerror, unsupported_coefficient_err))
     @test occursin("coefficient-ring support", sprint(showerror, unsupported_coefficient_err))
+    @test !Suslin._polynomial_exact_field_backed_ring(ZZ)
+    unsupported_coefficient_direct_err = _captured_error(() ->
+        Suslin._throw_staged_factorization_failure(
+            unsupported_coefficient_quillen,
+            :polynomial,
+            nothing,
+        )
+    )
+    @test unsupported_coefficient_direct_err isa ArgumentError
+    @test occursin("exact field-backed", sprint(showerror, unsupported_coefficient_direct_err))
+    unsupported_coefficient_explicit_route_err = _captured_error(() ->
+        Suslin._polynomial_factorization_route_certificate(
+            unsupported_coefficient_quillen;
+            route = :quillen_patch,
+        )
+    )
+    @test unsupported_coefficient_explicit_route_err isa ArgumentError
+    @test occursin("exact field-backed", sprint(showerror, unsupported_coefficient_explicit_route_err))
 
     nonlocal_sl3 = matrix(R, [
         one(R)  zero(R) X;
