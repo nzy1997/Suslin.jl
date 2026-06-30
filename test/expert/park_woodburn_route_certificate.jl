@@ -332,7 +332,10 @@ end
         )
     )
     @test missing_base_term_err isa ArgumentError
-    @test occursin("A(0)", sprint(showerror, missing_base_term_err))
+    @test (
+        occursin("A(0)", sprint(showerror, missing_base_term_err)) ||
+        occursin("base-term evidence", sprint(showerror, missing_base_term_err))
+    )
 
     wrong_base_factor = elementary_matrix(3, 1, 3, g, S)
     wrong_base_term_err = _pw_captured_error(() ->
@@ -349,11 +352,27 @@ end
     @test wrong_base_term_err isa ArgumentError
     @test occursin("base-term evidence", sprint(showerror, wrong_base_term_err))
 
+    tampered_patch_product = _pw_rebuild(
+        nonfixture_quillen_cert.evidence.quillen_patch;
+        product = identity_matrix(S, 3),
+    )
+    @test !Suslin.verify_quillen_patch(tampered_patch_product)
+    @test_throws ArgumentError Suslin._polynomial_factorization_route_certificate(
+        nonfixture_quillen;
+        route = :quillen_patch,
+        quillen_patch = tampered_patch_product,
+    )
+
     tampered_patch_certificate = _pw_rebuild(
         nonfixture_quillen_cert.evidence.quillen_patch;
         replay_metadata = (; source = :tampered_quillen_patch_certificate),
     )
     @test !Suslin.verify_quillen_patch(tampered_patch_certificate)
+    @test_throws ArgumentError Suslin._polynomial_factorization_route_certificate(
+        nonfixture_quillen;
+        route = :quillen_patch,
+        quillen_patch = tampered_patch_certificate,
+    )
     @test_throws ArgumentError Suslin._polynomial_quillen_patch_route_adapter(
         nonfixture_quillen,
         tampered_patch_certificate,

@@ -510,6 +510,35 @@ end
     @test Suslin._murthy_quillen_local_realization_certificate(focused_adapter) ===
           exact_focused_local
 
+    focused_route_adapter = Suslin._murthy_quillen_local_adapter(
+        focused_murthy,
+        focused_target,
+        X;
+        witness_metadata = focused_metadata,
+    )
+    @test Suslin._verify_murthy_quillen_local_adapter(focused_route_adapter)
+    focused_consumption = Suslin.consume_murthy_quillen_adapters_for_patch(
+        focused_target,
+        X,
+        [focused_route_adapter];
+        max_exponent = 1,
+        base_term_policy = :trivial,
+        metadata = (; fixture_id = :focused_open_s_one, consumer_issue = 220),
+    )
+    @test Suslin.verify_quillen_murthy_adapter_consumption(focused_consumption)
+    @test Suslin.verify_quillen_patch(focused_consumption.patch)
+    focused_route_cert = Suslin._polynomial_factorization_route_certificate(
+        focused_target;
+        route = :quillen_patch,
+        quillen_patch = focused_consumption.patch,
+    )
+    @test focused_route_cert.route == :quillen_patch
+    @test focused_route_cert.status == :supported
+    @test focused_route_cert.evidence isa Suslin.PolynomialQuillenPatchRouteAdapter
+    @test Suslin.verify_quillen_patch(focused_route_cert.evidence.quillen_patch)
+    @test verify_factorization(focused_target, focused_route_cert.factors)
+    @test Suslin._verify_polynomial_factorization_route_certificate(focused_route_cert)
+
     mismatched_metadata_local = Suslin.quillen_local_realization_certificate(
         exact_focused_local.original_input,
         exact_focused_local.selected_variable;
