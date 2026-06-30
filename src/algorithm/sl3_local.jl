@@ -3212,6 +3212,31 @@ function _sl3_local_constant_coefficient_outside_variable(value, var_idx::Int, R
     return coefficient
 end
 
+function _sl3_local_monicity_witness(p, var_idx::Int, R)
+    variable_count = length(collect(gens(R)))
+    if var_idx < 1 || var_idx > variable_count || iszero(p)
+        return (;
+            variable = var_idx >= 1 && var_idx <= variable_count ? collect(gens(R))[var_idx] : nothing,
+            variable_index = var_idx,
+            degree = -1,
+            leading_coefficient = zero(R),
+            is_monic = false,
+        )
+    end
+
+    target_degree = degree(p, var_idx)
+    leading = target_degree < 0 ?
+        zero(R) :
+        _sl3_local_coefficient_in_variable_degree(p, var_idx, target_degree, R)
+    return (;
+        variable = collect(gens(R))[var_idx],
+        variable_index = var_idx,
+        degree = target_degree,
+        leading_coefficient = leading,
+        is_monic = leading == one(R),
+    )
+end
+
 function _is_monic_in_variable(p, var_idx::Int, R)
     iszero(p) && return false
 

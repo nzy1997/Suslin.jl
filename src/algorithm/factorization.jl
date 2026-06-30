@@ -37,6 +37,26 @@ struct SL3RealizationInputContext
     verification
 end
 
+struct SL3LocalFormWitnessSelection
+    context::SL3RealizationInputContext
+    selected_variable
+    selected_variable_index
+    selected_variable_name
+    entries
+    local_form_matrix
+    monicity_witness::NamedTuple
+    local_form_witness
+    variable_change_metadata
+    variable_change_status::Symbol
+    normality_conjugation_metadata
+    normality_conjugation_status::Symbol
+    replay_status::Symbol
+    support_status::Symbol
+    witness_source::Symbol
+    staged_diagnostic::NamedTuple
+    verification
+end
+
 struct PolynomialQuillenPatchRouteAdapter
     target
     route::Symbol
@@ -507,6 +527,542 @@ function _sl3_realization_input_context(
     _verify_sl3_realization_input_context(checked) ||
         error("internal SL_3 realization input context verification failed")
     return checked
+end
+
+function _sl3_local_witness_hint_or_context(hint, stored)
+    return hint === nothing ? stored : hint
+end
+
+function _sl3_local_witness_selected_variable(context, hint)
+    R = context.base_ring
+    selected_hint = _sl3_local_witness_hint_or_context(hint, context.selected_variable)
+    selected, selected_index, status =
+        _sl3_realization_input_context_selected_variable(R, selected_hint)
+    status == :passes ||
+        throw(ArgumentError("SL_3 local witness selection requires a selected variable"))
+    if context.selected_variable !== nothing && selected != context.selected_variable
+        throw(ArgumentError("selected variable hint does not match the SL_3 context"))
+    end
+    if context.selected_variable_index !== nothing &&
+            selected_index != context.selected_variable_index
+        throw(ArgumentError("selected variable index does not match the SL_3 context"))
+    end
+    selected_name = string(collect(gens(R))[selected_index])
+    return selected, selected_index, selected_name
+end
+
+function _sl3_local_witness_entries_from_data(data)
+    data === nothing && return nothing
+    entries = _sl3_realization_input_context_extract(data, (:entries, :local_form_entries))
+    entries !== nothing && return entries
+    if all(field -> hasproperty(data, field), (:p, :q, :r, :s))
+        return (; p = data.p, q = data.q, r = data.r, s = data.s)
+    end
+    return nothing
+end
+
+function _sl3_local_witness_matrix_from_entries(R, entries)
+    entries === nothing && return nothing
+    return matrix(R, [
+        entries.p entries.q zero(R);
+        entries.r entries.s zero(R);
+        zero(R) zero(R) one(R)
+    ])
+end
+
+function _sl3_local_witness_extract_matrix(data)
+    return _sl3_realization_input_context_extract(
+        data,
+        (:local_form_matrix, :special_form_matrix, :transformed_matrix, :local_target),
+    )
+end
+
+function _sl3_local_witness_source_matrix(data)
+    return _sl3_realization_input_context_extract(
+        data,
+        (:source_matrix, :input_matrix, :context_matrix, :original_matrix),
+    )
+end
+
+function _sl3_local_witness_same_ring_entries(R, entries, source_label)
+    for key in (:p, :q, :r, :s)
+        hasproperty(entries, key) ||
+            throw(ArgumentError("$(source_label) local-form entries are malformed"))
+        parent(getproperty(entries, key)) == R ||
+            throw(ArgumentError("$(source_label) local-form entries must lie in the SL_3 context ring"))
+    end
+    return entries
+end
+
+function _sl3_local_witness_checked_entries(
+    R,
+    matrix_value,
+    selected_variable,
+    selected_index,
+    source_label,
+)
+    base_ring(matrix_value) == R ||
+        throw(ArgumentError("$(source_label) local-form target must lie in the SL_3 context ring"))
+    nrows(matrix_value) == 3 && ncols(matrix_value) == 3 ||
+        throw(ArgumentError("$(source_label) local-form target must be a 3 x 3 special-form matrix"))
+    entries = _sl3_local_target_entries(matrix_value)
+    entries !== nothing ||
+        throw(ArgumentError("$(source_label) local-form target is not in SL_3 special form"))
+    det(matrix_value) == one(R) ||
+        throw(ArgumentError("$(source_label) local-form target must have determinant 1"))
+    monicity_witness = _sl3_local_monicity_witness(entries.p, selected_index, R)
+    monicity_witness.is_monic ||
+        throw(ArgumentError("$(source_label) local-form p is not monic in the selected variable"))
+    monicity_witness.variable == selected_variable ||
+        throw(ArgumentError("$(source_label) monicity witness variable does not match the selected variable"))
+    return entries, matrix_value, monicity_witness
+end
+
+function _sl3_local_witness_status_from_data(
+    R,
+    data,
+    selected_variable,
+    selected_index,
+    source_label,
+)
+    entries = _sl3_local_witness_entries_from_data(data)
+    matrix_value = _sl3_local_witness_extract_matrix(data)
+
+    entries === nothing && matrix_value === nothing &&
+        return nothing, nothing, nothing
+
+    checked_entries = nothing
+    checked_matrix = nothing
+    checked_monicity = nothing
+
+    if matrix_value !== nothing
+        checked_entries, checked_matrix, checked_monicity =
+            _sl3_local_witness_checked_entries(
+                R,
+                matrix_value,
+                selected_variable,
+                selected_index,
+                source_label,
+            )
+    end
+
+    if entries !== nothing
+        checked_entry_data = _sl3_local_witness_same_ring_entries(R, entries, source_label)
+        entry_matrix = _sl3_local_witness_matrix_from_entries(R, checked_entry_data)
+        entry_entries, entry_matrix, entry_monicity =
+            _sl3_local_witness_checked_entries(
+                R,
+                entry_matrix,
+                selected_variable,
+                selected_index,
+                source_label,
+            )
+        if checked_matrix !== nothing
+            checked_matrix == entry_matrix && checked_entries == entry_entries ||
+                throw(ArgumentError("$(source_label) local-form entries do not match the supplied local-form matrix"))
+        else
+            checked_entries = entry_entries
+            checked_matrix = entry_matrix
+            checked_monicity = entry_monicity
+        end
+    end
+
+    return checked_entries, checked_matrix, checked_monicity
+end
+
+function _sl3_local_witness_metadata_status(
+    context,
+    metadata,
+    selected_variable,
+    selected_index,
+    source_label,
+)
+    metadata === nothing && return :missing, nothing, nothing, nothing
+
+    source_matrix = _sl3_local_witness_source_matrix(metadata)
+    if source_matrix !== nothing && source_matrix != context.matrix
+        throw(ArgumentError("$(source_label) source matrix does not match the SL_3 context"))
+    end
+
+    selected_variable_hint = _sl3_realization_input_context_extract(
+        metadata,
+        (:selected_variable, :selected_generator, :generator, :variable),
+    )
+    if selected_variable_hint !== nothing
+        replay_selected, replay_index, replay_status =
+            _sl3_realization_input_context_selected_variable(context.base_ring, selected_variable_hint)
+        replay_status == :passes ||
+            throw(ArgumentError("$(source_label) selected variable is not valid for the SL_3 context"))
+        replay_selected == selected_variable && replay_index == selected_index ||
+            throw(ArgumentError("$(source_label) selected variable does not match the SL_3 context"))
+    end
+
+    entries, matrix_value, monicity_witness = _sl3_local_witness_status_from_data(
+        context.base_ring,
+        metadata,
+        selected_variable,
+        selected_index,
+        source_label,
+    )
+
+    has_replay_payload = _sl3_realization_input_context_has_replay_payload(metadata)
+    has_context_matrix = source_matrix !== nothing && source_matrix == context.matrix
+    if entries === nothing
+        return :recorded, nothing, nothing, nothing
+    end
+
+    if has_replay_payload && has_context_matrix
+        selected_variable_hint !== nothing ||
+            return :recorded, entries, matrix_value, monicity_witness
+        return :replayed, entries, matrix_value, monicity_witness
+    end
+
+    return :recorded, entries, matrix_value, monicity_witness
+end
+
+function _sl3_local_witness_replay_matches(
+    entries,
+    matrix_value,
+    monicity_witness,
+    reference_entries,
+    reference_matrix,
+    reference_monicity,
+)
+    return entries == reference_entries &&
+        matrix_value == reference_matrix &&
+        monicity_witness == reference_monicity
+end
+
+function _sl3_local_witness_require_replay_consistency(
+    status::Symbol,
+    entries,
+    matrix_value,
+    monicity_witness,
+    reference_entries,
+    reference_matrix,
+    reference_monicity,
+    source_label,
+)
+    status == :replayed || return nothing
+    _sl3_local_witness_replay_matches(
+        entries,
+        matrix_value,
+        monicity_witness,
+        reference_entries,
+        reference_matrix,
+        reference_monicity,
+    ) || throw(ArgumentError("$(source_label) replayed local-form witness conflicts with another replayed witness"))
+    return nothing
+end
+
+function _sl3_local_form_witness_selection_staged_diagnostic(
+    variable_change_status::Symbol,
+    normality_conjugation_status::Symbol,
+    support_status::Symbol,
+)
+    missing_evidence = [:local_form]
+    partial_evidence = Symbol[]
+
+    for (label, status) in (
+        (:variable_change, variable_change_status),
+        (:normality_conjugation, normality_conjugation_status),
+    )
+        if status == :recorded
+            push!(partial_evidence, label)
+        elseif status == :missing
+            push!(missing_evidence, label)
+        end
+    end
+
+    reason = support_status == :supported ?
+        "supported local-form witness selected" :
+        "missing supported local-form witness"
+    message = support_status == :supported ?
+        "SL_3 local-form witness is replayable" :
+        "SL_3 local-form witness is staged"
+
+    return (;
+        reason,
+        message,
+        missing_evidence = Tuple(missing_evidence),
+        partial_evidence = Tuple(partial_evidence),
+        status = support_status,
+    )
+end
+
+function _sl3_local_form_witness_selection_fields(
+    context::SL3RealizationInputContext;
+    selected_variable = nothing,
+    local_form_witness = nothing,
+    variable_change_metadata = nothing,
+    normality_conjugation_metadata = nothing,
+)
+    _verify_sl3_realization_input_context(context) ||
+        throw(ArgumentError("SL_3 local witness selection requires a verified realization input context"))
+
+    selected, selected_index, selected_name =
+        _sl3_local_witness_selected_variable(context, selected_variable)
+    local_form_data = _sl3_local_witness_hint_or_context(local_form_witness, context.local_form_witness)
+    variable_change_data =
+        _sl3_local_witness_hint_or_context(variable_change_metadata, context.variable_change_metadata)
+    normality_data = _sl3_local_witness_hint_or_context(
+        normality_conjugation_metadata,
+        context.normality_conjugation_metadata,
+    )
+
+    context_entries = _sl3_local_target_entries(context.matrix)
+    context_supported = false
+    context_monicity = nothing
+    if context_entries !== nothing
+        context_entries, context_matrix, context_monicity = _sl3_local_witness_checked_entries(
+            context.base_ring,
+            context.matrix,
+            selected,
+            selected_index,
+            "context matrix",
+        )
+        context_supported = true
+
+        witness_entries, witness_matrix, _ = _sl3_local_witness_status_from_data(
+            context.base_ring,
+            local_form_data,
+            selected,
+            selected_index,
+            "supplied local-form witness",
+        )
+        if witness_entries !== nothing
+            witness_entries == context_entries && witness_matrix == context_matrix ||
+                throw(ArgumentError("supplied local-form witness does not match the context special form"))
+        end
+    else
+        _sl3_local_witness_status_from_data(
+            context.base_ring,
+            local_form_data,
+            selected,
+            selected_index,
+            "supplied local-form witness",
+        )
+    end
+
+    variable_change_status, variable_entries, variable_matrix, variable_monicity =
+        _sl3_local_witness_metadata_status(
+            context,
+            variable_change_data,
+            selected,
+            selected_index,
+            "variable-change metadata",
+        )
+    normality_status, normality_entries, normality_matrix, normality_monicity =
+        _sl3_local_witness_metadata_status(
+            context,
+            normality_data,
+            selected,
+            selected_index,
+            "normality/conjugation metadata",
+        )
+
+    if context_supported
+        _sl3_local_witness_require_replay_consistency(
+            variable_change_status,
+            variable_entries,
+            variable_matrix,
+            variable_monicity,
+            context_entries,
+            context_matrix,
+            context_monicity,
+            "variable-change metadata",
+        )
+        _sl3_local_witness_require_replay_consistency(
+            normality_status,
+            normality_entries,
+            normality_matrix,
+            normality_monicity,
+            context_entries,
+            context_matrix,
+            context_monicity,
+            "normality/conjugation metadata",
+        )
+    elseif variable_change_status == :replayed && normality_status == :replayed
+        _sl3_local_witness_require_replay_consistency(
+            normality_status,
+            normality_entries,
+            normality_matrix,
+            normality_monicity,
+            variable_entries,
+            variable_matrix,
+            variable_monicity,
+            "normality/conjugation metadata",
+        )
+    end
+
+    replay_status = :missing
+    support_status = :staged
+    witness_source = :staged
+    entries = nothing
+    local_form_matrix = nothing
+    monicity_witness = (
+        variable = selected,
+        variable_index = selected_index,
+        degree = -1,
+        leading_coefficient = zero(context.base_ring),
+        is_monic = false,
+    )
+
+    if context_supported
+        replay_status = :replayed
+        support_status = :supported
+        witness_source = :already_special_form
+        entries = context_entries
+        local_form_matrix = context.matrix
+        monicity_witness = context_monicity
+    elseif variable_change_status == :replayed
+        replay_status = :replayed
+        support_status = :supported
+        witness_source = :variable_change
+        entries = variable_entries
+        local_form_matrix = variable_matrix
+        monicity_witness = variable_monicity
+    elseif normality_status == :replayed
+        replay_status = :replayed
+        support_status = :supported
+        witness_source = :normality_conjugation
+        entries = normality_entries
+        local_form_matrix = normality_matrix
+        monicity_witness = normality_monicity
+    end
+
+    staged_diagnostic = _sl3_local_form_witness_selection_staged_diagnostic(
+        variable_change_status,
+        normality_status,
+        support_status,
+    )
+
+    return (;
+        context,
+        selected_variable = selected,
+        selected_variable_index = selected_index,
+        selected_variable_name = selected_name,
+        entries,
+        local_form_matrix,
+        monicity_witness,
+        local_form_witness = local_form_data,
+        variable_change_metadata = variable_change_data,
+        variable_change_status,
+        normality_conjugation_metadata = normality_data,
+        normality_conjugation_status = normality_status,
+        replay_status,
+        support_status,
+        witness_source,
+        staged_diagnostic,
+    )
+end
+
+function _sl3_local_form_witness_selection_core_verification(selection)
+    recomputed = _sl3_local_form_witness_selection_fields(
+        selection.context;
+        selected_variable = selection.selected_variable,
+        local_form_witness = selection.local_form_witness,
+        variable_change_metadata = selection.variable_change_metadata,
+        normality_conjugation_metadata = selection.normality_conjugation_metadata,
+    )
+
+    context_ok = selection.context == recomputed.context
+    selected_variable_ok = selection.selected_variable == recomputed.selected_variable
+    selected_variable_index_ok =
+        selection.selected_variable_index == recomputed.selected_variable_index
+    selected_variable_name_ok =
+        selection.selected_variable_name == recomputed.selected_variable_name
+    entries_ok = selection.entries == recomputed.entries
+    local_form_matrix_ok = selection.local_form_matrix == recomputed.local_form_matrix
+    monicity_witness_ok = selection.monicity_witness == recomputed.monicity_witness
+    local_form_witness_ok = selection.local_form_witness == recomputed.local_form_witness
+    variable_change_metadata_ok =
+        selection.variable_change_metadata == recomputed.variable_change_metadata
+    variable_change_status_ok =
+        selection.variable_change_status == recomputed.variable_change_status
+    normality_conjugation_metadata_ok =
+        selection.normality_conjugation_metadata == recomputed.normality_conjugation_metadata
+    normality_conjugation_status_ok =
+        selection.normality_conjugation_status == recomputed.normality_conjugation_status
+    replay_status_ok = selection.replay_status == recomputed.replay_status
+    support_status_ok = selection.support_status == recomputed.support_status
+    witness_source_ok = selection.witness_source == recomputed.witness_source
+    staged_diagnostic_ok = selection.staged_diagnostic == recomputed.staged_diagnostic
+
+    overall_core_ok =
+        context_ok &&
+        selected_variable_ok &&
+        selected_variable_index_ok &&
+        selected_variable_name_ok &&
+        entries_ok &&
+        local_form_matrix_ok &&
+        monicity_witness_ok &&
+        local_form_witness_ok &&
+        variable_change_metadata_ok &&
+        variable_change_status_ok &&
+        normality_conjugation_metadata_ok &&
+        normality_conjugation_status_ok &&
+        replay_status_ok &&
+        support_status_ok &&
+        witness_source_ok &&
+        staged_diagnostic_ok
+
+    return (;
+        context_ok,
+        selected_variable_ok,
+        selected_variable_index_ok,
+        selected_variable_name_ok,
+        entries_ok,
+        local_form_matrix_ok,
+        monicity_witness_ok,
+        local_form_witness_ok,
+        variable_change_metadata_ok,
+        variable_change_status_ok,
+        normality_conjugation_metadata_ok,
+        normality_conjugation_status_ok,
+        replay_status_ok,
+        support_status_ok,
+        witness_source_ok,
+        staged_diagnostic_ok,
+        overall_core_ok,
+    )
+end
+
+function _sl3_local_form_witness_selection_verification(selection)
+    core = _sl3_local_form_witness_selection_core_verification(selection)
+    stored_verification_ok = selection.verification == core
+    return merge(core, (; stored_verification_ok, overall_ok = core.overall_core_ok && stored_verification_ok))
+end
+
+function _select_sl3_local_form_witness(
+    context::SL3RealizationInputContext;
+    selected_variable = nothing,
+    local_form_witness = nothing,
+    variable_change_metadata = nothing,
+    normality_conjugation_metadata = nothing,
+)
+    fields = _sl3_local_form_witness_selection_fields(
+        context;
+        selected_variable,
+        local_form_witness,
+        variable_change_metadata,
+        normality_conjugation_metadata,
+    )
+    unchecked = SL3LocalFormWitnessSelection(values(merge(fields, (; verification = nothing,)))...)
+    verification = _sl3_local_form_witness_selection_core_verification(unchecked)
+    checked = SL3LocalFormWitnessSelection(values(merge(fields, (; verification,)))...)
+    _verify_sl3_local_form_witness_selection(checked) ||
+        error("internal SL_3 local witness selection verification failed")
+    return checked
+end
+
+function _verify_sl3_local_form_witness_selection(selection)::Bool
+    try
+        return _sl3_local_form_witness_selection_verification(selection).overall_ok
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
 end
 
 function _supported_local_sl3_generator(A, R, ring_profile::Symbol)
