@@ -3558,6 +3558,524 @@ function assemble_quillen_patch_from_local_evidence(
     )
 end
 
+struct QuillenMurthyAdapterConsumptionVerification
+    adapters_ok::Bool
+    context_ok::Bool
+    local_sequences_ok::Bool
+    patch_ok::Bool
+    patch_alignment_ok::Bool
+    replay_metadata
+    replay_metadata_ok::Bool
+    overall_ok::Bool
+end
+
+struct QuillenMurthyAdapterConsumption
+    original_input
+    ring
+    size::Int
+    selected_variable
+    murthy_adapters::Vector{MurthyQuillenLocalAdapter}
+    local_sequence_certificates::Vector{QuillenLocalFactorSequenceCertificate}
+    patch::QuillenSuppliedEvidencePatchAssembly
+    replay_metadata
+    verification::QuillenMurthyAdapterConsumptionVerification
+end
+
+function _same_quillen_murthy_adapter_consumption_verification(
+    left::QuillenMurthyAdapterConsumptionVerification,
+    right::QuillenMurthyAdapterConsumptionVerification,
+)::Bool
+    return left.adapters_ok == right.adapters_ok &&
+           left.context_ok == right.context_ok &&
+           left.local_sequences_ok == right.local_sequences_ok &&
+           left.patch_ok == right.patch_ok &&
+           left.patch_alignment_ok == right.patch_alignment_ok &&
+           left.replay_metadata == right.replay_metadata &&
+           left.replay_metadata_ok == right.replay_metadata_ok &&
+           left.overall_ok == right.overall_ok
+end
+
+function _quillen_murthy_adapter_vector(adapters)
+    collected = collect(adapters)
+    isempty(collected) &&
+        throw(ArgumentError("Murthy adapter consumption requires at least one adapter"))
+    normalized = MurthyQuillenLocalAdapter[]
+    for adapter in collected
+        adapter isa MurthyQuillenLocalAdapter ||
+            throw(ArgumentError("Murthy adapter consumption requires MurthyQuillenLocalAdapter records"))
+        push!(normalized, adapter)
+    end
+    return normalized
+end
+
+function _same_sl3_local_factor_replay(
+    left::SL3LocalElementaryFactorReplay,
+    right::SL3LocalElementaryFactorReplay,
+)::Bool
+    return left.target == right.target &&
+           left.factors == right.factors &&
+           left.selected_variable == right.selected_variable &&
+           left.mode == right.mode &&
+           left.denominator_product == right.denominator_product &&
+           left.cleared_product == right.cleared_product &&
+           left.materialized_factors == right.materialized_factors
+end
+
+function _quillen_murthy_adapter_patch_metadata(adapters, local_sequences, metadata)
+    return (;
+        source = :quillen_murthy_adapter_consumption,
+        adapter_count = length(adapters),
+        murthy_adapter_metadata = [adapter.replay_metadata for adapter in adapters],
+        local_sequence_metadata = [
+            certificate.replay_metadata for certificate in local_sequences
+        ],
+        metadata = metadata,
+    )
+end
+
+function _quillen_murthy_adapter_consumption_metadata(
+    A,
+    selected_variable,
+    adapters,
+    local_sequences,
+    patch::QuillenSuppliedEvidencePatchAssembly,
+    metadata,
+)
+    return (;
+        source = :quillen_murthy_adapter_consumption,
+        adapter_count = length(adapters),
+        selected_variable = selected_variable,
+        original_input = A,
+        murthy_adapter_metadata = [adapter.replay_metadata for adapter in adapters],
+        local_sequence_metadata = [
+            certificate.replay_metadata for certificate in local_sequences
+        ],
+        patch_metadata = patch.replay_metadata,
+        metadata = metadata,
+    )
+end
+
+function _quillen_murthy_adapter_context_check(
+    adapter::MurthyQuillenLocalAdapter,
+    A,
+    R,
+    n::Int,
+    selected_variable,
+)
+    _verify_murthy_quillen_local_adapter(adapter) ||
+        throw(ArgumentError("Murthy adapter consumption requires verified Murthy Quillen adapters"))
+    adapter.ring == R ||
+        throw(ArgumentError("Murthy adapter consumption adapter ring does not match the input"))
+    adapter.size == n ||
+        throw(ArgumentError("Murthy adapter consumption adapter size does not match the input"))
+    adapter.original_input == A ||
+        throw(ArgumentError("Murthy adapter consumption adapter original input does not match the input"))
+    adapter.selected_variable == selected_variable ||
+        throw(ArgumentError("Murthy adapter consumption selected variable mismatch"))
+    adapter.murthy_certificate.target == A ||
+        throw(ArgumentError("Murthy adapter consumption Murthy target does not match the input"))
+    adapter.murthy_certificate.selected_variable == selected_variable ||
+        throw(ArgumentError("Murthy adapter consumption Murthy selected variable mismatch"))
+
+    replay = adapter.local_factor_replay
+    verify_sl3_local_elementary_factor_replay(replay) ||
+        throw(ArgumentError("Murthy adapter consumption local factor replay does not verify"))
+    expected_replay = _murthy_quillen_local_replay(adapter.murthy_certificate)
+    _same_sl3_local_factor_replay(replay, expected_replay) ||
+        throw(ArgumentError("Murthy adapter consumption local factor replay does not match the Murthy certificate"))
+    replay.target == A ||
+        throw(ArgumentError("Murthy adapter consumption local factor replay target mismatch"))
+    replay.selected_variable == selected_variable ||
+        throw(ArgumentError("Murthy adapter consumption local factor replay selected variable mismatch"))
+    replay.denominator_product == prod(
+        (factor.denominator for factor in replay.factors);
+        init = one(R),
+    ) ||
+        throw(ArgumentError("Murthy adapter consumption denominator product mismatch"))
+    adapter.materialized_factors == replay.materialized_factors ||
+        throw(ArgumentError("Murthy adapter consumption materialized factor mismatch"))
+    expected_metadata = _murthy_quillen_local_replay_metadata(
+        adapter.murthy_certificate,
+        replay,
+        adapter.mode,
+        adapter.witness_metadata,
+    )
+    adapter.replay_metadata == expected_metadata ||
+        throw(ArgumentError("Murthy adapter consumption replay metadata mismatch"))
+    return true
+end
+
+function _quillen_murthy_sequence_has_denominator_provenance(
+    certificate::QuillenLocalFactorSequenceCertificate,
+)::Bool
+    expected_denominator_data = _quillen_denominator_data(
+        certificate.normalized_local_contributions,
+    )
+    return certificate.raw_denominators == [
+               factor.denominator for factor in certificate.factors
+           ] &&
+           certificate.product_denominator ==
+               prod(certificate.raw_denominators; init = one(certificate.ring)) &&
+           _same_quillen_denominator_data(
+               certificate.verification.denominator_data,
+               expected_denominator_data,
+           ) &&
+           hasproperty(certificate.replay_metadata, :denominator_data) &&
+           _same_quillen_denominator_data(
+               certificate.replay_metadata.denominator_data,
+               expected_denominator_data,
+           ) &&
+           hasproperty(certificate.replay_metadata, :factor_provenance)
+end
+
+function _quillen_murthy_factor_provenance_ok(
+    certificate::QuillenLocalFactorSequenceCertificate,
+)::Bool
+    return all(certificate.factors) do factor
+        present, source = _quillen_local_sequence_provenance_field(
+            factor.provenance,
+            :source,
+        )
+        present && source == :murthy_local_sl3
+    end
+end
+
+function _same_quillen_local_factor_sequence_certificate_data(
+    left::QuillenLocalFactorSequenceCertificate,
+    right::QuillenLocalFactorSequenceCertificate,
+)::Bool
+    return left.original_input == right.original_input &&
+           left.ring == right.ring &&
+           left.size == right.size &&
+           left.selected_variable == right.selected_variable &&
+           _same_quillen_local_elementary_factors(left.factors, right.factors) &&
+           left.raw_denominators == right.raw_denominators &&
+           left.product_denominator == right.product_denominator &&
+           left.local_product == right.local_product &&
+           left.local_correction == right.local_correction &&
+           _same_quillen_local_contributions(
+               left.normalized_local_contributions,
+               right.normalized_local_contributions,
+           ) &&
+           _same_quillen_factors(
+           left.normalized_global_elementary_factors,
+               right.normalized_global_elementary_factors,
+           ) &&
+           left.patched_substitution_witness == right.patched_substitution_witness &&
+           left.chain_witness == right.chain_witness &&
+           left.witness_metadata == right.witness_metadata
+end
+
+function _same_quillen_local_factor_sequence_certificates(left, right)::Bool
+    length(left) == length(right) || return false
+    for idx in eachindex(left)
+        _same_quillen_local_factor_sequence_certificate_data(
+            left[idx],
+            right[idx],
+        ) || return false
+    end
+    return true
+end
+
+function _quillen_murthy_rebuilt_local_factor_sequence(
+    adapter::MurthyQuillenLocalAdapter,
+)
+    return _murthy_quillen_local_factor_sequence(
+        adapter.original_input,
+        adapter.selected_variable,
+        adapter.local_factor_replay,
+        adapter.witness_metadata,
+        (; source = :murthy_quillen_local_adapter),
+    )
+end
+
+function _quillen_murthy_adapter_sequences(A, R, n::Int, selected_variable, adapters)
+    sequences = QuillenLocalFactorSequenceCertificate[]
+    for adapter in adapters
+        _quillen_murthy_adapter_context_check(adapter, A, R, n, selected_variable)
+        cached_sequence = _murthy_quillen_local_factor_sequence_certificate(adapter)
+        expected_sequence = _quillen_murthy_rebuilt_local_factor_sequence(adapter)
+        _same_quillen_local_factor_sequence_certificate_data(
+            cached_sequence,
+            expected_sequence,
+        ) ||
+            throw(ArgumentError("Murthy adapter consumption cached local sequence does not match the Murthy replay"))
+        sequence = expected_sequence
+        verify_quillen_local_factor_sequence_certificate(sequence) ||
+            throw(ArgumentError("Murthy adapter consumption converted local sequence does not replay"))
+        sequence.original_input == A ||
+            throw(ArgumentError("Murthy adapter consumption converted sequence original input mismatch"))
+        sequence.ring == R && sequence.size == n ||
+            throw(ArgumentError("Murthy adapter consumption converted sequence context mismatch"))
+        sequence.selected_variable == selected_variable ||
+            throw(ArgumentError("Murthy adapter consumption converted sequence selected variable mismatch"))
+        sequence.local_product == adapter.local_product &&
+            sequence.local_correction == adapter.local_correction ||
+            throw(ArgumentError("Murthy adapter consumption converted sequence product mismatch"))
+        _quillen_murthy_sequence_has_denominator_provenance(sequence) ||
+            throw(ArgumentError("Murthy adapter consumption converted sequence lacks denominator provenance"))
+        _quillen_murthy_factor_provenance_ok(sequence) ||
+            throw(ArgumentError("Murthy adapter consumption converted sequence lacks Murthy factor provenance"))
+        push!(sequences, sequence)
+    end
+    return sequences
+end
+
+function quillen_local_sequences_from_murthy_adapters(A, selected_variable, adapters)
+    R = _require_quillen_denominator_cover_ring(base_ring(A))
+    n = _require_square_matrix(A, "Murthy adapter consumption original input")
+    n == 3 || throw(ArgumentError("Murthy adapter consumption requires a 3x3 input"))
+    selected = _require_substitution_generator(R, selected_variable)
+    collected = _quillen_murthy_adapter_vector(adapters)
+    return _quillen_murthy_adapter_sequences(A, R, n, selected, collected)
+end
+
+function assemble_quillen_patch_from_murthy_adapters(
+    A,
+    selected_variable,
+    adapters;
+    max_exponent::Integer = 4,
+    exponent = nothing,
+    coverage_multipliers = nothing,
+    supplied_multipliers = nothing,
+    substitution_chain = nothing,
+    base_term_policy = nothing,
+    base_term_factors = nothing,
+    metadata = (;),
+)
+    R = _require_quillen_denominator_cover_ring(base_ring(A))
+    n = _require_square_matrix(A, "Murthy adapter consumption original input")
+    n == 3 || throw(ArgumentError("Murthy adapter consumption requires a 3x3 input"))
+    selected = _require_substitution_generator(R, selected_variable)
+    collected = _quillen_murthy_adapter_vector(adapters)
+    sequences = _quillen_murthy_adapter_sequences(A, R, n, selected, collected)
+    patch_metadata = _quillen_murthy_adapter_patch_metadata(
+        collected,
+        sequences,
+        metadata,
+    )
+    return assemble_quillen_patch_from_local_evidence(
+        A,
+        selected,
+        sequences;
+        max_exponent,
+        exponent,
+        coverage_multipliers,
+        supplied_multipliers,
+        substitution_chain,
+        base_term_policy,
+        base_term_factors,
+        metadata = patch_metadata,
+    )
+end
+
+function _quillen_murthy_consumption_verification(
+    A,
+    R,
+    n::Int,
+    selected_variable,
+    adapters,
+    local_sequences,
+    patch::QuillenSuppliedEvidencePatchAssembly,
+    replay_metadata,
+)
+    adapters_ok = false
+    context_ok = false
+    local_sequences_ok = false
+    expected_sequences = QuillenLocalFactorSequenceCertificate[]
+    try
+        adapters_ok = all(adapter -> _verify_murthy_quillen_local_adapter(adapter), adapters)
+        context_ok = adapters_ok && all(adapters) do adapter
+            adapter.ring == R &&
+                adapter.size == n &&
+                adapter.original_input == A &&
+                adapter.selected_variable == selected_variable
+        end
+        expected_sequences = context_ok ?
+            _quillen_murthy_adapter_sequences(A, R, n, selected_variable, adapters) :
+            QuillenLocalFactorSequenceCertificate[]
+        local_sequences_ok =
+            context_ok &&
+            _same_quillen_local_factor_sequence_certificates(
+                local_sequences,
+                expected_sequences,
+            ) &&
+            all(verify_quillen_local_factor_sequence_certificate, local_sequences)
+    catch err
+        err isa InterruptException && rethrow()
+        local_sequences_ok = false
+    end
+    patch_ok = verify_quillen_patch(patch)
+    metadata = hasproperty(replay_metadata, :metadata) ?
+        replay_metadata.metadata :
+        nothing
+    expected_patch_metadata = _quillen_murthy_adapter_patch_metadata(
+        adapters,
+        local_sequences,
+        metadata,
+    )
+    patch_metadata_ok =
+        patch_ok &&
+        hasproperty(patch.replay_metadata, :metadata) &&
+        patch.replay_metadata.metadata == expected_patch_metadata
+    patch_alignment_ok =
+        patch_ok &&
+        local_sequences_ok &&
+        patch.original_input == A &&
+        patch.ring == R &&
+        patch.size == n &&
+        patch.substitution_variable == selected_variable &&
+        _same_quillen_local_factor_sequence_certificates(
+            patch.local_certificates,
+            local_sequences,
+        ) &&
+        patch_metadata_ok
+    expected_metadata = _quillen_murthy_adapter_consumption_metadata(
+        A,
+        selected_variable,
+        adapters,
+        local_sequences,
+        patch,
+        metadata,
+    )
+    replay_metadata_ok = replay_metadata == expected_metadata
+    overall_ok =
+        adapters_ok &&
+        context_ok &&
+        local_sequences_ok &&
+        patch_ok &&
+        patch_alignment_ok &&
+        replay_metadata_ok
+    return QuillenMurthyAdapterConsumptionVerification(
+        adapters_ok,
+        context_ok,
+        local_sequences_ok,
+        patch_ok,
+        patch_alignment_ok,
+        expected_metadata,
+        replay_metadata_ok,
+        overall_ok,
+    )
+end
+
+function replay_quillen_murthy_adapter_consumption(
+    consumption::QuillenMurthyAdapterConsumption,
+)
+    R = _require_quillen_denominator_cover_ring(consumption.ring)
+    _quillen_local_require_factor_matrix(
+        consumption.original_input,
+        R,
+        consumption.size,
+        "Murthy adapter consumption original input",
+    )
+    selected = _require_substitution_generator(R, consumption.selected_variable)
+    return _quillen_murthy_consumption_verification(
+        consumption.original_input,
+        R,
+        consumption.size,
+        selected,
+        consumption.murthy_adapters,
+        consumption.local_sequence_certificates,
+        consumption.patch,
+        consumption.replay_metadata,
+    )
+end
+
+function verify_quillen_murthy_adapter_consumption(consumption)::Bool
+    try
+        replay = replay_quillen_murthy_adapter_consumption(consumption)
+        return replay.overall_ok &&
+               _same_quillen_murthy_adapter_consumption_verification(
+                   consumption.verification,
+                   replay,
+               )
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function consume_murthy_quillen_adapters_for_patch(
+    A,
+    selected_variable,
+    adapters;
+    max_exponent::Integer = 4,
+    exponent = nothing,
+    coverage_multipliers = nothing,
+    supplied_multipliers = nothing,
+    substitution_chain = nothing,
+    base_term_policy = nothing,
+    base_term_factors = nothing,
+    metadata = (;),
+)
+    R = _require_quillen_denominator_cover_ring(base_ring(A))
+    n = _require_square_matrix(A, "Murthy adapter consumption original input")
+    n == 3 || throw(ArgumentError("Murthy adapter consumption requires a 3x3 input"))
+    selected = _require_substitution_generator(R, selected_variable)
+    collected = _quillen_murthy_adapter_vector(adapters)
+    sequences = _quillen_murthy_adapter_sequences(A, R, n, selected, collected)
+    patch = assemble_quillen_patch_from_local_evidence(
+        A,
+        selected,
+        sequences;
+        max_exponent,
+        exponent,
+        coverage_multipliers,
+        supplied_multipliers,
+        substitution_chain,
+        base_term_policy,
+        base_term_factors,
+        metadata = _quillen_murthy_adapter_patch_metadata(
+            collected,
+            sequences,
+            metadata,
+        ),
+    )
+    replay_metadata = _quillen_murthy_adapter_consumption_metadata(
+        A,
+        selected,
+        collected,
+        sequences,
+        patch,
+        metadata,
+    )
+    placeholder = QuillenMurthyAdapterConsumptionVerification(
+        false,
+        false,
+        false,
+        false,
+        false,
+        replay_metadata,
+        false,
+        false,
+    )
+    provisional = QuillenMurthyAdapterConsumption(
+        A,
+        R,
+        n,
+        selected,
+        collected,
+        sequences,
+        patch,
+        replay_metadata,
+        placeholder,
+    )
+    verification = replay_quillen_murthy_adapter_consumption(provisional)
+    verification.overall_ok ||
+        throw(ArgumentError("Murthy adapter consumption data does not replay"))
+    return QuillenMurthyAdapterConsumption(
+        provisional.original_input,
+        provisional.ring,
+        provisional.size,
+        provisional.selected_variable,
+        provisional.murthy_adapters,
+        provisional.local_sequence_certificates,
+        provisional.patch,
+        provisional.replay_metadata,
+        verification,
+    )
+end
+
 struct QuillenGlobalPatchAssemblyVerification
     cover_certificate_ok::Bool
     local_certificates_ok::Bool

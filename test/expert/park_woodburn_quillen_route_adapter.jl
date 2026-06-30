@@ -305,6 +305,25 @@ end
     @test ordinary_sequence.local_correction == ordinary_fixture.target
     @test ordinary_sequence.witness_metadata.fixture_id == ordinary_fixture.id
     @test ordinary_sequence.verification.local_product == ordinary_fixture.target
+    consumed_sequence = only(Suslin.quillen_local_sequences_from_murthy_adapters(
+        ordinary_fixture.target,
+        ordinary_fixture.variable,
+        [ordinary_adapter],
+    ))
+    @test Suslin.verify_quillen_local_factor_sequence_certificate(consumed_sequence)
+    @test Suslin._same_quillen_local_elementary_factors(
+        consumed_sequence.factors,
+        ordinary_sequence.factors,
+    )
+    @test consumed_sequence.local_product == ordinary_sequence.local_product
+    @test consumed_sequence.replay_metadata.factor_count ==
+          ordinary_sequence.replay_metadata.factor_count
+    @test consumed_sequence.replay_metadata.raw_denominators ==
+          ordinary_sequence.replay_metadata.raw_denominators
+    @test consumed_sequence.replay_metadata.factor_provenance ==
+          ordinary_sequence.replay_metadata.factor_provenance
+    @test consumed_sequence.replay_metadata.witness_metadata ==
+          ordinary_sequence.replay_metadata.witness_metadata
 
     @test !Suslin._verify_murthy_quillen_local_adapter((; not_an_adapter = true))
 
