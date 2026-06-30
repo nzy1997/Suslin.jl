@@ -101,6 +101,37 @@ function _sl3_realization_input_context_extract(data, fields::Tuple)
     return nothing
 end
 
+function _sl3_realization_input_context_nonempty_identifier(value)::Bool
+    value === nothing && return false
+    value isa AbstractString && return !isempty(value)
+    return true
+end
+
+function _sl3_realization_input_context_has_replay_payload(metadata)::Bool
+    payload = _sl3_realization_input_context_extract(
+        metadata,
+        (
+            :replay_steps,
+            :replay_metadata,
+            :replay_certificate,
+            :replay_payload,
+            :certificate,
+            :verification,
+            :patch,
+            :variable_change_certificate,
+            :normality_certificate,
+            :conjugation_certificate,
+            :quillen_patch,
+            :murthy_certificate,
+        ),
+    )
+    payload === nothing && return false
+    if payload isa Tuple || payload isa AbstractArray || payload isa Set
+        return !isempty(payload)
+    end
+    return true
+end
+
 function _sl3_realization_input_context_selected_variable(R, selected_variable)
     selected_variable === nothing && return nothing, nothing, :missing
 
@@ -173,10 +204,12 @@ function _sl3_realization_input_context_metadata_status(metadata, A)
         metadata,
         (:target_matrix, :expected_matrix, :matrix),
     )
+    has_replay_payload = _sl3_realization_input_context_has_replay_payload(metadata)
+    has_replay_id = _sl3_realization_input_context_nonempty_identifier(replay_id)
 
-    if replay_id !== nothing && target_matrix !== nothing && target_matrix == A
+    if has_replay_id && target_matrix !== nothing && target_matrix == A && has_replay_payload
         return :replayed
-    elseif replay_id !== nothing
+    elseif has_replay_id || target_matrix !== nothing || has_replay_payload
         return :recorded
     end
 

@@ -101,6 +101,75 @@ end
     @test staged_context.evidence_status == :missing
     @test Suslin._verify_sl3_realization_input_context(staged_context)
 
+    fake_quillen_context = Suslin._sl3_realization_input_context(
+        staged_entry.matrix;
+        selected_variable = staged_entry.selected_variable,
+        catalog_metadata = merge(_catalog_metadata(staged_entry), (; expected_status = :staged,)),
+        quillen_murthy_metadata = (; fixture_id = :fake, matrix = staged_entry.matrix),
+    )
+    @test fake_quillen_context.support_status == :staged
+    @test fake_quillen_context.evidence_status == :partial
+    @test fake_quillen_context.quillen_murthy_status == :recorded
+    @test Suslin._verify_sl3_realization_input_context(fake_quillen_context)
+
+    variable_change_context = Suslin._sl3_realization_input_context(
+        staged_entry.matrix;
+        selected_variable = staged_entry.selected_variable,
+        catalog_metadata = (; fixture_id = "synthetic-variable-change-replay"),
+        variable_change_metadata = (;
+            replay_id = "variable-change-replay",
+            target_matrix = staged_entry.matrix,
+            replay_steps = ((; kind = :supplied_variable_change_replay),),
+        ),
+    )
+    @test variable_change_context.support_status == :supported
+    @test variable_change_context.evidence_status == :replayable
+    @test variable_change_context.variable_change_status == :replayed
+    @test Suslin._verify_sl3_realization_input_context(variable_change_context)
+
+    variable_change_recorded_context = Suslin._sl3_realization_input_context(
+        staged_entry.matrix;
+        selected_variable = staged_entry.selected_variable,
+        catalog_metadata = _catalog_metadata(staged_entry),
+        variable_change_metadata = (;
+            replay_id = "variable-change-recorded",
+            target_matrix = staged_entry.matrix,
+        ),
+    )
+    @test variable_change_recorded_context.support_status == :staged
+    @test variable_change_recorded_context.evidence_status == :partial
+    @test variable_change_recorded_context.variable_change_status == :recorded
+    @test Suslin._verify_sl3_realization_input_context(variable_change_recorded_context)
+
+    normality_context = Suslin._sl3_realization_input_context(
+        staged_entry.matrix;
+        selected_variable = staged_entry.selected_variable,
+        catalog_metadata = (; fixture_id = "synthetic-normality-replay"),
+        normality_conjugation_metadata = (;
+            replay_id = "normality-conjugation-replay",
+            target_matrix = staged_entry.matrix,
+            replay_steps = ((; kind = :supplied_normality_conjugation_replay),),
+        ),
+    )
+    @test normality_context.support_status == :supported
+    @test normality_context.evidence_status == :replayable
+    @test normality_context.normality_conjugation_status == :replayed
+    @test Suslin._verify_sl3_realization_input_context(normality_context)
+
+    normality_recorded_context = Suslin._sl3_realization_input_context(
+        staged_entry.matrix;
+        selected_variable = staged_entry.selected_variable,
+        catalog_metadata = _catalog_metadata(staged_entry),
+        normality_conjugation_metadata = (;
+            replay_id = "normality-conjugation-recorded",
+            target_matrix = staged_entry.matrix,
+        ),
+    )
+    @test normality_recorded_context.support_status == :staged
+    @test normality_recorded_context.evidence_status == :partial
+    @test normality_recorded_context.normality_conjugation_status == :recorded
+    @test Suslin._verify_sl3_realization_input_context(normality_recorded_context)
+
     @test_throws ArgumentError Suslin._sl3_realization_input_context(
         negative["sl3-driver-negative-det-not-one"].matrix;
         selected_variable =
