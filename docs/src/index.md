@@ -33,8 +33,7 @@ verify_factorization(A, factors)
   sequence replay, substitution-chain replay, and trivial or supplied
   elementary `A(0)` base-term handling. Supplied and Murthy-adapter local
   evidence can also be adapted explicitly through the internal Quillen patch
-  route. Determinant-one Laurent inputs are supported through the existing
-  Laurent `SL` path.
+  route. This #183 gate does not broaden Laurent or ToricBuilder acceptance.
 - `verify_factorization(A, factors)` checks exact multiplication against `A`.
 - `laurent_gl_factorization_certificate(A)` defaults to the eager Laurent
   normalization/core certificate. With `determinant_strategy = :lazy`, it
