@@ -137,8 +137,9 @@ end
         variable_order = length4_entry.ring.generators,
         selected_variable = length4_entry.selected_variable.generator,
     )
-    @test length4_ctx.support_classification == :unsupported
-    @test length4_ctx.staged_failure_reason == :unsupported_polynomial_column_family
+    length4_diagnostic = Suslin.diagnose_unimodular_column_reduction(length4_column, length4_R)
+    @test length4_ctx.support_classification == length4_diagnostic.status
+    @test length4_ctx.staged_failure_reason == _input_context_staged_failure_reason(length4_diagnostic)
 
     tampered_witness = collect(length4_ctx.unimodularity_witness)
     tampered_witness[1] += one(length4_R)

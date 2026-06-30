@@ -7,6 +7,22 @@ struct ECPColumnReductionCertificate
     verification
 end
 
+struct ECPInputContext
+    column
+    ring
+    ring_profile
+    variables
+    variable_order
+    column_length::Int
+    unimodularity_witness
+    selected_variable_index
+    selected_variable
+    support_classification
+    staged_failure_reason
+    staged_diagnostic
+    verification
+end
+
 struct ECPMonicitySearchResult
     original_column
     ring
@@ -125,6 +141,124 @@ function diagnose_unimodular_column_reduction(v::AbstractVector, R)
         ring_profile,
         column_length,
     )
+end
+
+function ecp_input_context(
+    v::AbstractVector,
+    R;
+    variable_order = tuple(gens(R)...),
+    selected_variable = nothing,
+    unimodularity_witness = nothing,
+)
+    return ECPInputContext(
+        v,
+        R;
+        variable_order,
+        selected_variable,
+        unimodularity_witness,
+    )
+end
+
+function ECPInputContext(
+    v::AbstractVector,
+    R;
+    variable_order = tuple(gens(R)...),
+    selected_variable = nothing,
+    unimodularity_witness = nothing,
+)
+    _is_laurent_polynomial_ring(R) &&
+        throw(ArgumentError("ECP input contexts support ordinary polynomial columns only"))
+
+    column = _validated_unimodular_column(v, R)
+    ring_profile = _column_reduction_ring_profile(R)
+    variables = tuple(gens(R)...)
+    normalized_order = tuple(_ecp_normalize_variable_order(R, variable_order)...)
+    selected_variable_index, stored_selected_variable =
+        _ecp_input_context_selected_variable(R, normalized_order, selected_variable)
+    unimodularity_witness === nothing ||
+        _check_ecp_input_context_witness_hint(unimodularity_witness, column, R)
+    canonical_witness = _unimodular_witness(column, R)
+    staged_diagnostic = diagnose_unimodular_column_reduction(column, R)
+    support_classification = staged_diagnostic.status
+    staged_failure_reason = _ecp_input_context_staged_failure_reason(staged_diagnostic)
+
+    provisional = ECPInputContext(
+        column,
+        R,
+        ring_profile,
+        variables,
+        normalized_order,
+        length(column),
+        canonical_witness,
+        selected_variable_index,
+        stored_selected_variable,
+        support_classification,
+        staged_failure_reason,
+        staged_diagnostic,
+        nothing,
+    )
+    verification = _ecp_input_context_replay_summary(provisional)
+    verification.overall_ok ||
+        error("internal ECP input context verification failed")
+    context = ECPInputContext(
+        provisional.column,
+        provisional.ring,
+        provisional.ring_profile,
+        provisional.variables,
+        provisional.variable_order,
+        provisional.column_length,
+        provisional.unimodularity_witness,
+        provisional.selected_variable_index,
+        provisional.selected_variable,
+        provisional.support_classification,
+        provisional.staged_failure_reason,
+        provisional.staged_diagnostic,
+        verification,
+    )
+    verify_ecp_input_context(context) ||
+        error("internal ECP input context storage verification failed")
+    return context
+end
+
+function _ecp_input_context_selected_variable(R, variable_order, selected_variable)
+    selected_variable === nothing && return nothing, nothing
+
+    selected_variable_index = _ecp_selected_variable_index(R, selected_variable)
+    stored_selected_variable = gens(R)[selected_variable_index]
+    count(==(stored_selected_variable), variable_order) == 1 ||
+        throw(ArgumentError("selected_variable must appear in variable_order"))
+    return selected_variable_index, stored_selected_variable
+end
+
+function _check_ecp_input_context_witness_hint(witness, column::AbstractVector, R)
+    try
+        Base.require_one_based_indexing(witness)
+    catch err
+        err isa InterruptException && rethrow()
+        throw(ArgumentError("unimodularity_witness must use one-based indexing"))
+    end
+
+    length(witness) == length(column) ||
+        throw(ArgumentError("unimodularity_witness must have the same length as v"))
+    coerced = [
+        _coerce_into_ring(R, witness[idx], "unimodularity_witness[$idx]")
+        for idx in 1:length(column)
+    ]
+    _ecp_input_context_witness_total(coerced, column, R) == one(R) ||
+        throw(ArgumentError("unimodularity_witness must certify the input column"))
+    return coerced
+end
+
+function _ecp_input_context_witness_total(witness, column::AbstractVector, R)
+    total = zero(R)
+    for idx in 1:length(column)
+        total += witness[idx] * column[idx]
+    end
+    return total
+end
+
+function _ecp_input_context_staged_failure_reason(diagnostic)
+    return diagnostic.status == :unsupported ? diagnostic.failure_code : nothing
 end
 
 function _column_reduction_diagnostic(
@@ -1319,6 +1453,16 @@ function verify_ecp_staged_column_reduction(certificate)::Bool
     end
 end
 
+function verify_ecp_input_context(context)::Bool
+    try
+        replay = _ecp_input_context_replay_summary(context)
+        return replay.overall_ok && context.verification == replay
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
 function _ecp_verified_lower_reduction(lower_reduction, lower_column, R)
     if lower_reduction === nothing
         certificate = ecp_column_reduction_certificate(lower_column, R)
@@ -1482,6 +1626,221 @@ function _ecp_conjugated_normality_certificates_match(actual, expected)
         actual.factors == expected.factors &&
         actual.product == expected.product &&
         actual.verification == expected.verification
+end
+
+function _ecp_input_context_replay_summary(context)
+    R = context.ring
+    one_based_indexing_ok = try
+        Base.require_one_based_indexing(context.column)
+        true
+    catch err
+        err isa InterruptException && rethrow()
+        false
+    end
+    replayed_column_length = try
+        length(context.column)
+    catch err
+        err isa InterruptException && rethrow()
+        -1
+    end
+    ordinary_polynomial_ring_ok = try
+        !_is_laurent_polynomial_ring(R)
+    catch err
+        err isa InterruptException && rethrow()
+        false
+    end
+    replayed_ring_profile = _column_reduction_ring_profile(R)
+    ring_profile_ok = context.ring_profile == replayed_ring_profile
+    replayed_variables = try
+        tuple(gens(R)...)
+    catch err
+        err isa InterruptException && rethrow()
+        ()
+    end
+    variables_ok = context.variables == replayed_variables
+    replayed_variable_order = try
+        tuple(_ecp_normalize_variable_order(R, context.variable_order)...)
+    catch err
+        err isa InterruptException && rethrow()
+        ()
+    end
+    variable_order_ok = context.variable_order == replayed_variable_order
+    column_length_ok = context.column_length == replayed_column_length && replayed_column_length >= 3
+
+    replayed_column = try
+        one_based_indexing_ok && replayed_column_length >= 0 || throw(ArgumentError("invalid context column"))
+        [
+            _coerce_into_ring(R, context.column[idx], "context.column[$idx]")
+            for idx in 1:replayed_column_length
+        ]
+    catch err
+        err isa InterruptException && rethrow()
+        nothing
+    end
+    column_ok = replayed_column !== nothing && context.column == replayed_column
+    unimodular_ok = try
+        replayed_column !== nothing && is_unimodular_column(replayed_column, R)
+    catch err
+        err isa InterruptException && rethrow()
+        false
+    end
+
+    replayed_witness = try
+        unimodular_ok ? _unimodular_witness(replayed_column, R) : Any[]
+    catch err
+        err isa InterruptException && rethrow()
+        Any[]
+    end
+    witness_one_based_indexing_ok = try
+        Base.require_one_based_indexing(context.unimodularity_witness)
+        true
+    catch err
+        err isa InterruptException && rethrow()
+        false
+    end
+    witness_length_ok = try
+        witness_one_based_indexing_ok &&
+            length(context.unimodularity_witness) == replayed_column_length
+    catch err
+        err isa InterruptException && rethrow()
+        false
+    end
+    replayed_stored_witness = try
+        witness_length_ok || throw(ArgumentError("invalid context witness"))
+        [
+            _coerce_into_ring(
+                R,
+                context.unimodularity_witness[idx],
+                "context.unimodularity_witness[$idx]",
+            )
+            for idx in 1:replayed_column_length
+        ]
+    catch err
+        err isa InterruptException && rethrow()
+        nothing
+    end
+    witness_coercion_ok = replayed_stored_witness !== nothing
+    witness_identity_ok = try
+        witness_coercion_ok &&
+            replayed_column !== nothing &&
+            _ecp_input_context_witness_total(replayed_stored_witness, replayed_column, R) == one(R)
+    catch err
+        err isa InterruptException && rethrow()
+        false
+    end
+    canonical_witness_ok = context.unimodularity_witness == replayed_witness
+    unimodularity_witness_ok = witness_one_based_indexing_ok &&
+        witness_length_ok &&
+        witness_coercion_ok &&
+        witness_identity_ok &&
+        canonical_witness_ok
+
+    selected_variable_index_ok, replayed_selected_variable_index = try
+        if context.selected_variable_index === nothing
+            true, nothing
+        elseif context.selected_variable_index isa Integer
+            idx = Int(context.selected_variable_index)
+            1 <= idx <= length(replayed_variables), idx
+        else
+            false, nothing
+        end
+    catch err
+        err isa InterruptException && rethrow()
+        false, nothing
+    end
+    replayed_selected_variable = selected_variable_index_ok &&
+        replayed_selected_variable_index !== nothing ?
+        replayed_variables[replayed_selected_variable_index] :
+        nothing
+    selected_variable_generator_index = try
+        context.selected_variable === nothing ? nothing :
+            _ecp_selected_variable_index(R, context.selected_variable)
+    catch err
+        err isa InterruptException && rethrow()
+        nothing
+    end
+    selected_variable_order_ok = try
+        context.selected_variable === nothing ||
+            (variable_order_ok && count(==(context.selected_variable), context.variable_order) == 1)
+    catch err
+        err isa InterruptException && rethrow()
+        false
+    end
+    selected_variable_ok = if context.selected_variable_index === nothing ||
+            context.selected_variable === nothing
+        context.selected_variable_index === nothing && context.selected_variable === nothing
+    else
+        selected_variable_index_ok &&
+            context.selected_variable_index == replayed_selected_variable_index &&
+            selected_variable_generator_index == replayed_selected_variable_index &&
+            context.selected_variable == replayed_selected_variable &&
+            selected_variable_order_ok
+    end
+
+    replayed_staged_diagnostic = try
+        ordinary_polynomial_ring_ok && column_ok && unimodular_ok ?
+            diagnose_unimodular_column_reduction(replayed_column, R) :
+            nothing
+    catch err
+        err isa InterruptException && rethrow()
+        nothing
+    end
+    replayed_staged_failure_reason = replayed_staged_diagnostic === nothing ?
+        nothing :
+        _ecp_input_context_staged_failure_reason(replayed_staged_diagnostic)
+    support_classification_ok = replayed_staged_diagnostic !== nothing &&
+        context.support_classification == replayed_staged_diagnostic.status
+    staged_failure_reason_ok = replayed_staged_diagnostic !== nothing &&
+        context.staged_failure_reason == replayed_staged_failure_reason
+    staged_diagnostic_ok = replayed_staged_diagnostic !== nothing &&
+        context.staged_diagnostic == replayed_staged_diagnostic &&
+        support_classification_ok &&
+        staged_failure_reason_ok
+
+    overall_ok = ordinary_polynomial_ring_ok &&
+        one_based_indexing_ok &&
+        column_ok &&
+        ring_profile_ok &&
+        variables_ok &&
+        variable_order_ok &&
+        column_length_ok &&
+        unimodular_ok &&
+        unimodularity_witness_ok &&
+        selected_variable_ok &&
+        staged_diagnostic_ok
+    return (;
+        overall_ok,
+        ordinary_polynomial_ring_ok,
+        one_based_indexing_ok,
+        column_ok,
+        ring_profile_ok,
+        variables_ok,
+        variable_order_ok,
+        column_length_ok,
+        unimodular_ok,
+        witness_one_based_indexing_ok,
+        witness_length_ok,
+        witness_coercion_ok,
+        witness_identity_ok,
+        canonical_witness_ok,
+        unimodularity_witness_ok,
+        selected_variable_index_ok,
+        selected_variable_order_ok,
+        selected_variable_ok,
+        support_classification_ok,
+        staged_failure_reason_ok,
+        staged_diagnostic_ok,
+        replayed_column,
+        replayed_ring_profile,
+        replayed_variables,
+        replayed_variable_order,
+        replayed_column_length,
+        replayed_witness,
+        replayed_selected_variable_index,
+        replayed_selected_variable,
+        replayed_staged_failure_reason,
+        replayed_staged_diagnostic,
+    )
 end
 
 function _ecp_induction_normality_replay_summary(certificate)
