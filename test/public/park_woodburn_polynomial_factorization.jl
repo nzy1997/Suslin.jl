@@ -54,8 +54,29 @@ end
     @test quillen_cert.route == :quillen_patch
     @test quillen_factors == quillen_cert.factors
     @test quillen_cert.evidence isa Suslin.PolynomialQuillenPatchRouteAdapter
+    @test quillen_cert.evidence.quillen_patch isa Suslin.QuillenSuppliedEvidencePatchAssembly
     @test Suslin._verify_polynomial_quillen_patch_route_adapter(quillen_cert.evidence)
     @test Suslin._verify_polynomial_factorization_route_certificate(quillen_cert)
+
+    S = base_ring(quillen)
+    X, r, g = collect(gens(S))
+    nonfixture_quillen = elementary_matrix(
+        3,
+        1,
+        3,
+        X * r + g + one(S),
+        S,
+    )
+    nonfixture_factors, nonfixture_err = _pw_acceptance_result_or_error(nonfixture_quillen)
+    @test nonfixture_err === nothing
+    @test nonfixture_factors !== nothing
+    @test verify_factorization(nonfixture_quillen, nonfixture_factors)
+    nonfixture_cert = Suslin._polynomial_factorization_route_certificate(nonfixture_quillen)
+    @test nonfixture_cert.route == :quillen_patch
+    @test nonfixture_factors == nonfixture_cert.factors
+    @test nonfixture_cert.evidence isa Suslin.PolynomialQuillenPatchRouteAdapter
+    @test nonfixture_cert.evidence.quillen_patch isa Suslin.QuillenSuppliedEvidencePatchAssembly
+    @test Suslin._verify_polynomial_factorization_route_certificate(nonfixture_cert)
 
     negative_entries = Dict(entry.id => entry for entry in catalog.negative_controls)
     det_factors, det_err =

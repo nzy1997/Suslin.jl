@@ -94,6 +94,33 @@ end
     @test multivariate_err isa ArgumentError
     @test occursin("missing Quillen/local realizability witness", sprint(showerror, multivariate_err))
 
+    ZR, (ZX, Zr) = Oscar.polynomial_ring(ZZ, ["X", "r"])
+    unsupported_coefficient_quillen =
+        elementary_matrix(3, 1, 2, ZX * Zr + one(ZR), ZR)
+    unsupported_coefficient_err =
+        _captured_error(() -> elementary_factorization(unsupported_coefficient_quillen))
+    @test unsupported_coefficient_err isa ArgumentError
+    @test occursin("exact field-backed", sprint(showerror, unsupported_coefficient_err))
+    @test occursin("coefficient-ring support", sprint(showerror, unsupported_coefficient_err))
+    @test !Suslin._polynomial_exact_field_backed_ring(ZZ)
+    unsupported_coefficient_direct_err = _captured_error(() ->
+        Suslin._throw_staged_factorization_failure(
+            unsupported_coefficient_quillen,
+            :polynomial,
+            nothing,
+        )
+    )
+    @test unsupported_coefficient_direct_err isa ArgumentError
+    @test occursin("exact field-backed", sprint(showerror, unsupported_coefficient_direct_err))
+    unsupported_coefficient_explicit_route_err = _captured_error(() ->
+        Suslin._polynomial_factorization_route_certificate(
+            unsupported_coefficient_quillen;
+            route = :quillen_patch,
+        )
+    )
+    @test unsupported_coefficient_explicit_route_err isa ArgumentError
+    @test occursin("exact field-backed", sprint(showerror, unsupported_coefficient_explicit_route_err))
+
     nonlocal_sl3 = matrix(R, [
         one(R)  zero(R) X;
         zero(R) one(R)  zero(R);
@@ -152,18 +179,32 @@ end
         @test quillen_cert.route == :quillen_patch
         @test quillen_factors == quillen_cert.factors
         @test quillen_cert.evidence isa Suslin.PolynomialQuillenPatchRouteAdapter
+        @test quillen_cert.evidence.quillen_patch isa Suslin.QuillenSuppliedEvidencePatchAssembly
         @test Suslin._verify_polynomial_quillen_patch_route_adapter(quillen_cert.evidence)
     end
 
     S = base_ring(quillen_supported)
     SX, Sr, Sg = collect(gens(S))
-    quillen_unsupported = elementary_matrix(
+    nonfixture_quillen = elementary_matrix(
         3,
         1,
-        2,
-        SX + Sr^2 * Sg + Sg + Sr + one(S),
+        3,
+        SX * Sr + Sg + one(S),
         S,
     )
+    nonfixture_quillen_factors = elementary_factorization(nonfixture_quillen)
+    @test verify_factorization(nonfixture_quillen, nonfixture_quillen_factors)
+    nonfixture_quillen_cert =
+        Suslin._polynomial_factorization_route_certificate(nonfixture_quillen)
+    @test nonfixture_quillen_cert.route == :quillen_patch
+    @test nonfixture_quillen_cert.factors == nonfixture_quillen_factors
+    @test nonfixture_quillen_cert.evidence isa Suslin.PolynomialQuillenPatchRouteAdapter
+    @test nonfixture_quillen_cert.evidence.quillen_patch isa
+          Suslin.QuillenSuppliedEvidencePatchAssembly
+
+    quillen_unsupported =
+        elementary_matrix(3, 2, 1, Sr + one(S), S) *
+        elementary_matrix(3, 1, 2, SX * Sr + Sg + one(S), S)
     quillen_unsupported_err =
         _captured_error(() -> elementary_factorization(quillen_unsupported))
     @test quillen_unsupported_err isa ArgumentError

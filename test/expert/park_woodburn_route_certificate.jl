@@ -26,6 +26,17 @@ function _pw_captured_error(f)
     end
 end
 
+function _pw_rebuild(record; kwargs...)
+    overrides = Dict{Symbol,Any}()
+    for pair in kwargs
+        overrides[pair.first] = pair.second
+    end
+    values = map(fieldnames(typeof(record))) do name
+        get(overrides, name, getproperty(record, name))
+    end
+    return typeof(record)(values...)
+end
+
 function _pw_replace_certificate(
         cert;
         matrix = cert.matrix,
@@ -216,6 +227,7 @@ end
     @test quillen_cert.route == :quillen_patch
     @test quillen_cert.status == :supported
     @test quillen_cert.evidence isa Suslin.PolynomialQuillenPatchRouteAdapter
+    @test quillen_cert.evidence.quillen_patch isa Suslin.QuillenSuppliedEvidencePatchAssembly
     @test Suslin._verify_polynomial_quillen_patch_route_adapter(quillen_cert.evidence)
     @test verify_factorization(quillen_entry.matrix, quillen_cert.factors)
     @test Suslin._verify_polynomial_factorization_route_certificate(quillen_cert)
@@ -224,6 +236,9 @@ end
     @test isempty(quillen_staged_evidence.message)
 
     if quillen_cert.evidence isa Suslin.PolynomialQuillenPatchRouteAdapter
+        quillen_patch = quillen_cert.evidence.quillen_patch
+        @test quillen_patch.base_term_policy == :supplied
+
         bad_quillen_factors = copy(quillen_cert.evidence.global_elementary_factors)
         bad_quillen_factors[1] =
             bad_quillen_factors[1] *
@@ -241,7 +256,127 @@ end
         bad_quillen_cert = _pw_replace_certificate(quillen_cert; evidence = bad_quillen_evidence)
         @test verify_factorization(bad_quillen_cert.matrix, bad_quillen_cert.factors)
         @test !Suslin._verify_polynomial_factorization_route_certificate(bad_quillen_cert)
+
+        tampered_local_certificates = copy(quillen_patch.local_certificates)
+        tampered_first_sequence = tampered_local_certificates[1]
+        tampered_first_factors = copy(tampered_first_sequence.factors)
+        tampered_first_factors[1] = _pw_rebuild(
+            tampered_first_factors[1];
+            numerator = tampered_first_factors[1].numerator + one(quillen_patch.ring),
+        )
+        tampered_local_certificates[1] = _pw_rebuild(
+            tampered_first_sequence;
+            factors = tampered_first_factors,
+        )
+        tampered_local_patch = _pw_rebuild(
+            quillen_patch;
+            local_certificates = tampered_local_certificates,
+        )
+        @test !Suslin.verify_quillen_patch(tampered_local_patch)
+        @test_throws ArgumentError Suslin._polynomial_quillen_patch_route_adapter(
+            quillen_entry.matrix,
+            tampered_local_patch,
+        )
+
+        tampered_chain = _pw_rebuild(
+            quillen_patch.substitution_chain;
+            sign_convention = :park_woodburn_plus,
+        )
+        tampered_chain_patch = _pw_rebuild(
+            quillen_patch;
+            substitution_chain = tampered_chain,
+        )
+        @test !Suslin.verify_quillen_patch(tampered_chain_patch)
+        @test_throws ArgumentError Suslin._polynomial_quillen_patch_route_adapter(
+            quillen_entry.matrix,
+            tampered_chain_patch,
+        )
     end
+
+    S = base_ring(quillen_entry.matrix)
+    X, r, g = collect(gens(S))
+    nonfixture_quillen = elementary_matrix(
+        3,
+        1,
+        3,
+        X * r + g + one(S),
+        S,
+    )
+    nonfixture_quillen_cert =
+        Suslin._polynomial_factorization_route_certificate(nonfixture_quillen)
+    @test nonfixture_quillen_cert.route == :quillen_patch
+    @test nonfixture_quillen_cert.evidence.quillen_patch isa
+          Suslin.QuillenSuppliedEvidencePatchAssembly
+    @test all(
+        Suslin.verify_quillen_local_factor_sequence_certificate,
+        nonfixture_quillen_cert.evidence.quillen_patch.local_certificates,
+    )
+    @test nonfixture_quillen_cert.evidence.quillen_patch.base_term_policy == :supplied
+    @test nonfixture_quillen_cert.evidence.quillen_patch.base_term ==
+          elementary_matrix(3, 1, 3, g + one(S), S)
+    @test nonfixture_quillen_cert.evidence.quillen_patch.substitution_chain.verification.telescope_ok
+    @test verify_factorization(nonfixture_quillen, nonfixture_quillen_cert.factors)
+    nonfixture_quillen_data = Suslin._polynomial_quillen_supplied_evidence_data(nonfixture_quillen)
+    @test nonfixture_quillen_data !== nothing
+    @test all(
+        Suslin.verify_quillen_local_factor_sequence_certificate,
+        nonfixture_quillen_data.local_certificates,
+    )
+    missing_base_term_err = _pw_captured_error(() ->
+        Suslin.assemble_quillen_patch_from_local_evidence(
+            nonfixture_quillen,
+            nonfixture_quillen_data.selected_variable,
+            nonfixture_quillen_data.local_certificates;
+            exponent = 1,
+            coverage_multipliers = [one(S), one(S)],
+        )
+    )
+    @test missing_base_term_err isa ArgumentError
+    @test (
+        occursin("A(0)", sprint(showerror, missing_base_term_err)) ||
+        occursin("base-term evidence", sprint(showerror, missing_base_term_err))
+    )
+
+    wrong_base_factor = elementary_matrix(3, 1, 3, g, S)
+    wrong_base_term_err = _pw_captured_error(() ->
+        Suslin.assemble_quillen_patch_from_local_evidence(
+            nonfixture_quillen,
+            nonfixture_quillen_data.selected_variable,
+            nonfixture_quillen_data.local_certificates;
+            exponent = 1,
+            coverage_multipliers = [one(S), one(S)],
+            base_term_policy = :supplied,
+            base_term_factors = [wrong_base_factor],
+        )
+    )
+    @test wrong_base_term_err isa ArgumentError
+    @test occursin("base-term evidence", sprint(showerror, wrong_base_term_err))
+
+    tampered_patch_product = _pw_rebuild(
+        nonfixture_quillen_cert.evidence.quillen_patch;
+        product = identity_matrix(S, 3),
+    )
+    @test !Suslin.verify_quillen_patch(tampered_patch_product)
+    @test_throws ArgumentError Suslin._polynomial_factorization_route_certificate(
+        nonfixture_quillen;
+        route = :quillen_patch,
+        quillen_patch = tampered_patch_product,
+    )
+
+    tampered_patch_certificate = _pw_rebuild(
+        nonfixture_quillen_cert.evidence.quillen_patch;
+        replay_metadata = (; source = :tampered_quillen_patch_certificate),
+    )
+    @test !Suslin.verify_quillen_patch(tampered_patch_certificate)
+    @test_throws ArgumentError Suslin._polynomial_factorization_route_certificate(
+        nonfixture_quillen;
+        route = :quillen_patch,
+        quillen_patch = tampered_patch_certificate,
+    )
+    @test_throws ArgumentError Suslin._polynomial_quillen_patch_route_adapter(
+        nonfixture_quillen,
+        tampered_patch_certificate,
+    )
 
     R = base_ring(fast_cert.matrix)
     n = nrows(fast_cert.matrix)

@@ -27,8 +27,16 @@ verify_factorization(A, factors)
 - `elementary_factorization(A)` is staged. It supports univariate local `SL_3`
   ordinary-polynomial matrices, selected `n > 3` ordinary-polynomial matrices
   through block-local reduction and recursive polynomial column peel,
-  deterministic multivariate Quillen/local-to-global fixture-backed matrices,
-  and determinant-one Laurent inputs through the existing Laurent `SL` path.
+  and the #183 ordinary-polynomial Quillen patching gate. Automatic #183
+  Quillen patching is supported only for exact field-backed `3 x 3`
+  single-elementary ordinary-polynomial inputs whose first generator is the
+  substitution variable and whose second generator supplies the two-open cover
+  `s, 1-s`. That route verifies local sequence evidence, exact cover replay,
+  substitution-chain replay, and trivial or supplied elementary `A(0)`
+  base-term handling before returning factors. Supplied and Murthy-adapter
+  local evidence can also be adapted explicitly through the internal Quillen
+  patch route. This #183 gate does not broaden coefficient-ring, Laurent, or
+  ToricBuilder acceptance.
 - `verify_factorization(A, factors)` checks exact multiplication against `A`.
 - `laurent_gl_factorization_certificate(A)` defaults to the eager Laurent
   normalization/core certificate. With `determinant_strategy = :lazy`, it
@@ -45,13 +53,13 @@ verify_factorization(A, factors)
   nontrivial local-witness cases are verified through localized
   denominator-cleared certificate replay.
 - The implementation is not yet the full Park-Woodburn algorithm for arbitrary
-  `SL_n(k[x_1, ..., x_m])`, `n >= 3`: Quillen automatic patching (#183),
-  general `SL_3` (#184), the general ECP reducer (#185), recursive `SL_n`
-  (#186), full public Park-Woodburn acceptance (#187), coefficient-ring
-  support beyond exact field-backed ordinary polynomial rings, arbitrary
-  Laurent `GL_n` determinant correction, Laurent/ToricBuilder mainline
-  acceptance, and Steinberg factor-count optimization remain staged
-  boundaries.
+  `SL_n(k[x_1, ..., x_m])`, `n >= 3`: outside the precise #183 gate above,
+  Quillen automatic patching (#183), general `SL_3` (#184), the general ECP
+  reducer (#185), recursive `SL_n` (#186), full public Park-Woodburn
+  acceptance (#187), coefficient-ring support beyond exact field-backed
+  ordinary polynomial rings, arbitrary Laurent `GL_n` determinant correction,
+  Laurent/ToricBuilder mainline acceptance, and Steinberg factor-count
+  optimization remain staged boundaries.
 
 See [ToricBuilder Integration Contract](@ref) for the first recorded
 consumer-boundary fixture contract.
