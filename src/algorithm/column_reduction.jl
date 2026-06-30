@@ -111,6 +111,23 @@ struct ECPLinkWitnessRecord
     verification
 end
 
+struct ECPLinkWitnessExtractionFailure
+    kind::Symbol
+    original_column
+    ring
+    variable_order
+    selected_variable_index::Int
+    selected_variable
+    selected_monic_index::Int
+    selected_monic_entry
+    max_tail_coefficient_degree::Int
+    max_tail_terms::Int
+    max_cover_witnesses::Int
+    attempted_tail_reductions::Int
+    valid_resultants
+    message::String
+end
+
 struct ECPLinkStepCertificate
     original_column
     ring
@@ -556,17 +573,40 @@ function _ecp_column_reduction_certificate_validated(column::AbstractVector, R)
 end
 
 function ecp_link_witness(
+    normalization::ECPMonicityNormalization;
+    supplied_link_witness = nothing,
+    max_tail_coefficient_degree::Integer = 1,
+    max_tail_terms::Integer = 2,
+    max_cover_witnesses::Integer = 3,
+)
+    verify_ecp_monicity_normalization(normalization) ||
+        throw(ArgumentError("ECP link witness extraction requires a verified monicity normalization record"))
+    return ecp_link_witness(
+        collect(normalization.normalized_column),
+        normalization.ring;
+        variable_order = normalization.variable_order,
+        selected_variable = normalization.selected_variable,
+        selected_monic_index = 1,
+        supplied_link_witness,
+        max_tail_coefficient_degree,
+        max_tail_terms,
+        max_cover_witnesses,
+    )
+end
+
+function ecp_link_witness(
     v::AbstractVector,
     R;
     variable_order = tuple(gens(R)...),
     selected_variable = nothing,
     selected_monic_index::Integer = 1,
     supplied_link_witness = nothing,
+    max_tail_coefficient_degree::Integer = 1,
+    max_tail_terms::Integer = 2,
+    max_cover_witnesses::Integer = 3,
 )
     _is_laurent_polynomial_ring(R) &&
         throw(ArgumentError("ECP link witnesses currently support ordinary polynomial columns only"))
-    supplied_link_witness === nothing &&
-        throw(ArgumentError("Park-Woodburn ECP link witness extraction is not implemented; pass supplied_link_witness metadata with source = :supplied_link_witness"))
 
     column = _validated_unimodular_column(v, R)
     normalized_order = _ecp_normalize_variable_order(R, variable_order)
@@ -579,56 +619,42 @@ function ecp_link_witness(
         throw(ArgumentError("Park-Woodburn ECP link witnesses require the selected monic entry to be first"))
     _is_monic_in_variable(column[selected_monic_index], R, selected_variable_index) ||
         throw(ArgumentError("selected first entry must be monic in the selected variable"))
+    supplied_link_witness === nothing &&
+        return _ecp_extract_link_witness(
+            column,
+            R,
+            normalized_order,
+            selected_variable_index,
+            selected_monic_index;
+            max_tail_coefficient_degree = Int(max_tail_coefficient_degree),
+            max_tail_terms = Int(max_tail_terms),
+            max_cover_witnesses = Int(max_cover_witnesses),
+        )
 
     metadata = (; source = _ecp_link_field(supplied_link_witness, :source))
     metadata.source == :supplied_link_witness ||
         throw(ArgumentError("supplied ECP link witness metadata must use source = :supplied_link_witness"))
-    record, verification = try
-        local replay_record = ECPLinkWitnessRecord(
-            tuple(column...),
+    try
+        return _ecp_link_witness_record_from_data(
+            column,
             R,
-            tuple(normalized_order...),
+            normalized_order,
             selected_variable_index,
-            gens(R)[selected_variable_index],
             selected_monic_index,
-            column[selected_monic_index],
-            tuple(_ecp_link_field(supplied_link_witness, :residue_probes)...),
-            tuple(_ecp_link_field(supplied_link_witness, :tail_reductions)...),
-            tuple(_ecp_link_field(supplied_link_witness, :resultants)...),
-            tuple(_ecp_link_field(supplied_link_witness, :bezout_coefficients)...),
-            tuple(_ecp_link_field(supplied_link_witness, :coverage_multipliers)...),
-            tuple(_ecp_link_field(supplied_link_witness, :path_points)...),
-            metadata,
-            nothing,
+            _ecp_link_field(supplied_link_witness, :residue_probes),
+            _ecp_link_field(supplied_link_witness, :tail_reductions),
+            _ecp_link_field(supplied_link_witness, :resultants),
+            _ecp_link_field(supplied_link_witness, :bezout_coefficients),
+            _ecp_link_field(supplied_link_witness, :coverage_multipliers),
+            _ecp_link_field(supplied_link_witness, :path_points),
+            metadata;
+            failure_message = "supplied Park-Woodburn ECP link witness data failed exact replay verification",
         )
-        replay_record, _ecp_link_witness_replay_summary(replay_record)
     catch err
         err isa InterruptException && rethrow()
         err isa ArgumentError && rethrow()
         throw(ArgumentError("supplied Park-Woodburn ECP link witness data failed exact replay verification"))
     end
-    verification.overall_ok ||
-        throw(ArgumentError("supplied Park-Woodburn ECP link witness data failed exact replay verification"))
-    stored = ECPLinkWitnessRecord(
-        record.original_column,
-        record.ring,
-        record.variable_order,
-        record.selected_variable_index,
-        record.selected_variable,
-        record.selected_monic_index,
-        record.selected_monic_entry,
-        record.residue_probes,
-        record.tail_reductions,
-        record.resultants,
-        record.bezout_coefficients,
-        record.coverage_multipliers,
-        record.path_points,
-        record.metadata,
-        verification,
-    )
-    verify_ecp_link_witness(stored) ||
-        throw(ArgumentError("stored Park-Woodburn ECP link witness data failed exact replay verification"))
-    return stored
 end
 
 function ecp_link_step_certificate(
@@ -1262,6 +1288,338 @@ end
 function _ecp_link_field(source, field::Symbol)
     hasproperty(source, field) || throw(ArgumentError("supplied ECP link witness missing field $(field)"))
     return getproperty(source, field)
+end
+
+function _ecp_link_witness_record_from_data(
+    column,
+    R,
+    normalized_order,
+    selected_variable_index::Int,
+    selected_monic_index::Int,
+    residue_probes,
+    tail_reductions,
+    resultants,
+    bezout_coefficients,
+    coverage_multipliers,
+    path_points,
+    metadata;
+    failure_message = "Park-Woodburn ECP link witness data failed exact replay verification",
+)
+    replay_record = ECPLinkWitnessRecord(
+        tuple(column...),
+        R,
+        tuple(normalized_order...),
+        selected_variable_index,
+        gens(R)[selected_variable_index],
+        selected_monic_index,
+        column[selected_monic_index],
+        tuple(residue_probes...),
+        tuple(tail_reductions...),
+        tuple(resultants...),
+        tuple(bezout_coefficients...),
+        tuple(coverage_multipliers...),
+        tuple(path_points...),
+        metadata,
+        nothing,
+    )
+    verification = _ecp_link_witness_replay_summary(replay_record)
+    verification.overall_ok || throw(ArgumentError(failure_message))
+    stored = ECPLinkWitnessRecord(
+        replay_record.original_column,
+        replay_record.ring,
+        replay_record.variable_order,
+        replay_record.selected_variable_index,
+        replay_record.selected_variable,
+        replay_record.selected_monic_index,
+        replay_record.selected_monic_entry,
+        replay_record.residue_probes,
+        replay_record.tail_reductions,
+        replay_record.resultants,
+        replay_record.bezout_coefficients,
+        replay_record.coverage_multipliers,
+        replay_record.path_points,
+        replay_record.metadata,
+        verification,
+    )
+    verify_ecp_link_witness(stored) ||
+        throw(ArgumentError("stored Park-Woodburn ECP link witness data failed exact replay verification"))
+    return stored
+end
+
+function _ecp_link_small_scalars(R)
+    scalars = Any[one(R)]
+    negative_one = -one(R)
+    negative_one == scalars[1] || push!(scalars, negative_one)
+    return tuple(scalars...)
+end
+
+function _ecp_link_exponent_tuples(var_count::Int, max_degree::Int)
+    var_count >= 0 || throw(ArgumentError("var_count must be nonnegative"))
+    max_degree >= 0 || throw(ArgumentError("max_degree must be nonnegative"))
+
+    exponents = NTuple{var_count, Int}[]
+    current = Vector{Int}(undef, var_count)
+    function build(idx::Int, remaining::Int)
+        if idx > var_count
+            push!(exponents, tuple(current...))
+            return
+        end
+        for exponent in 0:remaining
+            current[idx] = exponent
+            build(idx + 1, remaining - exponent)
+        end
+    end
+    build(1, max_degree)
+    sort!(exponents; by = entry -> (sum(entry), entry))
+    return tuple(exponents...)
+end
+
+function _ecp_link_monomial_basis(R, max_degree::Int)
+    max_degree >= 0 || throw(ArgumentError("max_degree must be nonnegative"))
+
+    variables = gens(R)
+    basis = Any[]
+    for exponents in _ecp_link_exponent_tuples(length(variables), max_degree)
+        monomial = one(R)
+        for idx in eachindex(variables)
+            exponent = exponents[idx]
+            exponent == 0 && continue
+            monomial *= variables[idx]^exponent
+        end
+        push!(basis, monomial)
+    end
+    return tuple(basis...)
+end
+
+function _ecp_link_combinations(indices, width::Int)
+    width >= 0 || throw(ArgumentError("width must be nonnegative"))
+    collected = collect(indices)
+    width == 0 && return ((),)
+    width > length(collected) && return ()
+
+    combinations = Tuple[]
+    current = Vector{Any}(undef, width)
+    function build(start_idx::Int, depth::Int)
+        if depth > width
+            push!(combinations, tuple(current...))
+            return
+        end
+        last_start = length(collected) - (width - depth)
+        for idx in start_idx:last_start
+            current[depth] = collected[idx]
+            build(idx + 1, depth + 1)
+        end
+    end
+    build(1, 1)
+    return tuple(combinations...)
+end
+
+function _ecp_link_tail_reduction_candidates(
+    tail_entries,
+    R;
+    max_tail_coefficient_degree::Int,
+    max_tail_terms::Int,
+)
+    max_tail_coefficient_degree >= 0 ||
+        throw(ArgumentError("max_tail_coefficient_degree must be nonnegative"))
+    max_tail_terms >= 0 || throw(ArgumentError("max_tail_terms must be nonnegative"))
+
+    tail_count = length(tail_entries)
+    tail_count == 0 && return ()
+
+    atoms = Any[]
+    for monomial in _ecp_link_monomial_basis(R, max_tail_coefficient_degree)
+        for scalar in _ecp_link_small_scalars(R)
+            atom = scalar * monomial
+            atom == zero(R) && continue
+            any(existing -> existing == atom, atoms) || push!(atoms, atom)
+        end
+    end
+
+    candidates = NamedTuple[]
+    seen_coefficients = Tuple[]
+    max_width = min(max_tail_terms, tail_count)
+    for width in 1:max_width
+        for support in _ecp_link_combinations(1:tail_count, width)
+            chosen = Vector{Any}(undef, width)
+            function build_atom_assignment(depth::Int)
+                if depth > width
+                    lifted_tail_coefficients = ntuple(tail_idx -> begin
+                        support_position = findfirst(==(tail_idx), support)
+                        support_position === nothing ? zero(R) : chosen[support_position]
+                    end, tail_count)
+                    any(existing -> existing == lifted_tail_coefficients, seen_coefficients) && return
+                    G = zero(R)
+                    for tail_idx in 1:tail_count
+                        G += lifted_tail_coefficients[tail_idx] * tail_entries[tail_idx]
+                    end
+                    G == zero(R) && return
+                    push!(seen_coefficients, lifted_tail_coefficients)
+                    push!(candidates, (; lifted_tail_coefficients, G))
+                    return
+                end
+                for atom in atoms
+                    chosen[depth] = atom
+                    build_atom_assignment(depth + 1)
+                end
+            end
+            build_atom_assignment(1)
+        end
+    end
+    return tuple(candidates...)
+end
+
+function _ecp_link_coordinates_tuple(coordinates_value, R, expected_length::Int, label::AbstractString)
+    expected_length >= 0 || throw(ArgumentError("expected_length must be nonnegative"))
+    nrows(coordinates_value) == 1 ||
+        throw(ArgumentError("$(label) coordinates must have exactly one row"))
+    ncols(coordinates_value) == expected_length ||
+        throw(ArgumentError("$(label) coordinates must have length $(expected_length)"))
+    return tuple((
+        _coerce_into_ring(R, coordinates_value[1, idx], "$(label) coordinate[$idx]")
+        for idx in 1:expected_length
+    )...)
+end
+
+function _ecp_link_bezout_for_resultant(v1, G, resultant_value, R)
+    bezout_ideal = ideal(R, [v1, G])
+    resultant_value in bezout_ideal ||
+        throw(ArgumentError("resultant must belong to the ideal generated by v1 and G"))
+    coordinates_value = Oscar.coordinates(resultant_value, bezout_ideal)
+    f, h = _ecp_link_coordinates_tuple(coordinates_value, R, 2, "link Bezout")
+    f * v1 + h * G == resultant_value ||
+        throw(ArgumentError("link Bezout coordinates failed exact verification"))
+    return (; f, h)
+end
+
+function _ecp_link_cover_multipliers(resultants, R)
+    cover_ideal = ideal(R, collect(resultants))
+    one(R) in cover_ideal ||
+        throw(ArgumentError("resultants do not generate the unit ideal"))
+    coordinates_value = Oscar.coordinates(one(R), cover_ideal)
+    multipliers = _ecp_link_coordinates_tuple(coordinates_value, R, length(resultants), "link cover")
+    coverage_total = zero(R)
+    for idx in eachindex(multipliers)
+        coverage_total += multipliers[idx] * resultants[idx]
+    end
+    coverage_total == one(R) ||
+        throw(ArgumentError("link cover coordinates failed exact verification"))
+    return multipliers
+end
+
+function _ecp_extract_link_witness(
+    column,
+    R,
+    normalized_order,
+    selected_variable_index::Int,
+    selected_monic_index::Int;
+    max_tail_coefficient_degree::Int,
+    max_tail_terms::Int,
+    max_cover_witnesses::Int,
+)
+    max_tail_coefficient_degree >= 0 ||
+        throw(ArgumentError("max_tail_coefficient_degree must be nonnegative"))
+    max_tail_terms >= 0 || throw(ArgumentError("max_tail_terms must be nonnegative"))
+    max_cover_witnesses >= 0 || throw(ArgumentError("max_cover_witnesses must be nonnegative"))
+    selected_monic_index == 1 ||
+        throw(ArgumentError("Park-Woodburn ECP link witnesses require the selected monic entry to be first"))
+    _is_monic_in_variable(column[selected_monic_index], R, selected_variable_index) ||
+        throw(ArgumentError("selected first entry must be monic in the selected variable"))
+
+    v1 = column[selected_monic_index]
+    tail_entries = column[2:end]
+    candidates = _ecp_link_tail_reduction_candidates(
+        tail_entries,
+        R;
+        max_tail_coefficient_degree,
+        max_tail_terms,
+    )
+    attempted_tail_reductions = length(candidates)
+    valid_candidates = NamedTuple[]
+    for candidate in candidates
+        resultant_value = resultant(v1, candidate.G, selected_variable_index)
+        resultant_value == zero(R) && continue
+        bezout = _ecp_link_bezout_for_resultant(v1, candidate.G, resultant_value, R)
+        push!(valid_candidates, merge(candidate, (; resultant = resultant_value, bezout)))
+    end
+
+    selected_variable = gens(R)[selected_variable_index]
+    max_width = min(max_cover_witnesses, length(valid_candidates))
+    for width in 1:max_width
+        for cover_indices in _ecp_link_combinations(1:length(valid_candidates), width)
+            cover_resultants = tuple((valid_candidates[idx].resultant for idx in cover_indices)...)
+            cover_multipliers = try
+                _ecp_link_cover_multipliers(cover_resultants, R)
+            catch err
+                err isa InterruptException && rethrow()
+                err isa ArgumentError || rethrow()
+                continue
+            end
+
+            residue_probes = Any[]
+            tail_reductions = Any[]
+            resultants = Any[]
+            bezout_coefficients = Any[]
+            coverage_multipliers = Any[]
+            path_points = Any[zero(R)]
+            cumulative_path_point = zero(R)
+            maximal_ideal_generators = tuple(normalized_order...)
+            for (local_idx, candidate_idx) in enumerate(cover_indices)
+                candidate = valid_candidates[candidate_idx]
+                probe_id = Symbol("bounded_tail_probe_$(candidate_idx)")
+                push!(residue_probes, (;
+                    id = probe_id,
+                    kind = :bounded_tail_combination,
+                    maximal_ideal_generators,
+                ))
+                push!(tail_reductions, (;
+                    probe_id,
+                    G = candidate.G,
+                    lifted_tail_coefficients = candidate.lifted_tail_coefficients,
+                    tilde_G = candidate.G,
+                ))
+                push!(resultants, candidate.resultant)
+                push!(bezout_coefficients, candidate.bezout)
+                push!(coverage_multipliers, cover_multipliers[local_idx])
+                cumulative_path_point +=
+                    cover_multipliers[local_idx] * candidate.resultant * selected_variable
+                push!(path_points, cumulative_path_point)
+            end
+
+            return _ecp_link_witness_record_from_data(
+                column,
+                R,
+                normalized_order,
+                selected_variable_index,
+                selected_monic_index,
+                residue_probes,
+                tail_reductions,
+                resultants,
+                bezout_coefficients,
+                coverage_multipliers,
+                path_points,
+                (; source = :extracted_link_witness);
+                failure_message = "extracted Park-Woodburn ECP link witness data failed exact replay verification",
+            )
+        end
+    end
+
+    return ECPLinkWitnessExtractionFailure(
+        :link_witness_cover_not_proved,
+        tuple(column...),
+        R,
+        tuple(normalized_order...),
+        selected_variable_index,
+        selected_variable,
+        selected_monic_index,
+        column[selected_monic_index],
+        max_tail_coefficient_degree,
+        max_tail_terms,
+        max_cover_witnesses,
+        attempted_tail_reductions,
+        tuple((candidate.resultant for candidate in valid_candidates)...),
+        "bounded Park-Woodburn ECP link witness extraction did not prove a cover",
+    )
 end
 
 function _ecp_selected_variable_index(R, variable)
@@ -2413,7 +2771,8 @@ function _ecp_link_witness_replay_summary(record)
     ring_generators = gens(R)
     expected_probe_fields = (:id, :kind, :maximal_ideal_generators)
 
-    metadata_ok = record.metadata == (; source = :supplied_link_witness)
+    metadata_ok = hasproperty(record.metadata, :source) &&
+        record.metadata.source in (:supplied_link_witness, :extracted_link_witness)
     normalized_variable_order = try
         tuple(_ecp_normalize_variable_order(R, record.variable_order)...)
     catch

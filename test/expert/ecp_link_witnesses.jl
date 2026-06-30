@@ -305,7 +305,7 @@ end
     ))
 end
 
-@testset "ECP link witnesses remain staged without supplied metadata" begin
+@testset "ECP link witnesses extract automatically without supplied metadata" begin
     entry = _case_by_id("ecp-monic-first-entry-qq")
     column = _column(entry)
     R = entry.ring.object
