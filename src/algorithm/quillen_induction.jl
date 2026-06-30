@@ -2612,6 +2612,478 @@ function verify_quillen_sequence_contribution_expansion(expansion)::Bool
     end
 end
 
+struct QuillenSuppliedEvidencePatchAssemblyVerification
+    local_certificates_ok::Bool
+    denominator_candidate_ok::Bool
+    denominator_candidate_matches::Bool
+    solver_result_ok::Bool
+    solver_source_candidate_ok::Bool
+    cover_certificate_ok::Bool
+    substitution_chain_ok::Bool
+    substitution_chain_matches::Bool
+    base_term_ok::Bool
+    sequence_expansions_ok::Bool
+    global_elementary_factors::Vector
+    global_elementary_factors_ok::Bool
+    product
+    product_ok::Bool
+    target
+    target_ok::Bool
+    replay_metadata
+    replay_metadata_ok::Bool
+    overall_ok::Bool
+end
+
+struct QuillenSuppliedEvidencePatchAssembly
+    ring
+    size::Int
+    substitution_variable
+    original_input
+    local_certificates::Vector{QuillenLocalFactorSequenceCertificate}
+    denominator_candidate::QuillenDenominatorCoverCandidate
+    solver_result::QuillenDenominatorCoverSolverResult
+    cover_certificate::QuillenDenominatorCoverCertificate
+    substitution_chain::QuillenPatchSubstitutionChain
+    base_term_policy::Symbol
+    base_term
+    base_term_factors::Vector
+    base_term_product
+    sequence_expansions::Vector{QuillenSequenceContributionExpansion}
+    sequence_elementary_factors::Vector
+    global_elementary_factors::Vector
+    product
+    target
+    replay_metadata
+    verification::QuillenSuppliedEvidencePatchAssemblyVerification
+end
+
+function _quillen_supplied_patch_metadata(
+    candidate::QuillenDenominatorCoverCandidate,
+    solver_result::QuillenDenominatorCoverSolverResult,
+    substitution_chain::QuillenPatchSubstitutionChain,
+    base_term_policy::Symbol,
+    sequence_expansions,
+    metadata,
+)
+    return (;
+        source = :quillen_supplied_local_evidence_patch_assembly,
+        local_count = length(candidate.local_certificates),
+        raw_denominators = candidate.raw_denominators,
+        exponent = solver_result.exponent,
+        powered_denominators = solver_result.powered_denominators,
+        coverage_multipliers = solver_result.coverage_multipliers,
+        coverage_sum = solver_result.coverage_sum,
+        substitution_chain_replay_metadata = substitution_chain.replay_metadata,
+        base_term_policy = base_term_policy,
+        sequence_expansion_metadata = [
+            expansion.replay_metadata for expansion in sequence_expansions
+        ],
+        metadata = metadata,
+    )
+end
+
+function _same_quillen_sequence_expansions(left, right)::Bool
+    length(left) == length(right) || return false
+    for idx in eachindex(left)
+        left[idx].local_index == right[idx].local_index || return false
+        left[idx].cover_term == right[idx].cover_term || return false
+        _same_quillen_factors(
+            left[idx].global_elementary_factors,
+            right[idx].global_elementary_factors,
+        ) || return false
+        left[idx].replay_metadata == right[idx].replay_metadata || return false
+        _same_quillen_sequence_expansion_verification(
+            left[idx].verification,
+            right[idx].verification,
+        ) || return false
+    end
+    return true
+end
+
+function _same_quillen_supplied_patch_verification(
+    left::QuillenSuppliedEvidencePatchAssemblyVerification,
+    right::QuillenSuppliedEvidencePatchAssemblyVerification,
+)::Bool
+    return left.local_certificates_ok == right.local_certificates_ok &&
+           left.denominator_candidate_ok == right.denominator_candidate_ok &&
+           left.denominator_candidate_matches == right.denominator_candidate_matches &&
+           left.solver_result_ok == right.solver_result_ok &&
+           left.solver_source_candidate_ok == right.solver_source_candidate_ok &&
+           left.cover_certificate_ok == right.cover_certificate_ok &&
+           left.substitution_chain_ok == right.substitution_chain_ok &&
+           left.substitution_chain_matches == right.substitution_chain_matches &&
+           left.base_term_ok == right.base_term_ok &&
+           left.sequence_expansions_ok == right.sequence_expansions_ok &&
+           _same_quillen_factors(
+               left.global_elementary_factors,
+               right.global_elementary_factors,
+           ) &&
+           left.global_elementary_factors_ok == right.global_elementary_factors_ok &&
+           left.product == right.product &&
+           left.product_ok == right.product_ok &&
+           left.target == right.target &&
+           left.target_ok == right.target_ok &&
+           left.replay_metadata == right.replay_metadata &&
+           left.replay_metadata_ok == right.replay_metadata_ok &&
+           left.overall_ok == right.overall_ok
+end
+
+function _quillen_supplied_base_term_policy(base_term_policy, base_term_factors)
+    if base_term_policy === nothing
+        base_term_factors === nothing &&
+            throw(ArgumentError("Quillen supplied evidence patch assembly requires supplied A(0) factors or base_term_policy = :trivial or :already_handled"))
+        return :supplied
+    end
+    policy = Symbol(base_term_policy)
+    policy in (:supplied, :trivial, :already_handled) ||
+        throw(ArgumentError("Quillen supplied evidence patch assembly has unsupported base-term policy"))
+    return policy
+end
+
+function _quillen_supplied_base_term_factors(R, n::Int, base_term_factors)
+    factor_type = typeof(identity_matrix(R, n))
+    base_term_factors === nothing && return factor_type[]
+    return [
+        _quillen_local_require_factor_matrix(factor, R, n, "base-term factor")
+        for factor in collect(base_term_factors)
+    ]
+end
+
+function _quillen_supplied_base_term_ok(policy::Symbol, base_term, factors, product, R, n::Int)
+    policy == :supplied && return product == base_term
+    policy == :trivial && return isempty(factors) && base_term == identity_matrix(R, n)
+    policy == :already_handled && return isempty(factors)
+    return false
+end
+
+function replay_quillen_supplied_evidence_patch(
+    patch::QuillenSuppliedEvidencePatchAssembly,
+)
+    R = _require_quillen_denominator_cover_ring(patch.ring)
+    n = patch.size
+    _quillen_local_require_factor_matrix(
+        patch.original_input,
+        R,
+        n,
+        "supplied evidence original input",
+    )
+    selected = _require_substitution_generator(R, patch.substitution_variable)
+    local_certificates = patch.local_certificates
+    local_certificates_ok = !isempty(local_certificates) &&
+        all(verify_quillen_local_factor_sequence_certificate, local_certificates)
+    expected_candidate = extract_quillen_denominator_cover_candidate(local_certificates)
+    denominator_candidate_ok =
+        verify_quillen_denominator_cover_candidate(patch.denominator_candidate)
+    denominator_candidate_matches =
+        denominator_candidate_ok &&
+        patch.denominator_candidate.original_input == expected_candidate.original_input &&
+        patch.denominator_candidate.raw_denominators ==
+        expected_candidate.raw_denominators &&
+        _same_quillen_local_denominator_supports(
+            patch.denominator_candidate.local_supports,
+            expected_candidate.local_supports,
+        )
+    solver_result_ok =
+        verify_quillen_denominator_cover_solver_result(patch.solver_result)
+    solver_source_candidate_ok =
+        solver_result_ok &&
+        patch.solver_result.source_candidate isa QuillenDenominatorCoverCandidate &&
+        patch.solver_result.source_candidate.raw_denominators ==
+        patch.denominator_candidate.raw_denominators &&
+        patch.solver_result.source_candidate.original_input ==
+        patch.denominator_candidate.original_input
+    cover_certificate_ok =
+        verify_quillen_denominator_cover(patch.cover_certificate) &&
+        _same_quillen_cover_certificate_data(
+            patch.cover_certificate,
+            patch.solver_result.cover_certificate,
+        )
+    substitution_chain_ok =
+        verify_quillen_patch_substitution_chain(patch.substitution_chain)
+    substitution_chain_matches =
+        substitution_chain_ok &&
+        patch.substitution_chain.original_matrix == patch.original_input &&
+        patch.substitution_chain.selected_variable == selected &&
+        patch.substitution_chain.solver_result.raw_denominators ==
+        patch.solver_result.raw_denominators &&
+        patch.substitution_chain.solver_result.exponent ==
+        patch.solver_result.exponent &&
+        patch.substitution_chain.solver_result.coverage_multipliers ==
+        patch.solver_result.coverage_multipliers
+    base_term_factors = _quillen_supplied_base_term_factors(
+        R,
+        n,
+        patch.base_term_factors,
+    )
+    base_term_product = _quillen_product(R, n, base_term_factors)
+    base_term_ok =
+        patch.base_term == patch.substitution_chain.base_term &&
+        patch.base_term_product == base_term_product &&
+        _quillen_supplied_base_term_ok(
+            patch.base_term_policy,
+            patch.base_term,
+            base_term_factors,
+            base_term_product,
+            R,
+            n,
+        )
+    sequence_expansions = [
+        quillen_sequence_contribution_expansion(certificate, patch.solver_result, index)
+        for (index, certificate) in enumerate(local_certificates)
+    ]
+    sequence_expansions_ok =
+        all(verify_quillen_sequence_contribution_expansion, patch.sequence_expansions) &&
+        _same_quillen_sequence_expansions(
+            patch.sequence_expansions,
+            sequence_expansions,
+        )
+    factor_type = typeof(identity_matrix(R, n))
+    sequence_elementary_factors = factor_type[]
+    for expansion in sequence_expansions
+        append!(sequence_elementary_factors, expansion.global_elementary_factors)
+    end
+    global_elementary_factors = copy(base_term_factors)
+    append!(global_elementary_factors, sequence_elementary_factors)
+    global_elementary_factors_ok =
+        _same_quillen_factors(
+            patch.sequence_elementary_factors,
+            sequence_elementary_factors,
+        ) &&
+        _same_quillen_factors(
+            patch.global_elementary_factors,
+            global_elementary_factors,
+        )
+    product = _quillen_product(R, n, global_elementary_factors)
+    target = _quillen_local_require_factor_matrix(
+        patch.target,
+        R,
+        n,
+        "supplied evidence target",
+    )
+    product_ok =
+        global_elementary_factors_ok &&
+        patch.product == product &&
+        product == target
+    target_ok = target == patch.original_input
+    replay_metadata = _quillen_supplied_patch_metadata(
+        patch.denominator_candidate,
+        patch.solver_result,
+        patch.substitution_chain,
+        patch.base_term_policy,
+        sequence_expansions,
+        patch.replay_metadata.metadata,
+    )
+    replay_metadata_ok = patch.replay_metadata == replay_metadata
+    overall_ok =
+        local_certificates_ok &&
+        denominator_candidate_ok &&
+        denominator_candidate_matches &&
+        solver_result_ok &&
+        solver_source_candidate_ok &&
+        cover_certificate_ok &&
+        substitution_chain_ok &&
+        substitution_chain_matches &&
+        base_term_ok &&
+        sequence_expansions_ok &&
+        global_elementary_factors_ok &&
+        product_ok &&
+        target_ok &&
+        replay_metadata_ok
+    return QuillenSuppliedEvidencePatchAssemblyVerification(
+        local_certificates_ok,
+        denominator_candidate_ok,
+        denominator_candidate_matches,
+        solver_result_ok,
+        solver_source_candidate_ok,
+        cover_certificate_ok,
+        substitution_chain_ok,
+        substitution_chain_matches,
+        base_term_ok,
+        sequence_expansions_ok,
+        global_elementary_factors,
+        global_elementary_factors_ok,
+        product,
+        product_ok,
+        target,
+        target_ok,
+        replay_metadata,
+        replay_metadata_ok,
+        overall_ok,
+    )
+end
+
+function verify_quillen_patch(patch::QuillenSuppliedEvidencePatchAssembly)::Bool
+    try
+        replay = replay_quillen_supplied_evidence_patch(patch)
+        return replay.overall_ok &&
+               _same_quillen_supplied_patch_verification(patch.verification, replay)
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function assemble_quillen_patch_from_local_evidence(
+    A,
+    selected_variable,
+    local_certificates;
+    max_exponent::Integer = 4,
+    exponent = nothing,
+    coverage_multipliers = nothing,
+    supplied_multipliers = nothing,
+    substitution_chain = nothing,
+    base_term_policy = nothing,
+    base_term_factors = nothing,
+    metadata = (;),
+)
+    R = _require_quillen_denominator_cover_ring(base_ring(A))
+    n = _require_square_matrix(A, "supplied evidence original input")
+    selected = _require_substitution_generator(R, selected_variable)
+    certificates = collect(local_certificates)
+    isempty(certificates) &&
+        throw(ArgumentError("Quillen supplied evidence patch assembly requires at least one local sequence certificate"))
+    all(verify_quillen_local_factor_sequence_certificate, certificates) ||
+        throw(ArgumentError("Quillen supplied evidence patch assembly requires verified local sequence certificates"))
+    all(certificate -> certificate.original_input == A, certificates) ||
+        throw(ArgumentError("Quillen supplied evidence patch assembly requires local evidence for the input matrix"))
+    candidate = extract_quillen_denominator_cover_candidate(certificates)
+    candidate.ring == R &&
+        candidate.size == n &&
+        candidate.selected_variable == selected ||
+        throw(ArgumentError("Quillen supplied evidence patch assembly candidate context does not match the input"))
+    solver_result = solve_quillen_denominator_cover(
+        candidate;
+        max_exponent,
+        exponent,
+        coverage_multipliers,
+        supplied_multipliers,
+    )
+    chain = substitution_chain === nothing ?
+        quillen_patch_substitution_chain(
+            A,
+            selected,
+            solver_result;
+            metadata = merge(
+                (; source = :quillen_supplied_evidence_patch_assembly),
+                metadata,
+            ),
+        ) :
+        substitution_chain
+    verify_quillen_patch_substitution_chain(chain) ||
+        throw(ArgumentError("Quillen supplied evidence patch assembly substitution chain does not replay"))
+    chain.original_matrix == A && chain.selected_variable == selected ||
+        throw(ArgumentError("Quillen supplied evidence patch assembly substitution chain context does not match"))
+    chain.solver_result.raw_denominators == solver_result.raw_denominators &&
+        chain.solver_result.exponent == solver_result.exponent &&
+        chain.solver_result.coverage_multipliers == solver_result.coverage_multipliers ||
+        throw(ArgumentError("Quillen supplied evidence patch assembly substitution chain solver data does not match"))
+    policy = _quillen_supplied_base_term_policy(base_term_policy, base_term_factors)
+    normalized_base_factors = _quillen_supplied_base_term_factors(
+        R,
+        n,
+        base_term_factors,
+    )
+    base_product = _quillen_product(R, n, normalized_base_factors)
+    _quillen_supplied_base_term_ok(
+        policy,
+        chain.base_term,
+        normalized_base_factors,
+        base_product,
+        R,
+        n,
+    ) ||
+        throw(ArgumentError("Quillen supplied evidence patch assembly base-term evidence is missing or does not replay"))
+    sequence_expansions = [
+        quillen_sequence_contribution_expansion(certificate, solver_result, index)
+        for (index, certificate) in enumerate(certificates)
+    ]
+    factor_type = typeof(identity_matrix(R, n))
+    sequence_elementary_factors = factor_type[]
+    for expansion in sequence_expansions
+        append!(sequence_elementary_factors, expansion.global_elementary_factors)
+    end
+    global_elementary_factors = copy(normalized_base_factors)
+    append!(global_elementary_factors, sequence_elementary_factors)
+    product = _quillen_product(R, n, global_elementary_factors)
+    product == A ||
+        throw(ArgumentError("Quillen supplied evidence patch assembly factors do not multiply to the input matrix"))
+    replay_metadata = _quillen_supplied_patch_metadata(
+        candidate,
+        solver_result,
+        chain,
+        policy,
+        sequence_expansions,
+        metadata,
+    )
+    provisional = QuillenSuppliedEvidencePatchAssembly(
+        R,
+        n,
+        selected,
+        A,
+        certificates,
+        candidate,
+        solver_result,
+        solver_result.cover_certificate,
+        chain,
+        policy,
+        chain.base_term,
+        normalized_base_factors,
+        base_product,
+        sequence_expansions,
+        sequence_elementary_factors,
+        global_elementary_factors,
+        product,
+        A,
+        replay_metadata,
+        QuillenSuppliedEvidencePatchAssemblyVerification(
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            factor_type[],
+            false,
+            identity_matrix(R, n),
+            false,
+            A,
+            false,
+            replay_metadata,
+            false,
+            false,
+        ),
+    )
+    verification = replay_quillen_supplied_evidence_patch(provisional)
+    verification.overall_ok ||
+        throw(ArgumentError("Quillen supplied evidence patch assembly data does not replay"))
+    return QuillenSuppliedEvidencePatchAssembly(
+        provisional.ring,
+        provisional.size,
+        provisional.substitution_variable,
+        provisional.original_input,
+        provisional.local_certificates,
+        provisional.denominator_candidate,
+        provisional.solver_result,
+        provisional.cover_certificate,
+        provisional.substitution_chain,
+        provisional.base_term_policy,
+        provisional.base_term,
+        provisional.base_term_factors,
+        provisional.base_term_product,
+        provisional.sequence_expansions,
+        provisional.sequence_elementary_factors,
+        provisional.global_elementary_factors,
+        provisional.product,
+        provisional.target,
+        provisional.replay_metadata,
+        verification,
+    )
+end
+
 struct QuillenGlobalPatchAssemblyVerification
     cover_certificate_ok::Bool
     local_certificates_ok::Bool
