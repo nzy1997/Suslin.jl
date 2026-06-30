@@ -2749,6 +2749,35 @@ function _same_quillen_denominator_cover_candidate_data(
            )
 end
 
+function _same_quillen_denominator_cover_candidate_data(left, right)::Bool
+    return left === nothing && right === nothing
+end
+
+function _same_quillen_denominator_cover_solver_result_data(
+    left::QuillenDenominatorCoverSolverResult,
+    right::QuillenDenominatorCoverSolverResult,
+)::Bool
+    return _same_quillen_denominator_cover_candidate_data(
+               left.source_candidate,
+               right.source_candidate,
+           ) &&
+           left.ring == right.ring &&
+           left.raw_denominators == right.raw_denominators &&
+           left.exponent == right.exponent &&
+           left.powered_denominators == right.powered_denominators &&
+           left.coverage_multipliers == right.coverage_multipliers &&
+           left.coverage_terms == right.coverage_terms &&
+           left.coverage_sum == right.coverage_sum &&
+           _same_quillen_cover_certificate_data(
+               left.cover_certificate,
+               right.cover_certificate,
+           ) &&
+           _same_quillen_denominator_cover_solver_verification(
+               left.verification,
+               right.verification,
+           )
+end
+
 function _quillen_supplied_base_term_policy(base_term_policy, base_term_factors)
     if base_term_policy === nothing
         base_term_factors === nothing &&
@@ -2824,12 +2853,10 @@ function replay_quillen_supplied_evidence_patch(
         substitution_chain_ok &&
         patch.substitution_chain.original_matrix == patch.original_input &&
         patch.substitution_chain.selected_variable == selected &&
-        patch.substitution_chain.solver_result.raw_denominators ==
-        patch.solver_result.raw_denominators &&
-        patch.substitution_chain.solver_result.exponent ==
-        patch.solver_result.exponent &&
-        patch.substitution_chain.solver_result.coverage_multipliers ==
-        patch.solver_result.coverage_multipliers
+        _same_quillen_denominator_cover_solver_result_data(
+            patch.substitution_chain.solver_result,
+            patch.solver_result,
+        )
     base_term_factors = _quillen_supplied_base_term_factors(
         R,
         n,
@@ -2993,9 +3020,10 @@ function assemble_quillen_patch_from_local_evidence(
         throw(ArgumentError("Quillen supplied evidence patch assembly substitution chain does not replay"))
     chain.original_matrix == A && chain.selected_variable == selected ||
         throw(ArgumentError("Quillen supplied evidence patch assembly substitution chain context does not match"))
-    chain.solver_result.raw_denominators == solver_result.raw_denominators &&
-        chain.solver_result.exponent == solver_result.exponent &&
-        chain.solver_result.coverage_multipliers == solver_result.coverage_multipliers ||
+    _same_quillen_denominator_cover_solver_result_data(
+        chain.solver_result,
+        solver_result,
+    ) ||
         throw(ArgumentError("Quillen supplied evidence patch assembly substitution chain solver data does not match"))
     policy = _quillen_supplied_base_term_policy(base_term_policy, base_term_factors)
     normalized_base_factors = _quillen_supplied_base_term_factors(

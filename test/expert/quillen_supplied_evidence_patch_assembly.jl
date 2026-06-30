@@ -471,4 +471,17 @@ end
     @test !Suslin.verify_quillen_patch(
         qse_rebuild(patch; solver_result = wrong_source_solver),
     )
+
+    wrong_chain_solver = qse_rebuild(
+        patch.substitution_chain.solver_result;
+        source_candidate = wrong_variable_candidate,
+    )
+    wrong_source_chain = qse_rebuild_chain(
+        patch.substitution_chain;
+        solver_result = wrong_chain_solver,
+    )
+    @test Suslin.verify_quillen_patch_substitution_chain(wrong_source_chain)
+    @test !Suslin.verify_quillen_patch(
+        qse_rebuild(patch; substitution_chain = wrong_source_chain),
+    )
 end
