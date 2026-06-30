@@ -32,6 +32,7 @@ const TEST_GROUP_FILES = Dict(
         "internal/quillen_patch_fixtures.jl",
         "internal/quillen_mainline_fixtures.jl",
         "internal/park_woodburn_polynomial_fixtures.jl",
+        "internal/park_woodburn_sl3_driver_fixtures.jl",
     ],
     "expert" => [
         "expert/elementary_matrices.jl",
