@@ -140,6 +140,24 @@ end
             ),
         ),
     )
+    @test !Suslin.verify_ecp_monicity_normalization(
+        _mn_replace_record_field(already_first_record, :ring, nothing),
+    )
+    @test !Suslin.verify_ecp_monicity_normalization(
+        _mn_replace_record_field(already_first_record, :shift_sign, nothing),
+    )
+    @test Suslin._ecp_monicity_normalization_full_reduction_certificate(
+        [one(already_first_ctx.ring), zero(already_first_ctx.ring)],
+        already_first_ctx.ring,
+    ) === nothing
+    @test !Suslin._ecp_substitution_maps_are_inverse(
+        already_first_ctx.ring,
+        (
+            (; variable = gens(already_first_ctx.ring)[1]),
+            (; variable = gens(already_first_ctx.ring)[2]),
+        ),
+        already_first_record.inverse_substitution,
+    )
 
     bounded_entry = column_cases["ecp-variable-change-monic-gf2"]
     bounded_preimage_column = _mn_shift_inverse_column(bounded_entry)
@@ -195,6 +213,35 @@ end
         selected_variable = gens(already_first_ctx.ring)[1],
         selected_monic_index = 1,
         max_shift_power = -1,
+    )
+    missed_hint = Suslin.ecp_monicity_normalization(
+        already_first_ctx;
+        selected_variable = gens(already_first_ctx.ring)[1],
+        selected_monic_index = length(already_first_ctx.column) + 1,
+        max_shift_power = 1,
+    )
+    @test missed_hint isa Suslin.ECPMonicityNormalizationFailure
+    @test missed_hint.selected_monic_index_hint == length(already_first_ctx.column) + 1
+    @test missed_hint.search_failure.attempted_candidates > 0
+
+    R3, (z1, z2, z3) = Oscar.polynomial_ring(GF(2), ["z1", "z2", "z3"])
+    partial_order_ctx = Suslin.ecp_input_context(
+        [z1, z2, one(R3)],
+        R3;
+        variable_order = (z1, z2),
+        selected_variable = z1,
+    )
+    partial_order_record = Suslin.ecp_monicity_normalization(
+        partial_order_ctx;
+        selected_variable = z1,
+        selected_monic_index = 1,
+    )
+    @test !Suslin.verify_ecp_monicity_normalization(
+        _mn_replace_record_field(
+            _mn_replace_record_field(partial_order_record, :selected_variable_index, 3),
+            :selected_variable,
+            z3,
+        ),
     )
 
     unsupported_entry = column_cases["ecp-unsupported-unimodular-gf2"]
