@@ -32,11 +32,15 @@ function qse_correction(local_factor)
     )
 end
 
-function qse_sequence_certificate(entry, index::Int)
+function qse_sequence_certificate(
+    entry,
+    index::Int;
+    selected_variable = entry.substitution_variable,
+)
     local_factor = entry.local_factors[index]
     realization = Suslin.quillen_local_realization_certificate(
         entry.target_matrix,
-        entry.substitution_variable;
+        selected_variable;
         local_certificate = qse_local_certificate(local_factor),
         denominator = local_factor.denominator,
         coverage_multiplier = local_factor.coverage_multiplier,
@@ -67,6 +71,40 @@ function qse_sequence_certificates(entry)
         qse_sequence_certificate(entry, index)
         for index in eachindex(entry.local_factors)
     ]
+end
+
+function qse_simple_identity_base_certificates()
+    R, (X, r) = Oscar.polynomial_ring(QQ, ["X", "r"])
+    n = 3
+    target = elementary_matrix(n, 1, 2, X, R)
+    denominators = [r, one(R) - r]
+    certificates = map(enumerate(denominators)) do (index, denominator)
+        correction = Suslin.QuillenElementaryCorrection(1, 2, X)
+        local_certificate = Suslin.LocalCertificate([1, 2], [denominator, denominator])
+        realization = Suslin.quillen_local_realization_certificate(
+            target,
+            X;
+            local_certificate = local_certificate,
+            denominator = denominator,
+            coverage_multiplier = one(R),
+            correction = correction,
+            factors = [elementary_matrix(n, 1, 2, denominator * X, R)],
+            ring = R,
+            size = n,
+        )
+        Suslin.quillen_local_factor_sequence_certificate(
+            realization;
+            factor_provenance = (;
+                factor_index = 1,
+                sequence_index = 1,
+                local_index = 1,
+                fixture_id = :identity_base_supplied_evidence,
+                source = :base_term_policy_test,
+            ),
+            metadata = (; source = :base_term_policy_test, local_index = index),
+        )
+    end
+    return (; ring = R, X = X, target = target, certificates = certificates)
 end
 
 function qse_rebuild(record; kwargs...)
@@ -370,9 +408,67 @@ end
         max_exponent = 2,
     )
 
+    identity_base = qse_simple_identity_base_certificates()
+    trivial_patch = Suslin.assemble_quillen_patch_from_local_evidence(
+        identity_base.target,
+        identity_base.X,
+        identity_base.certificates;
+        max_exponent = 2,
+        base_term_policy = :trivial,
+    )
+    @test Suslin.verify_quillen_patch(trivial_patch)
+    @test trivial_patch.base_term_policy == :trivial
+    @test isempty(trivial_patch.base_term_factors)
+    @test trivial_patch.base_term == identity_matrix(identity_base.ring, 3)
+
+    supplied_identity_factor = elementary_matrix(3, 1, 2, zero(identity_base.ring), identity_base.ring)
+    supplied_patch = Suslin.assemble_quillen_patch_from_local_evidence(
+        identity_base.target,
+        identity_base.X,
+        identity_base.certificates;
+        max_exponent = 2,
+        base_term_policy = :supplied,
+        base_term_factors = [supplied_identity_factor],
+    )
+    @test Suslin.verify_quillen_patch(supplied_patch)
+    @test supplied_patch.base_term_policy == :supplied
+    @test supplied_patch.base_term_factors == [supplied_identity_factor]
+    @test supplied_patch.base_term_product == identity_matrix(identity_base.ring, 3)
+    @test_throws ArgumentError Suslin.assemble_quillen_patch_from_local_evidence(
+        identity_base.target,
+        identity_base.X,
+        identity_base.certificates;
+        max_exponent = 2,
+        base_term_policy = :supplied,
+    )
+
     tampered_patch = qse_rebuild(
         patch;
         product = patch.product * elementary_matrix(patch.size, 1, 2, one(patch.ring), patch.ring),
     )
     @test !Suslin.verify_quillen_patch(tampered_patch)
+
+    wrong_variable = first(filter(gen -> gen != entry.substitution_variable, collect(gens(patch.ring))))
+    wrong_variable_certificates = [
+        qse_sequence_certificate(entry, idx; selected_variable = wrong_variable)
+        for idx in eachindex(entry.local_factors)
+    ]
+    wrong_variable_candidate =
+        Suslin.extract_quillen_denominator_cover_candidate(wrong_variable_certificates)
+    @test Suslin.verify_quillen_denominator_cover_candidate(wrong_variable_candidate)
+    @test wrong_variable_candidate.raw_denominators == patch.denominator_candidate.raw_denominators
+    @test wrong_variable_candidate.original_input == patch.denominator_candidate.original_input
+    @test wrong_variable_candidate.selected_variable != patch.denominator_candidate.selected_variable
+    @test !Suslin.verify_quillen_patch(
+        qse_rebuild(patch; denominator_candidate = wrong_variable_candidate),
+    )
+
+    wrong_source_solver = qse_rebuild(
+        patch.solver_result;
+        source_candidate = wrong_variable_candidate,
+    )
+    @test Suslin.verify_quillen_denominator_cover_solver_result(wrong_source_solver)
+    @test !Suslin.verify_quillen_patch(
+        qse_rebuild(patch; solver_result = wrong_source_solver),
+    )
 end

@@ -2728,6 +2728,27 @@ function _same_quillen_supplied_patch_verification(
            left.overall_ok == right.overall_ok
 end
 
+function _same_quillen_denominator_cover_candidate_data(
+    left::QuillenDenominatorCoverCandidate,
+    right::QuillenDenominatorCoverCandidate,
+)::Bool
+    return left.original_input == right.original_input &&
+           left.ring == right.ring &&
+           left.size == right.size &&
+           left.selected_variable == right.selected_variable &&
+           left.local_certificates == right.local_certificates &&
+           left.raw_denominators == right.raw_denominators &&
+           _same_quillen_local_denominator_supports(
+               left.local_supports,
+               right.local_supports,
+           ) &&
+           left.replay_metadata == right.replay_metadata &&
+           _same_quillen_denominator_cover_candidate_verification(
+               left.verification,
+               right.verification,
+           )
+end
+
 function _quillen_supplied_base_term_policy(base_term_policy, base_term_factors)
     if base_term_policy === nothing
         base_term_factors === nothing &&
@@ -2737,6 +2758,8 @@ function _quillen_supplied_base_term_policy(base_term_policy, base_term_factors)
     policy = Symbol(base_term_policy)
     policy in (:supplied, :trivial, :already_handled) ||
         throw(ArgumentError("Quillen supplied evidence patch assembly has unsupported base-term policy"))
+    policy == :supplied && base_term_factors === nothing &&
+        throw(ArgumentError("Quillen supplied evidence patch assembly requires supplied A(0) factors for base_term_policy = :supplied"))
     return policy
 end
 
@@ -2750,7 +2773,7 @@ function _quillen_supplied_base_term_factors(R, n::Int, base_term_factors)
 end
 
 function _quillen_supplied_base_term_ok(policy::Symbol, base_term, factors, product, R, n::Int)
-    policy == :supplied && return product == base_term
+    policy == :supplied && return !isempty(factors) && product == base_term
     policy == :trivial && return isempty(factors) && base_term == identity_matrix(R, n)
     policy == :already_handled && return isempty(factors)
     return false
@@ -2776,22 +2799,19 @@ function replay_quillen_supplied_evidence_patch(
         verify_quillen_denominator_cover_candidate(patch.denominator_candidate)
     denominator_candidate_matches =
         denominator_candidate_ok &&
-        patch.denominator_candidate.original_input == expected_candidate.original_input &&
-        patch.denominator_candidate.raw_denominators ==
-        expected_candidate.raw_denominators &&
-        _same_quillen_local_denominator_supports(
-            patch.denominator_candidate.local_supports,
-            expected_candidate.local_supports,
+        _same_quillen_denominator_cover_candidate_data(
+            patch.denominator_candidate,
+            expected_candidate,
         )
     solver_result_ok =
         verify_quillen_denominator_cover_solver_result(patch.solver_result)
     solver_source_candidate_ok =
         solver_result_ok &&
         patch.solver_result.source_candidate isa QuillenDenominatorCoverCandidate &&
-        patch.solver_result.source_candidate.raw_denominators ==
-        patch.denominator_candidate.raw_denominators &&
-        patch.solver_result.source_candidate.original_input ==
-        patch.denominator_candidate.original_input
+        _same_quillen_denominator_cover_candidate_data(
+            patch.solver_result.source_candidate,
+            patch.denominator_candidate,
+        )
     cover_certificate_ok =
         verify_quillen_denominator_cover(patch.cover_certificate) &&
         _same_quillen_cover_certificate_data(
