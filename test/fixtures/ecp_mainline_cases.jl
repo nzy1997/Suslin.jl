@@ -419,16 +419,21 @@ function catalog()
         "ecp-mainline-negative-supported-without-evidence",
         sl3_route_case.id,
         "supported entries must supply replayable link-step and lower-variable evidence",
-        merge(sl3_route_case, (;
-            expected_status = :supported,
-            support_evidence = merge(sl3_route_case.support_evidence, (;
-                link_witness_status = :absent,
-                link_step_status = :missing,
-                lower_variable_status = :missing,
-                normality_status = :absent,
-                sl3_status = :absent,
-            )),
-        )),
+        merge(
+            NamedTuple{Tuple(k for k in keys(sl3_route_case) if k != :missing_evidence)}(
+                Tuple(v for (k, v) in pairs(sl3_route_case) if k != :missing_evidence),
+            ),
+            (;
+                expected_status = :supported,
+                support_evidence = merge(sl3_route_case.support_evidence, (;
+                    link_witness_status = :absent,
+                    link_step_status = :missing,
+                    lower_variable_status = :missing,
+                    normality_status = :absent,
+                    sl3_status = :absent,
+                )),
+            ),
+        ),
     )
 
     return (;
