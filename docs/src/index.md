@@ -27,8 +27,11 @@ verify_factorization(A, factors)
 - `elementary_factorization(A)` is staged. It supports univariate local `SL_3`
   ordinary-polynomial matrices, selected `n > 3` ordinary-polynomial matrices
   through block-local reduction and recursive polynomial column peel,
-  deterministic multivariate Quillen/local-to-global fixture-backed matrices,
-  and determinant-one Laurent inputs through the existing Laurent `SL` path.
+  ordinary-polynomial Quillen patching (#183) with verified supplied or
+  Murthy-adapter local evidence, exact cover replay, sequence replay,
+  substitution-chain replay, and trivial or supplied `A(0)` base-term
+  handling, and determinant-one Laurent inputs through the existing Laurent
+  `SL` path.
 - `verify_factorization(A, factors)` checks exact multiplication against `A`.
 - `laurent_gl_factorization_certificate(A)` defaults to the eager Laurent
   normalization/core certificate. With `determinant_strategy = :lazy`, it
@@ -45,13 +48,12 @@ verify_factorization(A, factors)
   nontrivial local-witness cases are verified through localized
   denominator-cleared certificate replay.
 - The implementation is not yet the full Park-Woodburn algorithm for arbitrary
-  `SL_n(k[x_1, ..., x_m])`, `n >= 3`: Quillen automatic patching (#183),
-  general `SL_3` (#184), the general ECP reducer (#185), recursive `SL_n`
-  (#186), full public Park-Woodburn acceptance (#187), coefficient-ring
-  support beyond exact field-backed ordinary polynomial rings, arbitrary
-  Laurent `GL_n` determinant correction, Laurent/ToricBuilder mainline
-  acceptance, and Steinberg factor-count optimization remain staged
-  boundaries.
+  `SL_n(k[x_1, ..., x_m])`, `n >= 3`: general `SL_3` (#184), the general ECP
+  reducer (#185), recursive `SL_n` (#186), full public Park-Woodburn
+  acceptance (#187), coefficient-ring support beyond exact field-backed
+  ordinary polynomial rings, arbitrary Laurent `GL_n` determinant correction,
+  Laurent/ToricBuilder mainline acceptance, and Steinberg factor-count
+  optimization remain staged boundaries.
 
 See [ToricBuilder Integration Contract](@ref) for the first recorded
 consumer-boundary fixture contract.
