@@ -79,23 +79,6 @@ struct QuillenPatchSubstitutionChainVerification
     overall_ok::Bool
 end
 
-struct QuillenPatchSubstitutionChain
-    original_matrix
-    ring
-    size::Int
-    selected_variable
-    sign_convention::Symbol
-    solver_result
-    cumulative_coefficients::Vector
-    intermediate_matrices::Vector
-    steps::Vector{QuillenPatchSubstitutionStep}
-    bracket_matrices::Vector
-    base_term
-    metadata
-    replay_metadata
-    verification::QuillenPatchSubstitutionChainVerification
-end
-
 struct QuillenDenominatorCoverVerification
     denominator_count::Int
     multiplier_count::Int
@@ -320,6 +303,23 @@ struct QuillenDenominatorCoverSolverResult
     coverage_sum
     cover_certificate::QuillenDenominatorCoverCertificate
     verification::QuillenDenominatorCoverSolverVerification
+end
+
+struct QuillenPatchSubstitutionChain
+    original_matrix
+    ring
+    size::Int
+    selected_variable
+    sign_convention::Symbol
+    solver_result::QuillenDenominatorCoverSolverResult
+    cumulative_coefficients::Vector
+    intermediate_matrices::Vector
+    steps::Vector{QuillenPatchSubstitutionStep}
+    bracket_matrices::Vector
+    base_term
+    metadata
+    replay_metadata
+    verification::QuillenPatchSubstitutionChainVerification
 end
 
 struct QuillenLocalContributionNormalizationVerification
