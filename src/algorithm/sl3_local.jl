@@ -1060,9 +1060,9 @@ function _sl3_local_murthy_q0_nonunit_local_reduction(
         context.bezout_witness,
     )
     if bezout_data === nothing
-        context.bezout_witness === nothing &&
+        context.bezout_witness === nothing && # COV_EXCL_LINE
             _throw_staged_sl3_local_failure("Murthy q(0)-nonunit local Bezout/resultant extraction is unsupported")
-        error("internal local Murthy q(0)-nonunit Bezout/resultant witness did not verify")
+        error("internal local Murthy q(0)-nonunit Bezout/resultant witness did not verify") # COV_EXCL_LINE
     end
 
     p_prime = bezout_data.p_prime

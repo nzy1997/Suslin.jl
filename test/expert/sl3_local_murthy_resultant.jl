@@ -123,6 +123,15 @@ end
         extracted_fixture.variable,
     )
     _assert_resultant_certificate(extracted_cert; expected_source = :extracted_bezout_witness)
+    extracted_context = Suslin.sl3_local_murthy_input_context(
+        extracted_fixture.target,
+        extracted_fixture.variable,
+    )
+    @test extracted_context.bezout_witness === nothing
+    @test Suslin.verify_sl3_local_murthy_input_context(extracted_context)
+    extracted_context_cert = Suslin.realize_sl3_local_certificate(extracted_context)
+    _assert_resultant_certificate(extracted_context_cert; expected_source = :extracted_bezout_witness)
+    @test extracted_context_cert.factors == extracted_cert.factors
     @test Suslin.realize_sl3_local(
         extracted_fixture.entries.p,
         extracted_fixture.entries.q,
