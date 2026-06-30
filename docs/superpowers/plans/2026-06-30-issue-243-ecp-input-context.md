@@ -49,6 +49,8 @@ column_cases["ecp-unsupported-unimodular-gf2"]
 mainline_cases["ecp-mainline-length4-coupled-qq"]
 ```
 
+The length-four `#242` fixture is a staged-positive catalog case for #185, but the current reducer diagnostic may classify it as supported through an existing ordinary route. Assert exact diagnostic replay for that fixture, and use a separate unimodular ordinary column whose diagnostic is `:unsupported` for the unsupported boundary assertion.
+
 For each context, assert the coerced column, ring profile, variables, normalized variable order, length, witness identity, selected-variable membership, support classification, staged failure reason, staged diagnostic equality, and `verify_ecp_input_context(ctx)`.
 
 The negative tests must assert:
@@ -58,6 +60,7 @@ The negative tests must assert:
 @test_throws ArgumentError Suslin.ecp_input_context(length_two_unimodular, R)
 @test_throws ArgumentError Suslin.ecp_input_context(column, R; selected_variable = x + y)
 @test_throws ArgumentError Suslin.ecp_input_context(column, R; unimodularity_witness = bad_witness)
+@test_throws ArgumentError Suslin.ecp_input_context(laurent_column, laurent_R)
 @test !Suslin.verify_ecp_input_context(tampered_witness_context)
 ```
 

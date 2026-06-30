@@ -120,7 +120,12 @@ end
     @test staged_ctx.support_classification == :unsupported
     @test staged_ctx.staged_failure_reason == :unsupported_polynomial_column_family
 
-    unsupported_column = [zero(staged_R), gens(staged_R)[1]^2, gens(staged_R)[1] * gens(staged_R)[2] + one(staged_R), zero(staged_R)]
+    unsupported_column = [
+        zero(staged_R),
+        gens(staged_R)[1]^2,
+        gens(staged_R)[1] * gens(staged_R)[2] + one(staged_R),
+        zero(staged_R),
+    ]
     @test Suslin.is_unimodular_column(unsupported_column, staged_R)
     unsupported_ctx = Suslin.ecp_input_context(
         unsupported_column,
@@ -191,4 +196,12 @@ end
         selected_variable = length4_entry.selected_variable.generator,
         unimodularity_witness = bad_witness,
     )
+
+    laurent_R, (lx, ly) = Suslin.suslin_laurent_polynomial_ring(GF(2), ["x", "y"])
+    laurent_column = [
+        lx^-1 * ly^-1 * (lx + ly^2),
+        lx^-1 * ly^-1 * (lx * ly + lx + one(laurent_R)),
+        lx^-1 * ly^-1 * (lx^2 + lx * ly + ly + one(laurent_R)),
+    ]
+    @test_throws ArgumentError Suslin.ecp_input_context(laurent_column, laurent_R)
 end

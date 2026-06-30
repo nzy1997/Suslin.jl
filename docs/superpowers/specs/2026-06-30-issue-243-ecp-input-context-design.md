@@ -59,9 +59,11 @@ julia --project=. -e 'include("test/expert/ecp_input_context.jl")'
 The test covers:
 
 - one #242 supported ordinary multivariate column from `ECPMainlineFixtureCatalog`;
+- one #242 staged-positive ordinary multivariate column from `ECPMainlineFixtureCatalog`, even if the current reducer diagnostic classifies that column as supported by an existing route;
 - one existing GF(2) staged ECP column from `ECPColumnFixtureCatalog`;
-- one unsupported but unimodular ordinary #242 length-four boundary column;
+- one unsupported but unimodular ordinary column;
 - negative controls for non-unimodular input, length-two input, selected variable outside `gens(R)`, invalid supplied witness, and tampered stored witness.
+- a Laurent-ring rejection check so the new context stays on the ordinary-polynomial path.
 
 ## Out Of Scope
 
