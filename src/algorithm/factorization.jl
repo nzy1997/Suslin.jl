@@ -23,6 +23,7 @@ struct SL3RealizationInputContext
     determinant_status::Symbol
     exact_field_status::Symbol
     catalog_metadata::NamedTuple
+    creation_identity::NamedTuple
     local_form_witness
     local_form_status::Symbol
     variable_change_metadata
@@ -314,6 +315,18 @@ function _sl3_realization_input_context_staged_diagnostic(
     )
 end
 
+function _sl3_realization_input_context_creation_identity(
+    matrix,
+    selected_variable,
+    catalog_metadata,
+)
+    return (;
+        matrix,
+        selected_variable,
+        catalog_metadata,
+    )
+end
+
 function _sl3_realization_input_context_fields(
     A;
     selected_variable = nothing,
@@ -406,6 +419,11 @@ function _sl3_realization_input_context_fields(
         determinant_status = :one,
         exact_field_status = :supported,
         catalog_metadata,
+        creation_identity = _sl3_realization_input_context_creation_identity(
+            A,
+            selected,
+            catalog_metadata,
+        ),
         local_form_witness,
         local_form_status,
         variable_change_metadata,
@@ -447,6 +465,7 @@ function _sl3_realization_input_context_core_verification(context)
     determinant_status_ok = context.determinant_status == recomputed.determinant_status
     exact_field_status_ok = context.exact_field_status == recomputed.exact_field_status
     catalog_metadata_ok = context.catalog_metadata == recomputed.catalog_metadata
+    creation_identity_ok = context.creation_identity == recomputed.creation_identity
     local_form_witness_ok = context.local_form_witness == recomputed.local_form_witness
     local_form_status_ok = context.local_form_status == recomputed.local_form_status
     variable_change_metadata_ok =
@@ -481,6 +500,7 @@ function _sl3_realization_input_context_core_verification(context)
         determinant_status_ok &&
         exact_field_status_ok &&
         catalog_metadata_ok &&
+        creation_identity_ok &&
         local_form_witness_ok &&
         local_form_status_ok &&
         variable_change_metadata_ok &&
@@ -508,6 +528,7 @@ function _sl3_realization_input_context_core_verification(context)
         determinant_status_ok,
         exact_field_status_ok,
         catalog_metadata_ok,
+        creation_identity_ok,
         local_form_witness_ok,
         local_form_status_ok,
         variable_change_metadata_ok,
@@ -1281,11 +1302,58 @@ function _sl3_murthy_quillen_local_evidence_provider_fields(
     )
 end
 
+function _same_cached_provenance_data(left, right)::Bool
+    left === right && return true
+    typeof(left) === typeof(right) || return false
+
+    values_equal = try
+        left == right
+    catch err
+        err isa InterruptException && rethrow()
+        false
+    end
+    values_equal && return true
+
+    if left isa NamedTuple
+        keys(left) == keys(right) || return false
+        for key in keys(left)
+            _same_cached_provenance_data(
+                getproperty(left, key),
+                getproperty(right, key),
+            ) || return false
+        end
+        return true
+    elseif left isa Tuple
+        length(left) == length(right) || return false
+        for idx in eachindex(left, right)
+            _same_cached_provenance_data(left[idx], right[idx]) || return false
+        end
+        return true
+    elseif left isa AbstractArray
+        size(left) == size(right) || return false
+        for idx in eachindex(left, right)
+            _same_cached_provenance_data(left[idx], right[idx]) || return false
+        end
+        return true
+    elseif Base.isstructtype(typeof(left)) && fieldcount(typeof(left)) > 0
+        for name in fieldnames(typeof(left))
+            _same_cached_provenance_data(
+                getfield(left, name),
+                getfield(right, name),
+            ) || return false
+        end
+        return true
+    end
+
+    return false
+end
+
 function _same_sl3_local_realization_certificate_data(left, right)::Bool
     return left.target == right.target &&
            left.branch == right.branch &&
            _polynomial_route_factor_sequences_equal(left.factors, right.factors) &&
-           left.selected_variable == right.selected_variable
+           left.selected_variable == right.selected_variable &&
+           _same_cached_provenance_data(left.witness, right.witness)
 end
 
 function _same_sl3_local_murthy_input_context_data(left, right)::Bool
