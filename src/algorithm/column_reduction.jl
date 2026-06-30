@@ -57,6 +57,42 @@ struct ECPMonicitySearchFailure
     message::String
 end
 
+struct ECPMonicityNormalization
+    original_column
+    ring
+    context::ECPInputContext
+    variable_order
+    selected_variable_index::Int
+    selected_variable
+    source_variable_index
+    source_variable
+    shift_power::Int
+    shift_sign
+    shift_polynomial
+    forward_substitution
+    inverse_substitution
+    transformed_column
+    selected_monic_index::Int
+    selected_monic_entry
+    coordinate_move_factors::Vector
+    normalized_column
+    inverse_substituted_coordinate_move_factors::Vector
+    inverse_substituted_reduction_factors::Vector
+    factors::Vector
+    verification
+end
+
+struct ECPMonicityNormalizationFailure
+    context::ECPInputContext
+    variable_order
+    selected_variable_index::Int
+    selected_variable
+    selected_monic_index_hint
+    max_shift_power::Int
+    shift_signs
+    search_failure
+end
+
 struct ECPLinkWitnessRecord
     original_column
     ring
@@ -218,6 +254,79 @@ function ECPInputContext(
     verify_ecp_input_context(context) ||
         error("internal ECP input context storage verification failed")
     return context
+end
+
+function ecp_monicity_normalization(
+    context::ECPInputContext;
+    selected_variable = nothing,
+    selected_monic_index = nothing,
+    max_shift_power::Integer = 3,
+    shift_signs = (one(context.ring), -one(context.ring)),
+)
+    verify_ecp_input_context(context) ||
+        throw(ArgumentError("ECP monicity normalization requires a verified ECP input context"))
+    max_shift_power < 0 && throw(ArgumentError("max_shift_power must be nonnegative"))
+
+    R = context.ring
+    resolved_selected_variable = selected_variable === nothing ? context.selected_variable : selected_variable
+    resolved_selected_variable === nothing &&
+        throw(ArgumentError("ECP monicity normalization requires a selected variable"))
+    selected_variable_index = _ecp_selected_variable_index(R, resolved_selected_variable)
+    variable_order = _ecp_target_last_variable_order(R, context.variable_order, resolved_selected_variable)
+    selected_monic_index_hint = _ecp_selected_monic_index_hint(selected_monic_index)
+
+    direct = _ecp_monicity_normalization_summary(
+        collect(context.column),
+        R,
+        variable_order,
+        selected_variable_index;
+        selected_monic_index_hint,
+        use_full_reduction = true,
+    )
+    if direct !== nothing
+        return _ecp_monicity_normalization_record(context, variable_order, direct)
+    end
+
+    signs = tuple((_coerce_into_ring(R, sign, "shift sign") for sign in shift_signs)...)
+    attempted = 0
+    for source_variable in variable_order[1:(end - 1)]
+        source_variable_index = _ecp_generator_index(R, source_variable)
+        for shift_power in 1:Int(max_shift_power), shift_sign in signs
+            attempted += 1
+            summary = _ecp_monicity_normalization_summary(
+                collect(context.column),
+                R,
+                variable_order,
+                selected_variable_index;
+                source_variable_index,
+                shift_power,
+                shift_sign,
+                selected_monic_index_hint,
+                use_full_reduction = true,
+            )
+            summary === nothing && continue
+            return _ecp_monicity_normalization_record(context, variable_order, summary)
+        end
+    end
+
+    search_failure = _ecp_monicity_search_failure(
+        collect(context.column),
+        R,
+        variable_order,
+        max_shift_power,
+        signs,
+        attempted,
+    )
+    return ECPMonicityNormalizationFailure(
+        context,
+        variable_order,
+        selected_variable_index,
+        gens(R)[selected_variable_index],
+        selected_monic_index_hint,
+        Int(max_shift_power),
+        signs,
+        search_failure,
+    )
 end
 
 function _ecp_input_context_selected_variable(R, variable_order, selected_variable)
@@ -1162,6 +1271,259 @@ function _ecp_selected_variable_index(R, variable)
     return idx
 end
 
+function _ecp_target_last_variable_order(R, variable_order, selected_variable)
+    normalized_order = tuple(_ecp_normalize_variable_order(R, variable_order)...)
+    selected_variable_index = _ecp_selected_variable_index(R, selected_variable)
+    selected_generator = gens(R)[selected_variable_index]
+    count(==(selected_generator), normalized_order) == 1 ||
+        throw(ArgumentError("selected_variable must appear in variable_order"))
+    prefix = [variable for variable in normalized_order if variable != selected_generator]
+    push!(prefix, selected_generator)
+    return tuple(prefix...)
+end
+
+function _ecp_selected_monic_index_hint(selected_monic_index)
+    selected_monic_index === nothing && return nothing
+    selected_monic_index isa Integer ||
+        throw(ArgumentError("selected_monic_index must be an integer or nothing"))
+    Int(selected_monic_index) >= 1 ||
+        throw(ArgumentError("selected_monic_index must be positive"))
+    return Int(selected_monic_index)
+end
+
+function _ecp_monicity_normalization_record(context::ECPInputContext, variable_order, summary)
+    provisional = ECPMonicityNormalization(
+        tuple(context.column...),
+        context.ring,
+        context,
+        tuple(variable_order...),
+        summary.target_variable_index,
+        summary.target_variable,
+        summary.source_variable_index,
+        summary.source_variable,
+        summary.shift_power,
+        summary.shift_sign,
+        summary.shift_polynomial,
+        summary.forward_substitution,
+        summary.inverse_substitution,
+        summary.transformed_column,
+        summary.selected_monic_index,
+        summary.selected_monic_entry,
+        summary.coordinate_move_factors,
+        summary.normalized_column,
+        summary.inverse_substituted_coordinate_move_factors,
+        summary.inverse_substituted_reduction_factors,
+        summary.inverse_substituted_factors,
+        nothing,
+    )
+    verification = _ecp_monicity_normalization_replay_summary(provisional)
+    verification.overall_ok ||
+        error("internal ECP monicity normalization verification failed")
+    record = ECPMonicityNormalization(
+        provisional.original_column,
+        provisional.ring,
+        provisional.context,
+        provisional.variable_order,
+        provisional.selected_variable_index,
+        provisional.selected_variable,
+        provisional.source_variable_index,
+        provisional.source_variable,
+        provisional.shift_power,
+        provisional.shift_sign,
+        provisional.shift_polynomial,
+        provisional.forward_substitution,
+        provisional.inverse_substitution,
+        provisional.transformed_column,
+        provisional.selected_monic_index,
+        provisional.selected_monic_entry,
+        provisional.coordinate_move_factors,
+        provisional.normalized_column,
+        provisional.inverse_substituted_coordinate_move_factors,
+        provisional.inverse_substituted_reduction_factors,
+        provisional.factors,
+        verification,
+    )
+    verify_ecp_monicity_normalization(record) ||
+        error("internal ECP monicity normalization storage verification failed")
+    return record
+end
+
+function _ecp_resolve_selected_monic_index(
+    transformed_column,
+    R,
+    target_variable_index::Int,
+    selected_monic_index_hint,
+)
+    selected_monic_index_hint === nothing &&
+        return _ecp_first_monic_entry_index(transformed_column, R, target_variable_index)
+    1 <= selected_monic_index_hint <= length(transformed_column) || return nothing
+    _is_monic_in_variable(
+        transformed_column[selected_monic_index_hint],
+        R,
+        target_variable_index,
+    ) || return nothing
+    return selected_monic_index_hint
+end
+
+function _ecp_monicity_normalization_full_reduction_certificate(column::AbstractVector, R)
+    certificate = try
+        ecp_column_reduction_certificate(column, R)
+    catch err
+        err isa InterruptException && rethrow()
+        err isa ArgumentError || rethrow()
+        return nothing
+    end
+    return (; stage = certificate.stages[end], factors = certificate.factors)
+end
+
+function _ecp_monicity_normalization_summary(
+    column::AbstractVector,
+    R,
+    variable_order,
+    target_variable_index::Int;
+    source_variable_index = nothing,
+    shift_power::Integer = 0,
+    shift_sign = zero(R),
+    selected_monic_index_hint = nothing,
+    use_full_reduction::Bool = false,
+)
+    ring_gens = collect(gens(R))
+    normalized_order = tuple(_ecp_normalize_variable_order(R, variable_order)...)
+    target_variable = ring_gens[target_variable_index]
+    normalized_order[end] == target_variable || return nothing
+
+    source_variable = nothing
+    forward_values = copy(ring_gens)
+    inverse_values = copy(ring_gens)
+    shift_power = Int(shift_power)
+    shift_power >= 0 || return nothing
+    shift_polynomial = zero(R)
+    if source_variable_index !== nothing
+        source_variable_index isa Integer || return nothing
+        1 <= source_variable_index <= length(ring_gens) || return nothing
+        source_variable_index == target_variable_index && return nothing
+        shift_power >= 1 || return nothing
+        source_variable = ring_gens[source_variable_index]
+        shift_polynomial = shift_sign * target_variable^shift_power
+        forward_values[source_variable_index] = source_variable + shift_polynomial
+        inverse_values[source_variable_index] = source_variable - shift_polynomial
+    else
+        shift_power == 0 || return nothing
+        iszero(shift_sign) || return nothing
+    end
+
+    transformed = [
+        _coerce_into_ring(R, evaluate(entry, forward_values), "substituted column entry")
+        for entry in column
+    ]
+    selected_monic_index = _ecp_resolve_selected_monic_index(
+        transformed,
+        R,
+        target_variable_index,
+        selected_monic_index_hint,
+    )
+    selected_monic_index === nothing && return nothing
+    selected_monic_entry = transformed[selected_monic_index]
+
+    coordinate_move_factors = _ecp_first_coordinate_move_factors(
+        length(column),
+        selected_monic_index,
+        R,
+    )
+    normalized_column = _ecp_matrix_column_to_tuple(
+        _apply_reduction_factors(coordinate_move_factors, transformed, R),
+    )
+    normalized_column[1] == selected_monic_entry || return nothing
+
+    transformed_result = use_full_reduction ?
+        _ecp_monicity_normalization_full_reduction_certificate(
+            collect(normalized_column),
+            R,
+        ) :
+        _reduce_supported_unimodular_column_certificate(
+            collect(normalized_column),
+            R,
+        )
+    transformed_result === nothing && return nothing
+
+    transformed_factors = _checked_reduction_factors(
+        vcat(transformed_result.factors, coordinate_move_factors),
+        transformed,
+        R,
+        "monicity normalization transformed reduction",
+    )
+    transformed_output = _apply_reduction_factors(
+        transformed_factors,
+        transformed,
+        R,
+    )
+    inverse_substituted_coordinate_move_factors = [
+        _substitute_matrix_entries(factor, inverse_values, R)
+        for factor in coordinate_move_factors
+    ]
+    inverse_substituted_reduction_factors = [
+        _substitute_matrix_entries(factor, inverse_values, R)
+        for factor in transformed_result.factors
+    ]
+    inverse_substituted_factors = vcat(
+        inverse_substituted_reduction_factors,
+        inverse_substituted_coordinate_move_factors,
+    )
+    inverse_substituted_factors = _checked_reduction_factors(
+        inverse_substituted_factors,
+        column,
+        R,
+        "monicity normalization reduction",
+    )
+    original_output = _apply_reduction_factors(
+        inverse_substituted_factors,
+        column,
+        R,
+    )
+    target = _target_reduced_column(R, length(column))
+    forward_substitution = _ecp_substitution_map_tuple(ring_gens, forward_values)
+    inverse_substitution = _ecp_substitution_map_tuple(ring_gens, inverse_values)
+    variable_change_verification = (;
+        selected_monic_ok = _is_monic_in_variable(selected_monic_entry, R, target_variable_index),
+        substitution_inverse_ok = _ecp_substitution_maps_are_inverse(
+            R,
+            forward_substitution,
+            inverse_substitution,
+        ),
+        transformed_reduction_ok = transformed_output == target,
+        original_reduction_ok = original_output == target,
+    )
+    return (;
+        variable_order = normalized_order,
+        source_variable_index,
+        source_variable,
+        target_variable_index,
+        target_variable,
+        shift_power,
+        shift_sign,
+        shift_polynomial,
+        forward_values = tuple(forward_values...),
+        inverse_values = tuple(inverse_values...),
+        forward_substitution,
+        inverse_substitution,
+        transformed_column = tuple(transformed...),
+        selected_monic_index,
+        selected_monic_entry,
+        first_coordinate_strategy = _ecp_first_coordinate_strategy(selected_monic_index),
+        coordinate_move_factors,
+        normalized_column,
+        transformed_stage = transformed_result.stage,
+        transformed_reduction_factors = transformed_result.factors,
+        transformed_factors,
+        inverse_substituted_coordinate_move_factors,
+        inverse_substituted_reduction_factors,
+        inverse_substituted_factors,
+        transformed_output,
+        original_output,
+        variable_change_verification,
+    )
+end
+
 function _ecp_monicity_candidate_stage(
     column::AbstractVector,
     R,
@@ -1171,75 +1533,49 @@ function _ecp_monicity_candidate_stage(
     shift_power::Int,
     shift_sign,
 )
-    ring_gens = collect(gens(R))
-    source_variable = ring_gens[source_variable_index]
-    target_variable = ring_gens[target_variable_index]
-
-    forward_values = copy(ring_gens)
-    forward_values[source_variable_index] = source_variable + shift_sign * target_variable^shift_power
-    transformed = [_coerce_into_ring(R, evaluate(entry, forward_values), "substituted column entry") for entry in column]
-    selected_monic_index = _ecp_first_monic_entry_index(transformed, R, target_variable_index)
-    selected_monic_index === nothing && return nothing
-
-    transformed_result = _reduce_supported_unimodular_column_certificate(transformed, R)
-    transformed_result === nothing && return nothing
-
-    inverse_values = copy(ring_gens)
-    inverse_values[source_variable_index] = source_variable - shift_sign * target_variable^shift_power
-    inverse_substituted_factors = [
-        _substitute_matrix_entries(factor, inverse_values, R)
-        for factor in transformed_result.factors
-    ]
-    factors = _checked_reduction_factors(
-        inverse_substituted_factors,
+    summary = _ecp_monicity_normalization_summary(
         column,
         R,
-        "monicity normalization reduction",
+        variable_order,
+        target_variable_index;
+        source_variable_index,
+        shift_power,
+        shift_sign,
     )
-    target = _target_reduced_column(R, length(column))
-    transformed_output = _apply_reduction_factors(transformed_result.factors, transformed, R)
-    original_output = _apply_reduction_factors(factors, column, R)
-    forward_substitution = _ecp_substitution_map_tuple(ring_gens, forward_values)
-    inverse_substitution = _ecp_substitution_map_tuple(ring_gens, inverse_values)
-    selected_monic_entry = transformed[selected_monic_index]
-    first_coordinate_move_factors = typeof(identity_matrix(R, length(column)))[]
-    first_coordinate_column = tuple(transformed...)
-    variable_change_verification = (;
-        selected_monic_ok = _is_monic_in_variable(selected_monic_entry, R, target_variable_index),
-        transformed_reduction_ok = transformed_output == target,
-        original_reduction_ok = original_output == target,
-    )
+    summary === nothing && return nothing
     stage = (;
         kind = :monicity_normalization,
         input_column = _ecp_column_tuple(column),
-        variable_order = tuple(variable_order...),
+        variable_order = summary.variable_order,
         variable_index = source_variable_index,
         source_variable_index,
-        source_variable,
+        source_variable = summary.source_variable,
         last_variable_index = target_variable_index,
         target_variable_index,
-        target_variable,
+        target_variable = summary.target_variable,
         shift_power,
         shift_sign,
-        shift_polynomial = shift_sign * target_variable^shift_power,
-        forward_values = tuple(forward_values...),
-        inverse_values = tuple(inverse_values...),
-        forward_substitution,
-        inverse_substitution,
-        transformed_column = tuple(transformed...),
-        selected_monic_index,
-        selected_monic_entry,
-        first_coordinate_strategy = _ecp_first_coordinate_strategy(selected_monic_index),
-        first_coordinate_move_factors,
-        first_coordinate_column,
-        transformed_stage = transformed_result.stage,
-        transformed_factors = transformed_result.factors,
-        inverse_substituted_factors,
-        factors,
-        output_column = original_output,
-        variable_change_verification,
+        shift_polynomial = summary.shift_polynomial,
+        forward_values = summary.forward_values,
+        inverse_values = summary.inverse_values,
+        forward_substitution = summary.forward_substitution,
+        inverse_substitution = summary.inverse_substitution,
+        transformed_column = summary.transformed_column,
+        selected_monic_index = summary.selected_monic_index,
+        selected_monic_entry = summary.selected_monic_entry,
+        first_coordinate_strategy = summary.first_coordinate_strategy,
+        first_coordinate_move_factors = summary.coordinate_move_factors,
+        first_coordinate_column = summary.normalized_column,
+        transformed_stage = summary.transformed_stage,
+        transformed_factors = summary.transformed_factors,
+        inverse_substituted_coordinate_move_factors = summary.inverse_substituted_coordinate_move_factors,
+        inverse_substituted_reduction_factors = summary.inverse_substituted_reduction_factors,
+        inverse_substituted_factors = summary.inverse_substituted_factors,
+        factors = summary.inverse_substituted_factors,
+        output_column = summary.original_output,
+        variable_change_verification = summary.variable_change_verification,
     )
-    return (; factors, stage)
+    return (; factors = summary.inverse_substituted_factors, stage)
 end
 
 function _ecp_monicity_search_failure(column::AbstractVector, R, variable_order, max_shift_power::Integer, shift_signs, attempted_candidates::Int)
@@ -1457,6 +1793,16 @@ function verify_ecp_input_context(context)::Bool
     try
         replay = _ecp_input_context_replay_summary(context)
         return replay.overall_ok && context.verification == replay
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function verify_ecp_monicity_normalization(record)::Bool
+    try
+        replay = _ecp_monicity_normalization_replay_summary(record)
+        return replay.overall_ok && record.verification == replay
     catch err
         err isa InterruptException && rethrow()
         return false
@@ -1840,6 +2186,113 @@ function _ecp_input_context_replay_summary(context)
         replayed_selected_variable,
         replayed_staged_failure_reason,
         replayed_staged_diagnostic,
+    )
+end
+
+function _ecp_monicity_normalization_replay_summary(record)
+    context_ok = verify_ecp_input_context(record.context)
+    context_column = context_ok ? tuple(record.context.column...) : ()
+    context_ring = context_ok ? record.context.ring : nothing
+    input_ok = context_ok &&
+        record.original_column == context_column &&
+        record.ring == context_ring
+
+    selected_variable_index_ok = try
+        1 <= record.selected_variable_index <= length(gens(record.ring))
+    catch err
+        err isa InterruptException && rethrow()
+        false
+    end
+    replayed_selected_variable = selected_variable_index_ok ?
+        gens(record.ring)[record.selected_variable_index] :
+        nothing
+    selected_variable_ok = selected_variable_index_ok &&
+        record.selected_variable == replayed_selected_variable
+
+    replayed_variable_order = try
+        context_ok && selected_variable_ok ?
+            _ecp_target_last_variable_order(
+                record.ring,
+                record.context.variable_order,
+                record.selected_variable,
+            ) :
+            ()
+    catch err
+        err isa InterruptException && rethrow()
+        ()
+    end
+    variable_order_ok = record.variable_order == replayed_variable_order
+
+    summary = try
+        input_ok && selected_variable_ok && variable_order_ok ?
+            _ecp_monicity_normalization_summary(
+                collect(record.original_column),
+                record.ring,
+                record.variable_order,
+                record.selected_variable_index;
+                source_variable_index = record.source_variable_index,
+                shift_power = record.shift_power,
+                shift_sign = record.shift_sign,
+                selected_monic_index_hint = record.selected_monic_index,
+                use_full_reduction = true,
+            ) :
+            nothing
+    catch err
+        err isa InterruptException && rethrow()
+        nothing
+    end
+    summary_ok = summary !== nothing
+    replayed_target = _target_reduced_column(record.ring, length(record.original_column))
+    exact_reduction_ok = summary_ok && summary.original_output == replayed_target
+    substitution_inverse_ok = summary_ok &&
+        summary.variable_change_verification.substitution_inverse_ok
+
+    fields_ok = summary_ok &&
+        record.source_variable_index == summary.source_variable_index &&
+        record.source_variable == summary.source_variable &&
+        record.shift_power == summary.shift_power &&
+        record.shift_sign == summary.shift_sign &&
+        record.shift_polynomial == summary.shift_polynomial &&
+        record.forward_substitution == summary.forward_substitution &&
+        record.inverse_substitution == summary.inverse_substitution &&
+        record.transformed_column == summary.transformed_column &&
+        record.selected_monic_index == summary.selected_monic_index &&
+        record.selected_monic_entry == summary.selected_monic_entry &&
+        _ecp_factor_sequences_equal(record.coordinate_move_factors, summary.coordinate_move_factors) &&
+        record.normalized_column == summary.normalized_column &&
+        _ecp_factor_sequences_equal(
+            record.inverse_substituted_coordinate_move_factors,
+            summary.inverse_substituted_coordinate_move_factors,
+        ) &&
+        _ecp_factor_sequences_equal(
+            record.inverse_substituted_reduction_factors,
+            summary.inverse_substituted_reduction_factors,
+        ) &&
+        _ecp_factor_sequences_equal(record.factors, summary.inverse_substituted_factors)
+
+    overall_ok = context_ok &&
+        input_ok &&
+        selected_variable_index_ok &&
+        selected_variable_ok &&
+        variable_order_ok &&
+        summary_ok &&
+        substitution_inverse_ok &&
+        fields_ok &&
+        exact_reduction_ok
+    return (;
+        overall_ok,
+        context_ok,
+        input_ok,
+        selected_variable_index_ok,
+        selected_variable_ok,
+        variable_order_ok,
+        summary_ok,
+        substitution_inverse_ok,
+        fields_ok,
+        exact_reduction_ok,
+        replayed_selected_variable,
+        replayed_variable_order,
+        replayed_target,
     )
 end
 
@@ -2810,6 +3263,8 @@ function _ecp_replay_stage(stage, input_column, R)
             :first_coordinate_column,
             :transformed_stage,
             :transformed_factors,
+            :inverse_substituted_coordinate_move_factors,
+            :inverse_substituted_reduction_factors,
             :inverse_substituted_factors,
             :factors,
             :output_column,
@@ -2844,42 +3299,24 @@ function _ecp_replay_stage(stage, input_column, R)
         source_variable == ring_gens[source_variable_index] || return invalid_replay
         target_variable == ring_gens[target_variable_index] || return invalid_replay
         stage.shift_power isa Integer && stage.shift_power >= 0 || return invalid_replay
-
-        forward_values = copy(ring_gens)
-        forward_values[source_variable_index] = source_variable + stage.shift_sign * target_variable^stage.shift_power
-        substituted_column = [
-            _coerce_into_ring(R, evaluate(entry, forward_values), "substituted column entry")
-            for entry in input_column
-        ]
-        transformed_replay = _ecp_replay_stage(stage.transformed_stage, substituted_column, R)
-        inverse_values = copy(ring_gens)
-        inverse_values[source_variable_index] = source_variable - stage.shift_sign * target_variable^stage.shift_power
-        forward_substitution = _ecp_substitution_map_tuple(ring_gens, forward_values)
-        inverse_substitution = _ecp_substitution_map_tuple(ring_gens, inverse_values)
-        selected_index_ok = stage.selected_monic_index isa Integer &&
-            1 <= stage.selected_monic_index <= length(substituted_column)
-        selected_monic_entry = selected_index_ok ? substituted_column[stage.selected_monic_index] : zero(R)
-        selected_monic_ok = selected_index_ok &&
-            stage.selected_monic_entry == selected_monic_entry &&
-            _is_monic_in_variable(selected_monic_entry, R, target_variable_index)
-        first_coordinate_strategy = selected_index_ok ?
-            _ecp_first_coordinate_strategy(stage.selected_monic_index) :
-            :invalid
-        transformed_output = _apply_reduction_factors(transformed_replay.factors, substituted_column, R)
-        target = _target_reduced_column(R, length(input_column))
-        inverse_substituted_factors = [
-            _substitute_matrix_entries(factor, inverse_values, R)
-            for factor in transformed_replay.factors
-        ]
-        expected_output = _apply_reduction_factors(inverse_substituted_factors, input_column, R)
-        first_coordinate_move_factors = typeof(identity_matrix(R, length(input_column)))[]
-        variable_change_verification = (;
-            selected_monic_ok,
-            transformed_reduction_ok = transformed_output == target,
-            original_reduction_ok = expected_output == target,
-        )
         source_order_index = findfirst(variable -> variable == source_variable, variable_order)
         target_order_index = findfirst(variable -> variable == target_variable, variable_order)
+        summary = _ecp_monicity_normalization_summary(
+            collect(input_column),
+            R,
+            normalized_variable_order,
+            target_variable_index;
+            source_variable_index,
+            shift_power = stage.shift_power,
+            shift_sign = stage.shift_sign,
+            selected_monic_index_hint = stage.selected_monic_index,
+        )
+        summary === nothing && return invalid_replay
+        transformed_replay = _ecp_replay_stage(
+            stage.transformed_stage,
+            collect(summary.normalized_column),
+            R,
+        )
         ok = stage.input_column == _ecp_column_tuple(input_column) &&
             stage.variable_order == tuple(normalized_variable_order...) &&
             stage.source_variable_index == stage.variable_index &&
@@ -2891,26 +3328,49 @@ function _ecp_replay_stage(stage, input_column, R)
             source_order_index < target_order_index &&
             target_order_index == length(variable_order) &&
             stage.target_variable == ring_gens[stage.target_variable_index] &&
-            stage.shift_polynomial == stage.shift_sign * stage.target_variable^stage.shift_power &&
-            stage.forward_values == tuple(forward_values...) &&
-            stage.inverse_values == tuple(inverse_values...) &&
-            stage.forward_substitution == forward_substitution &&
-            stage.inverse_substitution == inverse_substitution &&
-            stage.transformed_column == tuple(substituted_column...) &&
-            selected_monic_ok &&
-            stage.first_coordinate_strategy == first_coordinate_strategy &&
-            stage.first_coordinate_move_factors == first_coordinate_move_factors &&
-            stage.first_coordinate_column == tuple(substituted_column...) &&
+            stage.shift_polynomial == summary.shift_polynomial &&
+            stage.forward_values == summary.forward_values &&
+            stage.inverse_values == summary.inverse_values &&
+            stage.forward_substitution == summary.forward_substitution &&
+            stage.inverse_substitution == summary.inverse_substitution &&
+            stage.transformed_column == summary.transformed_column &&
+            stage.selected_monic_index == summary.selected_monic_index &&
+            stage.selected_monic_entry == summary.selected_monic_entry &&
+            stage.first_coordinate_strategy == summary.first_coordinate_strategy &&
+            _ecp_factor_sequences_equal(
+                stage.first_coordinate_move_factors,
+                summary.coordinate_move_factors,
+            ) &&
+            stage.first_coordinate_column == summary.normalized_column &&
             transformed_replay.ok &&
-            _ecp_factor_sequences_equal(stage.transformed_factors, transformed_replay.factors) &&
-            _ecp_factor_sequences_equal(stage.inverse_substituted_factors, inverse_substituted_factors) &&
-            _ecp_factor_sequences_equal(stage.factors, inverse_substituted_factors) &&
-            stage.variable_change_verification == variable_change_verification &&
-            variable_change_verification.selected_monic_ok &&
-            variable_change_verification.transformed_reduction_ok &&
-            variable_change_verification.original_reduction_ok &&
-            stage.output_column == expected_output
-        return (; ok, factors = inverse_substituted_factors, output_column = expected_output)
+            _ecp_factor_sequences_equal(
+                stage.transformed_factors,
+                summary.transformed_factors,
+            ) &&
+            _ecp_factor_sequences_equal(
+                transformed_replay.factors,
+                summary.transformed_reduction_factors,
+            ) &&
+            _ecp_factor_sequences_equal(
+                stage.inverse_substituted_coordinate_move_factors,
+                summary.inverse_substituted_coordinate_move_factors,
+            ) &&
+            _ecp_factor_sequences_equal(
+                stage.inverse_substituted_reduction_factors,
+                summary.inverse_substituted_reduction_factors,
+            ) &&
+            _ecp_factor_sequences_equal(
+                stage.inverse_substituted_factors,
+                summary.inverse_substituted_factors,
+            ) &&
+            _ecp_factor_sequences_equal(stage.factors, summary.inverse_substituted_factors) &&
+            stage.variable_change_verification == summary.variable_change_verification &&
+            summary.variable_change_verification.selected_monic_ok &&
+            summary.variable_change_verification.substitution_inverse_ok &&
+            summary.variable_change_verification.transformed_reduction_ok &&
+            summary.variable_change_verification.original_reduction_ok &&
+            stage.output_column == summary.original_output
+        return (; ok, factors = summary.inverse_substituted_factors, output_column = summary.original_output)
     elseif stage.kind == :embedded_three_block
         indices = collect(stage.indices)
         subcolumn = [input_column[idx] for idx in indices]
@@ -3041,6 +3501,40 @@ end
 
 function _ecp_substitution_map_tuple(variables, values)
     return tuple(((; variable = variables[idx], value = values[idx]) for idx in eachindex(variables))...)
+end
+
+function _ecp_substitution_map_values(substitution_map)
+    return tuple((entry.value for entry in substitution_map)...)
+end
+
+function _ecp_substitution_maps_are_inverse(R, forward_substitution, inverse_substitution)::Bool
+    try
+        ring_gens = tuple(gens(R)...)
+        forward_values = _ecp_substitution_map_values(forward_substitution)
+        inverse_values = _ecp_substitution_map_values(inverse_substitution)
+        length(forward_values) == length(ring_gens) || return false
+        length(inverse_values) == length(ring_gens) || return false
+        forward_then_inverse = tuple((
+            _coerce_into_ring(
+                R,
+                evaluate(evaluate(generator, collect(forward_values)), collect(inverse_values)),
+                "forward-inverse substitution generator",
+            )
+            for generator in ring_gens
+        )...)
+        inverse_then_forward = tuple((
+            _coerce_into_ring(
+                R,
+                evaluate(evaluate(generator, collect(inverse_values)), collect(forward_values)),
+                "inverse-forward substitution generator",
+            )
+            for generator in ring_gens
+        )...)
+        return forward_then_inverse == ring_gens && inverse_then_forward == ring_gens
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
 end
 
 function _ecp_public_staged_reduction_certificate(
@@ -3391,8 +3885,18 @@ function _ecp_first_monic_entry_index(column, R, variable_index::Int)
     return findfirst(entry -> _is_monic_in_variable(entry, R, variable_index), column)
 end
 
+function _ecp_first_coordinate_move_factors(n::Int, selected_monic_index::Int, R)
+    selected_monic_index == 1 && return typeof(identity_matrix(R, n))[]
+
+    return [
+        elementary_matrix(n, 1, selected_monic_index, one(R), R),
+        elementary_matrix(n, selected_monic_index, 1, -one(R), R),
+        elementary_matrix(n, 1, selected_monic_index, one(R), R),
+    ]
+end
+
 function _ecp_first_coordinate_strategy(selected_monic_index::Int)
-    return selected_monic_index == 1 ? :already_first : :not_moved
+    return selected_monic_index == 1 ? :already_first : :moved_to_first
 end
 
 function _ecp_matrix_column_to_tuple(column_matrix)

@@ -114,6 +114,8 @@ function _assert_variable_change_stage(entry)
         :first_coordinate_strategy,
         :first_coordinate_move_factors,
         :first_coordinate_column,
+        :inverse_substituted_coordinate_move_factors,
+        :inverse_substituted_reduction_factors,
         :variable_change_verification,
     )
     missing_fields = filter(field -> !hasproperty(stage, field), required_fields)
@@ -144,12 +146,33 @@ function _assert_variable_change_stage(entry)
     @test stage.selected_monic_entry == stage.transformed_column[stage.selected_monic_index]
     @test Suslin._is_monic_in_last_variable(stage.selected_monic_entry, R)
 
-    expected_strategy = stage.selected_monic_index == 1 ? :already_first : :not_moved
+    expected_strategy = stage.selected_monic_index == 1 ? :already_first : :moved_to_first
     @test stage.first_coordinate_strategy == expected_strategy
-    @test isempty(stage.first_coordinate_move_factors)
-    @test stage.first_coordinate_column == stage.transformed_column
+    if stage.selected_monic_index == 1
+        @test isempty(stage.first_coordinate_move_factors)
+        @test stage.first_coordinate_column == stage.transformed_column
+    else
+        @test !isempty(stage.first_coordinate_move_factors)
+        @test stage.first_coordinate_column[1] == stage.selected_monic_entry
+    end
 
     @test _vc_apply_factors(stage.transformed_factors, collect(stage.transformed_column), R) == target
+    @test _vc_apply_factors(stage.first_coordinate_move_factors, collect(stage.transformed_column), R) ==
+          matrix(R, length(column), 1, collect(stage.first_coordinate_column))
+    @test all(factor -> base_ring(factor) == R, stage.inverse_substituted_coordinate_move_factors)
+    @test all(factor -> base_ring(factor) == R, stage.inverse_substituted_reduction_factors)
+    @test _vc_apply_factors(stage.inverse_substituted_coordinate_move_factors, column, R) ==
+          matrix(
+              R,
+              length(column),
+              1,
+              [evaluate(entry, collect(stage.inverse_values)) for entry in stage.first_coordinate_column],
+          )
+    @test _vc_apply_factors(
+        stage.inverse_substituted_reduction_factors,
+        [evaluate(entry, collect(stage.inverse_values)) for entry in stage.first_coordinate_column],
+        R,
+    ) == target
     @test all(factor -> base_ring(factor) == R, stage.inverse_substituted_factors)
     @test _vc_apply_factors(stage.inverse_substituted_factors, column, R) == target
     @test stage.variable_change_verification.selected_monic_ok == true
@@ -176,9 +199,11 @@ function _assert_variable_change_stage(entry)
         (:transformed_column, _replace_tuple_entry(stage.transformed_column, 1, target[end, 1])),
         (:selected_monic_index, stage.selected_monic_index == length(stage.transformed_column) ? 1 : stage.selected_monic_index + 1),
         (:selected_monic_entry, zero(R)),
-        (:first_coordinate_strategy, stage.first_coordinate_strategy == :already_first ? :not_moved : :already_first),
+        (:first_coordinate_strategy, stage.first_coordinate_strategy == :already_first ? :moved_to_first : :already_first),
         (:first_coordinate_move_factors, (identity_matrix(R, length(column)),)),
         (:first_coordinate_column, _replace_tuple_entry(stage.first_coordinate_column, 1, target[end, 1])),
+        (:inverse_substituted_coordinate_move_factors, (identity_matrix(R, length(column)),)),
+        (:inverse_substituted_reduction_factors, (identity_matrix(R, length(column)),)),
         (:variable_change_verification, merge(stage.variable_change_verification, (; selected_monic_ok = false))),
     )
 
