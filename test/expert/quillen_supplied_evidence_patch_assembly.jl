@@ -186,6 +186,50 @@ function qse_expected_sequence_factors(patch)
     return factors
 end
 
+@testset "Quillen sequence contribution replay" begin
+    entries = Main.QuillenPatchFixtureCatalog.cases_by_id()
+    entry = entries["quillen-two-open-cover-qq"]
+    certificates = qse_sequence_certificates(entry)
+    candidate = Suslin.extract_quillen_denominator_cover_candidate(certificates)
+    solver_result = Suslin.solve_quillen_denominator_cover(candidate; max_exponent = 2)
+    expansion = Suslin.quillen_sequence_contribution_expansion(
+        certificates[1],
+        solver_result,
+        1,
+    )
+    replay = Suslin.replay_quillen_sequence_contribution_expansion(expansion)
+
+    @test Suslin.verify_quillen_sequence_contribution_expansion(expansion)
+    @test replay.overall_ok
+    @test replay.local_certificate_ok
+    @test replay.solver_result_ok
+    @test replay.local_index_ok
+    @test replay.solver_context_ok
+    @test replay.cover_term_ok
+    @test replay.factor_provenance_ok
+    @test replay.global_elementary_factors_ok
+    @test replay.replay_metadata_ok
+    @test expansion.powered_denominator == solver_result.powered_denominators[1]
+    @test expansion.coverage_multiplier == solver_result.coverage_multipliers[1]
+    @test expansion.cover_term == solver_result.coverage_terms[1]
+    @test expansion.factor_provenance == [factor.provenance for factor in certificates[1].factors]
+    @test expansion.global_elementary_factors[1] == elementary_matrix(
+        entry.size,
+        certificates[1].factors[1].row,
+        certificates[1].factors[1].col,
+        expansion.cover_term * certificates[1].factors[1].numerator,
+        entry.ring.object,
+    )
+
+    bad_provenance = copy(expansion.factor_provenance)
+    bad_provenance[1] = (;
+        bad_provenance[1]...,
+        factor_index = bad_provenance[1].factor_index + 1,
+    )
+    tampered = qse_rebuild(expansion; factor_provenance = bad_provenance)
+    @test !Suslin.verify_quillen_sequence_contribution_expansion(tampered)
+end
+
 @testset "Quillen supplied local evidence patch assembly" begin
     entries = Main.QuillenPatchFixtureCatalog.cases_by_id()
     entry = entries["quillen-two-open-cover-qq"]
