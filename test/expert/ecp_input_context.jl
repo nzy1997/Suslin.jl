@@ -120,6 +120,23 @@ end
     @test staged_ctx.support_classification == :unsupported
     @test staged_ctx.staged_failure_reason == :unsupported_polynomial_column_family
 
+    unsupported_column = [zero(staged_R), gens(staged_R)[1]^2, gens(staged_R)[1] * gens(staged_R)[2] + one(staged_R), zero(staged_R)]
+    @test Suslin.is_unimodular_column(unsupported_column, staged_R)
+    unsupported_ctx = Suslin.ecp_input_context(
+        unsupported_column,
+        staged_R;
+        selected_variable = gens(staged_R)[1],
+    )
+    _assert_checked_context(
+        unsupported_ctx,
+        unsupported_column,
+        staged_R;
+        selected_variable = gens(staged_R)[1],
+    )
+    @test unsupported_ctx.column_length == 4
+    @test unsupported_ctx.support_classification == :unsupported
+    @test unsupported_ctx.staged_failure_reason == :unsupported_polynomial_column_family
+
     length4_entry = mainline_cases["ecp-mainline-length4-coupled-qq"]
     length4_R = length4_entry.ring.object
     length4_column = _input_context_mainline_column(length4_entry)
