@@ -183,6 +183,24 @@ struct QuillenLocalDenominatorSupport
     replay_ok::Bool
 end
 
+struct MurthyQuillenLocalAdapter
+    original_input
+    ring
+    size::Int
+    selected_variable
+    murthy_certificate::SL3LocalRealizationCertificate
+    local_factor_replay::SL3LocalElementaryFactorReplay
+    mode::Symbol
+    materialized_factors
+    local_product
+    local_correction
+    quillen_factor_sequence
+    quillen_local_certificate
+    witness_metadata
+    replay_metadata
+    verification
+end
+
 struct QuillenDenominatorCoverCandidateVerification
     local_count::Int
     raw_denominators::Vector
@@ -1255,6 +1273,340 @@ function verify_quillen_local_factor_sequence_certificate(certificate)::Bool
         err isa InterruptException && rethrow()
         return false
     end
+end
+
+function _murthy_quillen_local_replay(certificate::SL3LocalRealizationCertificate)
+    if certificate.branch == :murthy_q0_unit &&
+            hasproperty(certificate.witness, :reduction) &&
+            certificate.witness.reduction isa SL3LocalMurthyQUnitLocalReduction
+        return certificate.witness.reduction.local_factor_replay
+    elseif certificate.branch == :murthy_q0_nonunit_bezout_resultant &&
+            hasproperty(certificate.witness, :reduction) &&
+            hasproperty(certificate.witness.reduction, :local_factor_replay) &&
+            certificate.witness.reduction.local_factor_replay !== nothing
+        return certificate.witness.reduction.local_factor_replay
+    elseif all(factor -> factor isa SL3LocalElementaryFactor, certificate.factors)
+        return sl3_local_elementary_factor_replay(
+            certificate.target,
+            SL3LocalElementaryFactor[certificate.factors...],
+            certificate.selected_variable,
+        )
+    else
+        records = map(collect(certificate.factors)) do factor
+            factor == identity_matrix(base_ring(factor), nrows(factor)) ?
+                sl3_local_elementary_factor(
+                    1,
+                    2,
+                    zero(base_ring(factor)),
+                    one(base_ring(factor)),
+                    certificate.selected_variable,
+                ) :
+                only(sl3_local_denominator_one_records_from_matrices([factor], certificate.selected_variable))
+        end
+        return sl3_local_elementary_factor_replay(
+            certificate.target,
+            records,
+            certificate.selected_variable,
+        )
+    end
+end
+
+function _murthy_quillen_local_record_certificate(record::SL3LocalElementaryFactor)
+    return LocalCertificate([record.row, record.col], [record.denominator, record.denominator])
+end
+
+function _murthy_quillen_local_sequence_factor(
+        record::SL3LocalElementaryFactor,
+        index::Int,
+        witness_metadata,
+)
+    return QuillenLocalElementaryFactor(
+        record.row,
+        record.col,
+        record.numerator,
+        record.denominator,
+        one(record.R),
+        _murthy_quillen_local_record_certificate(record),
+        (;
+            source = :murthy_local_sl3,
+            factor_index = index,
+            murthy_denominator = record.denominator,
+            murthy_local_unit_witness = record.local_unit_witness,
+        ),
+        (;
+            source = :murthy_quillen_local_adapter,
+            witness_metadata,
+        ),
+    )
+end
+
+function _murthy_quillen_local_replay_metadata(certificate, replay, mode, witness_metadata)
+    return (;
+        source = :murthy_quillen_local_adapter,
+        murthy_branch = certificate.branch,
+        replay_mode = replay.mode,
+        adapter_mode = mode,
+        selected_variable = replay.selected_variable,
+        factor_count = length(replay.factors),
+        denominator_product = replay.denominator_product,
+        cleared_product = replay.cleared_product,
+        ordinary_materialized = replay.materialized_factors !== nothing,
+        witness_metadata,
+    )
+end
+
+function _murthy_quillen_local_factor_sequence(
+        original_input,
+        selected_variable,
+        replay::SL3LocalElementaryFactorReplay,
+        witness_metadata,
+        provenance,
+)
+    replay.mode == :ordinary ||
+        throw(ArgumentError("Murthy local replay is not materializable over the ordinary base ring"))
+    factors = [
+        _murthy_quillen_local_sequence_factor(record, index, witness_metadata)
+        for (index, record) in enumerate(replay.factors)
+    ]
+    return quillen_local_factor_sequence_certificate(
+        original_input,
+        selected_variable;
+        factors,
+        local_correction = replay.target,
+        witness_metadata,
+        local_evidence = (;
+            source = :murthy_local_sl3,
+            replay_mode = replay.mode,
+            denominator_product = replay.denominator_product,
+            expected_product = replay.target,
+        ),
+        provenance,
+    )
+end
+
+function _murthy_quillen_local_single_realization(
+        original_input,
+        selected_variable,
+        replay::SL3LocalElementaryFactorReplay,
+        witness_metadata,
+)
+    replay.mode == :ordinary || return nothing
+    length(replay.factors) == 1 || return nothing
+    record = only(replay.factors)
+    return quillen_local_realization_certificate(
+        original_input,
+        selected_variable;
+        local_certificate = _murthy_quillen_local_record_certificate(record),
+        denominator = record.denominator,
+        coverage_multiplier = one(record.R),
+        correction = QuillenElementaryCorrection(record.row, record.col, record.numerator),
+        factors = replay.materialized_factors,
+        local_correction = replay.target,
+        witness_metadata,
+    )
+end
+
+function _murthy_quillen_local_adapter(
+        certificate::SL3LocalRealizationCertificate,
+        original_input,
+        selected_variable;
+        witness_metadata = (;),
+        provenance = (; source = :murthy_quillen_local_adapter),
+)
+    verify_sl3_local_realization(certificate) ||
+        throw(ArgumentError("Murthy local certificate does not replay"))
+    R, n = _quillen_local_input_ring_size(original_input)
+    n == 3 || throw(ArgumentError("Murthy local Quillen adapter requires a 3x3 input"))
+    _same_base_ring(R, base_ring(certificate.target)) ||
+        throw(ArgumentError("Murthy local Quillen adapter ring mismatch"))
+    original_input == certificate.target ||
+        throw(ArgumentError("Murthy local Quillen adapter requires the original input to match the Murthy target"))
+    selected = _require_substitution_generator(R, selected_variable)
+    selected == certificate.selected_variable ||
+        throw(ArgumentError("Murthy local Quillen adapter selected variable mismatch"))
+
+    replay = _murthy_quillen_local_replay(certificate)
+    verify_sl3_local_elementary_factor_replay(replay) ||
+        throw(ArgumentError("Murthy local factor replay does not verify"))
+    replay.target == certificate.target ||
+        throw(ArgumentError("Murthy local replay target mismatch"))
+    replay.selected_variable == selected ||
+        throw(ArgumentError("Murthy local replay selected variable mismatch"))
+    (
+        replay.factors == certificate.factors ||
+        replay.materialized_factors == certificate.factors
+    ) ||
+        throw(ArgumentError("Murthy local replay factor mismatch"))
+
+    mode = replay.mode == :ordinary ?
+        :ordinary_quillen_factor_sequence :
+        :localized_replay_handoff
+    quillen_sequence = mode == :ordinary_quillen_factor_sequence ?
+        _murthy_quillen_local_factor_sequence(
+            original_input,
+            selected,
+            replay,
+            witness_metadata,
+            provenance,
+        ) :
+        nothing
+    quillen_local = mode == :ordinary_quillen_factor_sequence ?
+        _murthy_quillen_local_single_realization(
+            original_input,
+            selected,
+            replay,
+            witness_metadata,
+        ) :
+        nothing
+    local_product = quillen_sequence === nothing ? nothing : quillen_sequence.local_product
+    local_correction = quillen_sequence === nothing ? replay.target : quillen_sequence.local_correction
+    replay_metadata = _murthy_quillen_local_replay_metadata(
+        certificate,
+        replay,
+        mode,
+        witness_metadata,
+    )
+    provisional = MurthyQuillenLocalAdapter(
+        original_input,
+        R,
+        n,
+        selected,
+        certificate,
+        replay,
+        mode,
+        replay.materialized_factors,
+        local_product,
+        local_correction,
+        quillen_sequence,
+        quillen_local,
+        witness_metadata,
+        replay_metadata,
+        nothing,
+    )
+    verification = _murthy_quillen_local_adapter_summary(provisional)
+    verification.overall_ok ||
+        throw(ArgumentError("Murthy local Quillen adapter data does not replay"))
+    return MurthyQuillenLocalAdapter(
+        provisional.original_input,
+        provisional.ring,
+        provisional.size,
+        provisional.selected_variable,
+        provisional.murthy_certificate,
+        provisional.local_factor_replay,
+        provisional.mode,
+        provisional.materialized_factors,
+        provisional.local_product,
+        provisional.local_correction,
+        provisional.quillen_factor_sequence,
+        provisional.quillen_local_certificate,
+        provisional.witness_metadata,
+        provisional.replay_metadata,
+        verification,
+    )
+end
+
+function _murthy_quillen_local_adapter_summary(adapter::MurthyQuillenLocalAdapter)
+    certificate_ok = verify_sl3_local_realization(adapter.murthy_certificate)
+    replay_ok = verify_sl3_local_elementary_factor_replay(adapter.local_factor_replay)
+    input_ok = adapter.original_input == adapter.murthy_certificate.target
+    selected_variable_ok = adapter.selected_variable == adapter.murthy_certificate.selected_variable
+    replay_alignment_ok =
+        adapter.local_factor_replay.target == adapter.murthy_certificate.target &&
+        adapter.local_factor_replay.selected_variable == adapter.selected_variable &&
+        (
+            adapter.local_factor_replay.factors == adapter.murthy_certificate.factors ||
+            adapter.local_factor_replay.materialized_factors == adapter.murthy_certificate.factors
+        )
+    expected_mode = adapter.local_factor_replay.mode == :ordinary ?
+        :ordinary_quillen_factor_sequence :
+        :localized_replay_handoff
+    mode_ok = adapter.mode == expected_mode
+    materialized_ok = adapter.materialized_factors == adapter.local_factor_replay.materialized_factors
+    sequence_ok =
+        adapter.mode == :ordinary_quillen_factor_sequence ?
+        adapter.quillen_factor_sequence isa QuillenLocalFactorSequenceCertificate &&
+            verify_quillen_local_factor_sequence_certificate(adapter.quillen_factor_sequence) &&
+            adapter.quillen_factor_sequence.original_input == adapter.original_input &&
+            adapter.quillen_factor_sequence.selected_variable == adapter.selected_variable &&
+            adapter.quillen_factor_sequence.local_product == adapter.local_factor_replay.target &&
+            adapter.quillen_factor_sequence.local_correction == adapter.local_factor_replay.target :
+        adapter.quillen_factor_sequence === nothing
+    local_certificate_ok =
+        adapter.quillen_local_certificate === nothing ||
+        (
+            adapter.quillen_local_certificate isa QuillenLocalRealizationCertificate &&
+            verify_quillen_local_certificate(adapter.quillen_local_certificate)
+        )
+    product_ok =
+        adapter.mode == :ordinary_quillen_factor_sequence ?
+        adapter.local_product == adapter.local_factor_replay.target :
+        adapter.local_product === nothing
+    correction_ok = adapter.local_correction == adapter.local_factor_replay.target
+    expected_metadata = _murthy_quillen_local_replay_metadata(
+        adapter.murthy_certificate,
+        adapter.local_factor_replay,
+        adapter.mode,
+        adapter.witness_metadata,
+    )
+    replay_metadata_ok = adapter.replay_metadata == expected_metadata
+    overall_ok =
+        certificate_ok &&
+        replay_ok &&
+        input_ok &&
+        selected_variable_ok &&
+        replay_alignment_ok &&
+        mode_ok &&
+        materialized_ok &&
+        sequence_ok &&
+        local_certificate_ok &&
+        product_ok &&
+        correction_ok &&
+        replay_metadata_ok
+    return (;
+        certificate_ok,
+        replay_ok,
+        input_ok,
+        selected_variable_ok,
+        replay_alignment_ok,
+        mode_ok,
+        materialized_ok,
+        sequence_ok,
+        local_certificate_ok,
+        product_ok,
+        correction_ok,
+        replay_metadata_ok,
+        overall_ok,
+    )
+end
+
+function _verify_murthy_quillen_local_adapter(adapter)::Bool
+    try
+        replay = _murthy_quillen_local_adapter_summary(adapter)
+        return replay.overall_ok && adapter.verification == replay
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function _murthy_quillen_local_factor_sequence_certificate(
+        adapter::MurthyQuillenLocalAdapter,
+)
+    _verify_murthy_quillen_local_adapter(adapter) ||
+        throw(ArgumentError("Murthy local Quillen adapter does not replay"))
+    adapter.quillen_factor_sequence !== nothing ||
+        throw(ArgumentError("Murthy local adapter contains localized denominator-cleared replay; #183 must define the localized Quillen local certificate shape before ordinary factor conversion"))
+    return adapter.quillen_factor_sequence
+end
+
+function _murthy_quillen_local_realization_certificate(
+        adapter::MurthyQuillenLocalAdapter,
+)
+    _verify_murthy_quillen_local_adapter(adapter) ||
+        throw(ArgumentError("Murthy local Quillen adapter does not replay"))
+    adapter.quillen_local_certificate !== nothing ||
+        throw(ArgumentError("Murthy local adapter does not contain a length-one ordinary Quillen local realization certificate"))
+    return adapter.quillen_local_certificate
 end
 
 function replay_quillen_denominator_cover_candidate(
