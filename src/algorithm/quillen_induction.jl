@@ -2384,6 +2384,7 @@ struct QuillenSequenceContributionExpansionVerification
     cover_term
     cover_term_ok::Bool
     factor_provenance::Vector
+    factor_provenance_ok::Bool
     global_elementary_factors::Vector
     global_elementary_factors_ok::Bool
     replay_metadata
@@ -2459,6 +2460,7 @@ function _same_quillen_sequence_expansion_verification(
            left.cover_term == right.cover_term &&
            left.cover_term_ok == right.cover_term_ok &&
            left.factor_provenance == right.factor_provenance &&
+           left.factor_provenance_ok == right.factor_provenance_ok &&
            _same_quillen_factors(left.global_elementary_factors, right.global_elementary_factors) &&
            left.global_elementary_factors_ok == right.global_elementary_factors_ok &&
            left.replay_metadata == right.replay_metadata &&
@@ -2490,6 +2492,7 @@ function replay_quillen_sequence_contribution_expansion(
         expansion.cover_term == cover_term &&
         cover_term == coverage_multiplier * powered_denominator
     factor_provenance = _quillen_local_sequence_factor_provenance(certificate.factors)
+    factor_provenance_ok = expansion.factor_provenance == factor_provenance
     global_elementary_factors = _quillen_sequence_expansion_factors(certificate, cover_term)
     global_elementary_factors_ok =
         _same_quillen_factors(expansion.global_elementary_factors, global_elementary_factors)
@@ -2506,6 +2509,7 @@ function replay_quillen_sequence_contribution_expansion(
         local_index_ok &&
         solver_context_ok &&
         cover_term_ok &&
+        factor_provenance_ok &&
         global_elementary_factors_ok &&
         replay_metadata_ok
     return QuillenSequenceContributionExpansionVerification(
@@ -2518,6 +2522,7 @@ function replay_quillen_sequence_contribution_expansion(
         cover_term,
         cover_term_ok,
         factor_provenance,
+        factor_provenance_ok,
         global_elementary_factors,
         global_elementary_factors_ok,
         replay_metadata,
@@ -2571,6 +2576,7 @@ function quillen_sequence_contribution_expansion(
             cover_term,
             false,
             factor_provenance,
+            false,
             typeof(identity_matrix(certificate.ring, certificate.size))[],
             false,
             replay_metadata,
