@@ -266,6 +266,7 @@ end
     )
     tampered = qse_rebuild(expansion; factor_provenance = bad_provenance)
     @test !Suslin.verify_quillen_sequence_contribution_expansion(tampered)
+    @test !Suslin.verify_quillen_sequence_contribution_expansion(nothing)
 end
 
 @testset "Quillen supplied local evidence patch assembly" begin
@@ -435,6 +436,31 @@ end
     @test supplied_patch.base_term_factors == [supplied_identity_factor]
     @test supplied_patch.base_term_product == identity_matrix(identity_base.ring, 3)
 
+    implicit_supplied_patch = Suslin.assemble_quillen_patch_from_local_evidence(
+        identity_base.target,
+        identity_base.X,
+        identity_base.certificates;
+        max_exponent = 2,
+        base_term_factors = [supplied_identity_factor],
+    )
+    @test Suslin.verify_quillen_patch(implicit_supplied_patch)
+    @test implicit_supplied_patch.base_term_policy == :supplied
+
+    nonzero_elementary_base_factors = [
+        elementary_matrix(3, 1, 2, one(identity_base.ring), identity_base.ring),
+        elementary_matrix(3, 1, 2, -one(identity_base.ring), identity_base.ring),
+    ]
+    nonzero_elementary_base_patch = Suslin.assemble_quillen_patch_from_local_evidence(
+        identity_base.target,
+        identity_base.X,
+        identity_base.certificates;
+        max_exponent = 2,
+        base_term_policy = :supplied,
+        base_term_factors = nonzero_elementary_base_factors,
+    )
+    @test Suslin.verify_quillen_patch(nonzero_elementary_base_patch)
+    @test nonzero_elementary_base_patch.base_term_product == identity_matrix(identity_base.ring, 3)
+
     non_elementary_base_factor = identity_matrix(identity_base.ring, 3)
     non_elementary_base_factor[1, 1] = 2 * one(identity_base.ring)
     non_elementary_base_factor[2, 2] = identity_base.ring(QQ(1)//QQ(2))
@@ -465,6 +491,8 @@ end
         product = qse_product(non_elementary_global_factors, identity_base.ring, 3),
     )
     @test !Suslin.replay_quillen_supplied_evidence_patch(non_elementary_base_patch).base_term_ok
+    unsupported_base_policy_patch = qse_rebuild(supplied_patch; base_term_policy = :unsupported)
+    @test !Suslin.replay_quillen_supplied_evidence_patch(unsupported_base_policy_patch).base_term_ok
 
     @test_throws ArgumentError Suslin.assemble_quillen_patch_from_local_evidence(
         identity_base.target,
@@ -502,6 +530,21 @@ end
     @test Suslin.verify_quillen_denominator_cover_solver_result(wrong_source_solver)
     @test !Suslin.verify_quillen_patch(
         qse_rebuild(patch; solver_result = wrong_source_solver),
+    )
+
+    no_source_solver = qse_rebuild(patch.solver_result; source_candidate = nothing)
+    no_source_chain_solver = qse_rebuild(
+        patch.substitution_chain.solver_result;
+        source_candidate = nothing,
+    )
+    no_source_chain = qse_rebuild_chain(
+        patch.substitution_chain;
+        solver_result = no_source_chain_solver,
+    )
+    @test Suslin.verify_quillen_denominator_cover_solver_result(no_source_solver)
+    @test Suslin.verify_quillen_patch_substitution_chain(no_source_chain)
+    @test !Suslin.verify_quillen_patch(
+        qse_rebuild(patch; solver_result = no_source_solver, substitution_chain = no_source_chain),
     )
 
     wrong_chain_solver = qse_rebuild(
