@@ -27,10 +27,9 @@ verify_factorization(A, factors)
 - `elementary_factorization(A)` is staged. It supports univariate local `SL_3`
   ordinary-polynomial matrices, selected `n > 3` ordinary-polynomial matrices
   through block-local reduction and recursive polynomial column peel,
-  and the #183 ordinary-polynomial Quillen patching gate for verified local
-  evidence. The automatic Quillen boundary is the narrow `3 x 3` elementary
-  ordinary-polynomial route with the first generator as substitution variable,
-  the second generator as the two-open cover `s, 1-s`, exact cover replay,
+  and the #183 ordinary-polynomial Quillen patching gate. Automatic #183
+  Quillen patching is supported only for ordinary-polynomial cases with
+  verified supplied or Murthy-adapter local evidence, exact cover replay,
   sequence replay, substitution-chain replay, and trivial or supplied
   elementary `A(0)` base-term handling. Supplied and Murthy-adapter local
   evidence can also be adapted explicitly through the internal Quillen patch
