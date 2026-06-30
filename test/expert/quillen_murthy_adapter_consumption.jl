@@ -275,6 +275,17 @@ end
         X,
         [forged_sequence_adapter],
     )
+    forged_consumption = qma_rebuild(
+        result;
+        murthy_adapters = [forged_sequence_adapter],
+    )
+    forged_consumption_replay =
+        Suslin.replay_quillen_murthy_adapter_consumption(forged_consumption)
+    @test !forged_consumption_replay.local_sequences_ok
+    @test !forged_consumption_replay.overall_ok
+    @test !Suslin.verify_quillen_murthy_adapter_consumption(
+        qma_rebuild(result; size = 2),
+    )
 
     bad_factor_replay = qma_rebuild(
         ordinary.adapter.local_factor_replay;
