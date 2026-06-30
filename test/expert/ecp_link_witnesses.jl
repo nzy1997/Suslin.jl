@@ -310,17 +310,13 @@ end
     column = _column(entry)
     R = entry.ring.object
     x = entry.ring.generators[1]
-    err = try
-        Suslin.ecp_link_witness(
-            column,
-            R;
-            variable_order = entry.ring.generators,
-            selected_variable = x,
-        )
-        nothing
-    catch caught
-        caught
-    end
-    @test err isa ArgumentError
-    @test occursin("supplied_link_witness", sprint(showerror, err))
+    record = Suslin.ecp_link_witness(
+        column,
+        R;
+        variable_order = entry.ring.generators,
+        selected_variable = x,
+    )
+    @test record isa Suslin.ECPLinkWitnessRecord
+    @test Suslin.verify_ecp_link_witness(record)
+    @test record.metadata.source == :extracted_link_witness
 end
