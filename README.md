@@ -45,13 +45,13 @@ verify_factorization(A, factors)
   nontrivial local-witness cases are verified through localized
   denominator-cleared certificate replay.
 - The implementation is not yet the full Park-Woodburn algorithm for arbitrary
-  `SL_n(k[x_1, ..., x_m])`, `n >= 3`: Park-Woodburn `SL_n(k[x_1, ..., x_m])`
-  factorization remains staged. Quillen automatic patching (#183), general
-  `SL_3` (#184), the general ECP reducer (#185), recursive `SL_n` (#186),
-  full public Park-Woodburn acceptance (#187), coefficient-ring support
-  beyond exact field-backed ordinary polynomial rings, arbitrary Laurent
-  `GL_n` determinant correction, Laurent/ToricBuilder mainline acceptance,
-  and Steinberg factor-count optimization remain staged boundaries.
+  `SL_n(k[x_1, ..., x_m])`, `n >= 3`: Quillen automatic patching (#183),
+  general `SL_3` (#184), the general ECP reducer (#185), recursive `SL_n`
+  (#186), full public Park-Woodburn acceptance (#187), coefficient-ring
+  support beyond exact field-backed ordinary polynomial rings, arbitrary
+  Laurent `GL_n` determinant correction, Laurent/ToricBuilder mainline
+  acceptance, and Steinberg factor-count optimization remain staged
+  boundaries.
 
 ## Testing
 
