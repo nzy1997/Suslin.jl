@@ -27,11 +27,15 @@ verify_factorization(A, factors)
 - `elementary_factorization(A)` is staged. It supports univariate local `SL_3`
   ordinary-polynomial matrices, selected `n > 3` ordinary-polynomial matrices
   through block-local reduction and recursive polynomial column peel,
-  ordinary-polynomial Quillen patching (#183) with verified supplied or
-  Murthy-adapter local evidence, exact cover replay, sequence replay,
-  substitution-chain replay, and trivial or supplied `A(0)` base-term
-  handling, and determinant-one Laurent inputs through the existing Laurent
-  `SL` path.
+  and the #183 ordinary-polynomial Quillen patching gate for verified local
+  evidence. The automatic Quillen boundary is the narrow `3 x 3` elementary
+  ordinary-polynomial route with the first generator as substitution variable,
+  the second generator as the two-open cover `s, 1-s`, exact cover replay,
+  sequence replay, substitution-chain replay, and trivial or supplied
+  elementary `A(0)` base-term handling. Supplied and Murthy-adapter local
+  evidence can also be adapted explicitly through the internal Quillen patch
+  route. Determinant-one Laurent inputs are supported through the existing
+  Laurent `SL` path.
 - `verify_factorization(A, factors)` checks exact multiplication against `A`.
 - `laurent_gl_factorization_certificate(A)` defaults to the eager Laurent
   normalization/core certificate. With `determinant_strategy = :lazy`, it

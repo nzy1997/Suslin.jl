@@ -316,6 +316,48 @@ end
           elementary_matrix(3, 1, 3, g + one(S), S)
     @test nonfixture_quillen_cert.evidence.quillen_patch.substitution_chain.verification.telescope_ok
     @test verify_factorization(nonfixture_quillen, nonfixture_quillen_cert.factors)
+    nonfixture_quillen_data = Suslin._polynomial_quillen_supplied_evidence_data(nonfixture_quillen)
+    @test nonfixture_quillen_data !== nothing
+    @test all(
+        Suslin.verify_quillen_local_factor_sequence_certificate,
+        nonfixture_quillen_data.local_certificates,
+    )
+    missing_base_term_err = _pw_captured_error(() ->
+        Suslin.assemble_quillen_patch_from_local_evidence(
+            nonfixture_quillen,
+            nonfixture_quillen_data.selected_variable,
+            nonfixture_quillen_data.local_certificates;
+            exponent = 1,
+            coverage_multipliers = [one(S), one(S)],
+        )
+    )
+    @test missing_base_term_err isa ArgumentError
+    @test occursin("A(0)", sprint(showerror, missing_base_term_err))
+
+    wrong_base_factor = elementary_matrix(3, 1, 3, g, S)
+    wrong_base_term_err = _pw_captured_error(() ->
+        Suslin.assemble_quillen_patch_from_local_evidence(
+            nonfixture_quillen,
+            nonfixture_quillen_data.selected_variable,
+            nonfixture_quillen_data.local_certificates;
+            exponent = 1,
+            coverage_multipliers = [one(S), one(S)],
+            base_term_policy = :supplied,
+            base_term_factors = [wrong_base_factor],
+        )
+    )
+    @test wrong_base_term_err isa ArgumentError
+    @test occursin("base-term evidence", sprint(showerror, wrong_base_term_err))
+
+    tampered_patch_certificate = _pw_rebuild(
+        nonfixture_quillen_cert.evidence.quillen_patch;
+        replay_metadata = (; source = :tampered_quillen_patch_certificate),
+    )
+    @test !Suslin.verify_quillen_patch(tampered_patch_certificate)
+    @test_throws ArgumentError Suslin._polynomial_quillen_patch_route_adapter(
+        nonfixture_quillen,
+        tampered_patch_certificate,
+    )
 
     R = base_ring(fast_cert.matrix)
     n = nrows(fast_cert.matrix)
