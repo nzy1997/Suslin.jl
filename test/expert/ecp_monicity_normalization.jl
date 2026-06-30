@@ -22,7 +22,7 @@ function _mn_shift_inverse_column(entry)
     R = entry.ring.object
     x, y = gens(R)
     inverse_values = (x + y^2, y)
-    return [evaluate(column_entry, inverse_values) for column_entry in column]
+    return [evaluate(column_entry, collect(inverse_values)) for column_entry in column]
 end
 
 function _mn_factor_product(factors, R, n::Int)
@@ -64,8 +64,8 @@ function _mn_assert_inverse_substitution_maps(record, R)
     gens_R = tuple(gens(R)...)
     forward_values = _mn_map_values(record.forward_substitution)
     inverse_values = _mn_map_values(record.inverse_substitution)
-    @test tuple((evaluate(evaluate(gen, forward_values), inverse_values) for gen in gens_R)...) == gens_R
-    @test tuple((evaluate(evaluate(gen, inverse_values), forward_values) for gen in gens_R)...) == gens_R
+    @test tuple((evaluate(evaluate(gen, collect(forward_values)), collect(inverse_values)) for gen in gens_R)...) == gens_R
+    @test tuple((evaluate(evaluate(gen, collect(inverse_values)), collect(forward_values)) for gen in gens_R)...) == gens_R
 end
 
 function _mn_assert_replays(record, column, R)
@@ -74,7 +74,7 @@ function _mn_assert_replays(record, column, R)
     normalized_column = _mn_column_matrix(record.normalized_column, R)
     inverse_values = _mn_map_values(record.inverse_substitution)
     inverse_normalized_column = _mn_column_matrix(
-        [evaluate(entry, inverse_values) for entry in record.normalized_column],
+        [evaluate(entry, collect(inverse_values)) for entry in record.normalized_column],
         R,
     )
 
