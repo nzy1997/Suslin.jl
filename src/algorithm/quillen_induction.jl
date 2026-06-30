@@ -1470,8 +1470,13 @@ function _murthy_quillen_local_single_realization(
         witness_metadata,
 )
     replay.mode == :ordinary || return nothing
-    length(replay.factors) == 1 || return nothing
-    record = only(replay.factors)
+    record = if length(replay.factors) == 1
+        only(replay.factors)
+    else
+        nonzero_records = filter(record -> record.numerator != zero(record.R), replay.factors)
+        length(nonzero_records) == 1 || return nothing
+        only(nonzero_records)
+    end
     return quillen_local_realization_certificate(
         original_input,
         selected_variable;

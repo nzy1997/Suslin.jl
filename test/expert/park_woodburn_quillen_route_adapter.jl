@@ -306,6 +306,33 @@ end
     @test ordinary_sequence.witness_metadata.fixture_id == ordinary_fixture.id
     @test ordinary_sequence.verification.local_product == ordinary_fixture.target
 
+    @test !Suslin._verify_murthy_quillen_local_adapter((; not_an_adapter = true))
+
+    local_q0_fixture = by_id["mg-local-q0-unit-at-u"]
+    local_q0_context = Suslin.sl3_local_murthy_input_context(
+        local_q0_fixture.target,
+        local_q0_fixture.variable;
+        witness = first(local_q0_fixture.witnesses),
+    )
+    local_q0_cert = Suslin.realize_sl3_local_certificate(local_q0_context)
+    @test local_q0_cert.branch == :murthy_q0_unit
+    @test Suslin.verify_sl3_local_realization(local_q0_cert)
+    local_q0_adapter = Suslin._murthy_quillen_local_adapter(
+        local_q0_cert,
+        local_q0_fixture.target,
+        local_q0_fixture.variable;
+        witness_metadata = (;
+            fixture_id = local_q0_fixture.id,
+            consumer_issue = 211,
+        ),
+    )
+    @test local_q0_adapter.mode == :localized_replay_handoff
+    @test local_q0_adapter.local_factor_replay ==
+          local_q0_cert.witness.reduction.local_factor_replay
+    @test local_q0_adapter.quillen_factor_sequence === nothing
+    @test local_q0_adapter.quillen_local_certificate === nothing
+    @test Suslin._verify_murthy_quillen_local_adapter(local_q0_adapter)
+
     local_fixture = by_id["mg-local-q0-nonunit-bezout-at-u"]
     local_context = Suslin.sl3_local_murthy_input_context(
         local_fixture.target,
@@ -368,8 +395,36 @@ end
 
     X = ordinary_fixture.variable
     focused_target = elementary_matrix(3, 1, 2, X, R)
+    direct_record = Suslin.sl3_local_elementary_factor(1, 2, X, one(R), X)
+    direct_replay = Suslin.sl3_local_elementary_factor_replay(
+        focused_target,
+        [direct_record],
+        X,
+    )
+    direct_factor_certificate = Suslin.SL3LocalRealizationCertificate(
+        focused_target,
+        :open_s_one,
+        [direct_record],
+        X,
+        (; q = X, r = zero(R)),
+    )
+    direct_fallback_replay = Suslin._murthy_quillen_local_replay(direct_factor_certificate)
+    @test direct_fallback_replay.mode == :ordinary
+    @test direct_fallback_replay.factors == direct_replay.factors
+    @test direct_fallback_replay.materialized_factors == direct_replay.materialized_factors
+    direct_local = Suslin._murthy_quillen_local_single_realization(
+        focused_target,
+        X,
+        direct_replay,
+        (; fixture_id = :direct_single_factor, consumer_issue = 211),
+    )
+    @test direct_local isa Suslin.QuillenLocalRealizationCertificate
+    @test Suslin.verify_quillen_local_certificate(direct_local)
+    @test direct_local.local_product == focused_target
+    @test direct_local.local_correction == focused_target
+
     focused_records = [
-        Suslin.sl3_local_elementary_factor(1, 2, X, one(R), X),
+        direct_record,
         Suslin.sl3_local_elementary_factor(2, 1, zero(R), one(R), X),
     ]
     focused_replay = Suslin.sl3_local_elementary_factor_replay(
@@ -432,6 +487,9 @@ end
         focused_adapter;
         verification = Suslin._murthy_quillen_local_adapter_summary(focused_adapter),
     )
+    @test Suslin._verify_murthy_quillen_local_adapter(focused_adapter)
+    @test Suslin._murthy_quillen_local_realization_certificate(focused_adapter) ===
+          exact_focused_local
 
     mismatched_metadata_local = Suslin.quillen_local_realization_certificate(
         exact_focused_local.original_input,
