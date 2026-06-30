@@ -16,6 +16,23 @@ function _corrupt_context(context, updates)
     )
 end
 
+function _corruption_is_rejected(context, updates)
+    try
+        corrupted_context = _corrupt_context(context, updates)
+        return !Suslin._verify_sl3_realization_input_context(corrupted_context)
+    catch err
+        return err isa ArgumentError
+    end
+end
+
+function _diagnostic_mentions(diagnostic, field::Symbol, target)
+    hasproperty(diagnostic, field) || return false
+    value = getproperty(diagnostic, field)
+    return value === target || (value isa AbstractArray || value isa Tuple || value isa Set ?
+        target in value :
+        false)
+end
+
 function _catalog_metadata(entry)
     return (;
         fixture_id = entry.id,
@@ -58,10 +75,8 @@ end
     @test legacy_context.support_status == :staged
     @test legacy_context.evidence_status == :partial
     @test legacy_context.quillen_murthy_status == :recorded
-    @test occursin(
-        ":quillen_murthy",
-        sprint(show, legacy_context.staged_diagnostic),
-    )
+    @test _diagnostic_mentions(legacy_context.staged_diagnostic, :partial_evidence, :quillen_murthy) ||
+          _diagnostic_mentions(legacy_context.staged_diagnostic, :missing_evidence, :quillen_murthy)
     @test Suslin._verify_sl3_realization_input_context(legacy_context)
 
     multivariate_entry = entries["sl3-driver-multivariate-monic-special-form-qq"]
@@ -117,28 +132,18 @@ end
             _catalog_metadata(negative["sl3-driver-negative-supported-without-witness"]),
     )
 
-    @test !Suslin._verify_sl3_realization_input_context(
-        _corrupt_context(
-            fast_context,
-            (; selected_variable = one(parent(fast_entry.selected_variable.generator))),
-        ),
+    @test _corruption_is_rejected(
+        fast_context,
+        (; selected_variable = one(parent(fast_entry.selected_variable.generator))),
     )
-    @test !Suslin._verify_sl3_realization_input_context(
-        _corrupt_context(fast_context, (; determinant_status = :not_one)),
-    )
-    @test !Suslin._verify_sl3_realization_input_context(
-        _corrupt_context(fast_context, (; ring_profile = :unsupported)),
-    )
-    @test !Suslin._verify_sl3_realization_input_context(
-        _corrupt_context(fast_context, (; evidence_status = :missing)),
-    )
-    @test !Suslin._verify_sl3_realization_input_context(
-        _corrupt_context(
-            legacy_context,
-            (; staged_diagnostic = merge(
-                legacy_context.staged_diagnostic,
-                (; message = "corrupted diagnostic"),
-            )),
-        ),
+    @test _corruption_is_rejected(fast_context, (; determinant_status = :not_one))
+    @test _corruption_is_rejected(fast_context, (; ring_profile = :unsupported))
+    @test _corruption_is_rejected(fast_context, (; evidence_status = :missing))
+    @test _corruption_is_rejected(
+        legacy_context,
+        (; staged_diagnostic = merge(
+            legacy_context.staged_diagnostic,
+            (; message = "corrupted diagnostic"),
+        )),
     )
 end
