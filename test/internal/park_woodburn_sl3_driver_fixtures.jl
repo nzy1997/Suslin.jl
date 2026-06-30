@@ -248,7 +248,7 @@ function _sl3d_assert_upstream_evidence(entry, R)
         patch_cases = _sl3d_quillen_patch_cases_by_id()
         patch_id = _sl3d_field(evidence, :patch_case_id)
         haskey(patch_cases, patch_id) ||
-            throw(ArgumentError("fixture $(entry.id) upstream patch_case_id must exist in the #99 catalog"))
+            throw(ArgumentError("fixture $(entry.id) upstream patch_case_id must exist in the Quillen patch catalog"))
     end
     return true
 end
@@ -312,7 +312,7 @@ function _sl3d_assert_metadata(entry)
     supplied_pass = _sl3d_assert_supplied_witness(entry, R)
     upstream_pass = _sl3d_assert_upstream_evidence(entry, R)
     if entry.expected_status == :supported
-        local_form_pass || supplied_pass || upstream_pass ||
+        local_form_pass || upstream_pass ||
             throw(ArgumentError("fixture $(entry.id) supported status requires at least one replayable evidence path"))
     else
         (local_form_pass || supplied_pass || upstream_pass) || hasproperty(entry, :staged_reason) ||
@@ -356,12 +356,10 @@ function validate_park_woodburn_sl3_driver_fixture_catalog(catalog)
     isempty(catalog.cases) && throw(ArgumentError("catalog must contain valid cases"))
 
     case_ids = [entry.id for entry in catalog.cases]
-    length(case_ids) == length(unique(case_ids)) ||
-        throw(ArgumentError("catalog valid case ids must be unique"))
-
     control_ids = [entry.id for entry in catalog.negative_controls]
-    length(control_ids) == length(unique(control_ids)) ||
-        throw(ArgumentError("catalog negative control ids must be unique"))
+    all_ids = vcat(case_ids, control_ids)
+    length(all_ids) == length(unique(all_ids)) ||
+        throw(ArgumentError("catalog case and negative control ids must be unique"))
 
     for entry in catalog.cases
         validate_park_woodburn_sl3_driver_fixture(entry)
