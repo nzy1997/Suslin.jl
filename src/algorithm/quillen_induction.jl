@@ -211,6 +211,38 @@ struct QuillenDenominatorCoverCandidate
     verification::QuillenDenominatorCoverCandidateVerification
 end
 
+struct QuillenDenominatorCoverSolverVerification
+    raw_denominator_count::Int
+    multiplier_count::Int
+    raw_denominators::Vector
+    exponent::Int
+    powered_denominators::Vector
+    coverage_multipliers::Vector
+    parent_ring_ok::Bool
+    exact_ring_ok::Bool
+    exponent_ok::Bool
+    source_candidate_ok::Bool
+    coverage_terms::Vector
+    coverage_sum
+    coverage_ok::Bool
+    cover_certificate_ok::Bool
+    cover_certificate_matches::Bool
+    overall_ok::Bool
+end
+
+struct QuillenDenominatorCoverSolverResult
+    source_candidate
+    ring
+    raw_denominators::Vector
+    exponent::Int
+    powered_denominators::Vector
+    coverage_multipliers::Vector
+    coverage_terms::Vector
+    coverage_sum
+    cover_certificate::QuillenDenominatorCoverCertificate
+    verification::QuillenDenominatorCoverSolverVerification
+end
+
 struct QuillenLocalContributionNormalizationVerification
     local_certificate_ok::Bool
     cover_certificate_ok::Bool
@@ -1305,6 +1337,269 @@ function verify_quillen_denominator_cover_candidate(candidate)::Bool
         err isa ArgumentError && return false
         return false
     end
+end
+
+function _quillen_denominator_cover_solver_verification(
+    source_candidate,
+    R,
+    raw_denominators,
+    exponent::Int,
+    coverage_multipliers,
+    cover_certificate,
+)
+    raw_denominator_snapshot = collect(raw_denominators)
+    multiplier_snapshot = collect(coverage_multipliers)
+    raw_denominator_count = length(raw_denominator_snapshot)
+    multiplier_count = length(multiplier_snapshot)
+    exact_ring_ok = Oscar.is_exact_type(typeof(zero(coefficient_ring(R))))
+    exponent_ok = exponent >= 1
+    raw_parent_ring_ok =
+        all(denominator -> parent(denominator) == R, raw_denominator_snapshot)
+    multiplier_parent_ring_ok =
+        all(multiplier -> parent(multiplier) == R, multiplier_snapshot)
+    parent_ring_ok =
+        raw_denominator_count == multiplier_count &&
+        raw_parent_ring_ok &&
+        multiplier_parent_ring_ok
+    powered_denominators = raw_parent_ring_ok && exponent_ok ?
+        [denominator^exponent for denominator in raw_denominator_snapshot] :
+        Any[]
+    coverage_terms = parent_ring_ok && exponent_ok ?
+        [
+            multiplier_snapshot[idx] * powered_denominators[idx]
+            for idx in eachindex(powered_denominators)
+        ] :
+        Any[]
+    coverage_sum = parent_ring_ok && exponent_ok ?
+        sum(coverage_terms; init = zero(R)) :
+        zero(R)
+    coverage_ok = parent_ring_ok && exact_ring_ok && exponent_ok && coverage_sum == one(R)
+    source_candidate_ok =
+        source_candidate === nothing ||
+        (
+            source_candidate isa QuillenDenominatorCoverCandidate &&
+            verify_quillen_denominator_cover_candidate(source_candidate) &&
+            source_candidate.ring == R &&
+            source_candidate.raw_denominators == raw_denominator_snapshot
+        )
+    cover_certificate_ok =
+        cover_certificate isa QuillenDenominatorCoverCertificate &&
+        verify_quillen_denominator_cover(cover_certificate)
+    cover_certificate_matches =
+        cover_certificate_ok &&
+        cover_certificate.ring == R &&
+        cover_certificate.denominators == powered_denominators &&
+        cover_certificate.coverage_multipliers == multiplier_snapshot &&
+        cover_certificate.coverage_sum == coverage_sum
+    overall_ok = coverage_ok && source_candidate_ok && cover_certificate_matches
+    return QuillenDenominatorCoverSolverVerification(
+        raw_denominator_count,
+        multiplier_count,
+        raw_denominator_snapshot,
+        exponent,
+        powered_denominators,
+        multiplier_snapshot,
+        parent_ring_ok,
+        exact_ring_ok,
+        exponent_ok,
+        source_candidate_ok,
+        coverage_terms,
+        coverage_sum,
+        coverage_ok,
+        cover_certificate_ok,
+        cover_certificate_matches,
+        overall_ok,
+    )
+end
+
+function _same_quillen_denominator_cover_solver_verification(
+    left::QuillenDenominatorCoverSolverVerification,
+    right::QuillenDenominatorCoverSolverVerification,
+)::Bool
+    return left.raw_denominator_count == right.raw_denominator_count &&
+           left.multiplier_count == right.multiplier_count &&
+           left.raw_denominators == right.raw_denominators &&
+           left.exponent == right.exponent &&
+           left.powered_denominators == right.powered_denominators &&
+           left.coverage_multipliers == right.coverage_multipliers &&
+           left.parent_ring_ok == right.parent_ring_ok &&
+           left.exact_ring_ok == right.exact_ring_ok &&
+           left.exponent_ok == right.exponent_ok &&
+           left.source_candidate_ok == right.source_candidate_ok &&
+           left.coverage_terms == right.coverage_terms &&
+           left.coverage_sum == right.coverage_sum &&
+           left.coverage_ok == right.coverage_ok &&
+           left.cover_certificate_ok == right.cover_certificate_ok &&
+           left.cover_certificate_matches == right.cover_certificate_matches &&
+           left.overall_ok == right.overall_ok
+end
+
+function replay_quillen_denominator_cover_solver_result(
+    result::QuillenDenominatorCoverSolverResult,
+)
+    _require_quillen_denominator_cover_ring(result.ring)
+    return _quillen_denominator_cover_solver_verification(
+        result.source_candidate,
+        result.ring,
+        result.raw_denominators,
+        result.exponent,
+        result.coverage_multipliers,
+        result.cover_certificate,
+    )
+end
+
+function verify_quillen_denominator_cover_solver_result(result)::Bool
+    try
+        replay = replay_quillen_denominator_cover_solver_result(result)
+        return replay.overall_ok &&
+               result.raw_denominators == replay.raw_denominators &&
+               result.exponent == replay.exponent &&
+               result.powered_denominators == replay.powered_denominators &&
+               result.coverage_multipliers == replay.coverage_multipliers &&
+               result.coverage_terms == replay.coverage_terms &&
+               result.coverage_sum == replay.coverage_sum &&
+               _same_quillen_denominator_cover_solver_verification(
+                   result.verification,
+                   replay,
+               )
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function _quillen_cover_exponent_range(max_exponent::Integer, exponent)
+    bound = Int(max_exponent)
+    bound >= 1 || throw(ArgumentError("coverage not proven: max_exponent must be positive"))
+    if exponent === nothing
+        return 1:bound
+    end
+    exponent isa Integer ||
+        throw(ArgumentError("coverage not proven: exponent must be an integer"))
+    chosen = Int(exponent)
+    1 <= chosen <= bound ||
+        throw(ArgumentError("coverage not proven: requested exponent is outside the configured bound"))
+    return chosen:chosen
+end
+
+function _quillen_supplied_cover_multipliers(coverage_multipliers, supplied_multipliers)
+    coverage_multipliers !== nothing && supplied_multipliers !== nothing &&
+        throw(ArgumentError("coverage not proven: provide only one supplied multiplier collection"))
+    return coverage_multipliers === nothing ? supplied_multipliers : coverage_multipliers
+end
+
+function _quillen_cover_coordinate_multipliers(R, powered_denominators)
+    cover_ideal = ideal(R, powered_denominators)
+    one(R) in cover_ideal || return nothing
+    coordinates = Oscar.coordinates(one(R), cover_ideal)
+    return [R(coordinates[1, idx]) for idx in eachindex(powered_denominators)]
+end
+
+function _quillen_denominator_cover_solver_result(
+    source_candidate,
+    R,
+    raw_denominators,
+    exponent::Int,
+    coverage_multipliers,
+)
+    cover_certificate = quillen_denominator_cover_certificate(
+        R,
+        [denominator^exponent for denominator in raw_denominators],
+        coverage_multipliers,
+    )
+    verification = _quillen_denominator_cover_solver_verification(
+        source_candidate,
+        R,
+        raw_denominators,
+        exponent,
+        coverage_multipliers,
+        cover_certificate,
+    )
+    verification.overall_ok ||
+        throw(ArgumentError("coverage not proven: denominator-cover solver result does not replay"))
+    return QuillenDenominatorCoverSolverResult(
+        source_candidate,
+        R,
+        verification.raw_denominators,
+        verification.exponent,
+        verification.powered_denominators,
+        verification.coverage_multipliers,
+        verification.coverage_terms,
+        verification.coverage_sum,
+        cover_certificate,
+        verification,
+    )
+end
+
+function solve_quillen_denominator_cover(
+    R,
+    raw_denominators;
+    max_exponent::Integer = 4,
+    exponent = nothing,
+    coverage_multipliers = nothing,
+    supplied_multipliers = nothing,
+    source_candidate = nothing,
+)
+    _require_quillen_denominator_cover_ring(R)
+    normalized_denominators =
+        _normalize_quillen_cover_elements(R, raw_denominators, "cover denominator")
+    isempty(normalized_denominators) &&
+        throw(ArgumentError("coverage not proven: denominator list must be nonempty"))
+    exponent_range = _quillen_cover_exponent_range(max_exponent, exponent)
+    supplied = _quillen_supplied_cover_multipliers(
+        coverage_multipliers,
+        supplied_multipliers,
+    )
+    normalized_supplied = supplied === nothing ?
+        nothing :
+        _normalize_quillen_cover_elements(R, supplied, "cover coverage multiplier")
+
+    for chosen_exponent in exponent_range
+        powered_denominators = [
+            denominator^chosen_exponent for denominator in normalized_denominators
+        ]
+        multipliers = if normalized_supplied === nothing
+            _quillen_cover_coordinate_multipliers(R, powered_denominators)
+        else
+            normalized_supplied
+        end
+        multipliers === nothing && continue
+        try
+            result = _quillen_denominator_cover_solver_result(
+                source_candidate,
+                R,
+                normalized_denominators,
+                Int(chosen_exponent),
+                multipliers,
+            )
+            verify_quillen_denominator_cover_solver_result(result) && return result
+        catch err
+            err isa InterruptException && rethrow()
+            err isa ArgumentError || rethrow()
+        end
+    end
+
+    throw(ArgumentError("coverage not proven: bounded denominator-cover search failed"))
+end
+
+function solve_quillen_denominator_cover(
+    candidate::QuillenDenominatorCoverCandidate;
+    max_exponent::Integer = 4,
+    exponent = nothing,
+    coverage_multipliers = nothing,
+    supplied_multipliers = nothing,
+)
+    verify_quillen_denominator_cover_candidate(candidate) ||
+        throw(ArgumentError("coverage not proven: denominator-cover candidate does not replay"))
+    return solve_quillen_denominator_cover(
+        candidate.ring,
+        candidate.raw_denominators;
+        max_exponent,
+        exponent,
+        coverage_multipliers,
+        supplied_multipliers,
+        source_candidate = candidate,
+    )
 end
 
 function extract_quillen_denominator_cover_candidate(certificates)

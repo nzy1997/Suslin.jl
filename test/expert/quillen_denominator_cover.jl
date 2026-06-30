@@ -94,4 +94,20 @@ end
         certificate_exact.verification,
     )
     @test !Suslin.verify_quillen_denominator_cover(tampered_exact)
+
+    powered_certificate = Suslin.quillen_denominator_cover_certificate(
+        R_two,
+        [r^2, (one(R_two) - r)^2],
+        [-2 * r + 3 * one(R_two), 2 * r + one(R_two)],
+    )
+    @test Suslin.verify_quillen_denominator_cover(powered_certificate)
+    @test powered_certificate.coverage_sum == one(R_two)
+    tampered_powered = Suslin.QuillenDenominatorCoverCertificate(
+        powered_certificate.ring,
+        powered_certificate.denominators,
+        powered_certificate.coverage_multipliers,
+        powered_certificate.coverage_sum + r,
+        powered_certificate.verification,
+    )
+    @test !Suslin.verify_quillen_denominator_cover(tampered_powered)
 end
