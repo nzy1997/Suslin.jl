@@ -89,7 +89,7 @@ function _throw_staged_factorization_failure(A, ring_profile::Symbol, normalizat
     end
 
     length(collect(gens(base_ring(A)))) > 1 &&
-        throw(ArgumentError("determinant-one polynomial input is outside the implemented fixture-backed Quillen route: missing Quillen/local realizability witness"))
+        throw(ArgumentError("determinant-one polynomial input is outside the implemented Quillen/local evidence route: missing Quillen/local realizability witness"))
 
     if n > 3
         throw(ArgumentError("SL_n reduction layer for n > 3 is not yet implemented in elementary_factorization"))
@@ -127,7 +127,7 @@ function _polynomial_factorization_route_certificate(
             end
         end
 
-        quillen_certificate = _polynomial_quillen_fixture_route_certificate(A)
+        quillen_certificate = _polynomial_quillen_supplied_evidence_route_certificate(A)
         quillen_certificate !== nothing && return quillen_certificate
 
         if allow_recursive_column_peel
@@ -225,50 +225,143 @@ function _polynomial_quillen_patch_route_certificate(A, patch)
     )
 end
 
-function _polynomial_quillen_fixture_route_certificate(A)
-    patch = _polynomial_quillen_fixture_patch(A)
+function _polynomial_quillen_supplied_evidence_route_certificate(A)
+    patch = _polynomial_quillen_supplied_evidence_patch(A)
     patch === nothing && return nothing
     return _polynomial_quillen_patch_route_certificate(A, patch)
 end
 
-function _polynomial_quillen_fixture_patch(A)
-    data = _polynomial_quillen_fixture_data(A)
+function _polynomial_quillen_elementary_entry(A)
+    nrows(A) == 3 && ncols(A) == 3 || return nothing
+    R = base_ring(A)
+    _factorization_ring_profile(R) == :polynomial || return nothing
+    ring_gens = collect(gens(R))
+    length(ring_gens) >= 2 || return nothing
+    row = 0
+    col = 0
+    entry = zero(R)
+    for i in 1:3, j in 1:3
+        if i == j
+            A[i, j] == one(R) || return nothing
+        elseif A[i, j] != zero(R)
+            row == 0 || return nothing
+            row = i
+            col = j
+            entry = A[i, j]
+        end
+    end
+    row == 0 && return nothing
+    return (;
+        row,
+        col,
+        entry,
+        selected_variable = ring_gens[1],
+        cover_generator = ring_gens[2],
+    )
+end
+
+function _polynomial_quillen_supplied_evidence_data(A)
+    elementary_entry = _polynomial_quillen_elementary_entry(A)
+    elementary_entry === nothing && return nothing
+
+    R = base_ring(A)
+    ring_gens = collect(gens(R))
+    selected_variable = elementary_entry.selected_variable
+    base_entry = evaluate(
+        elementary_entry.entry,
+        [gen == selected_variable ? zero(R) : gen for gen in ring_gens],
+    )
+    delta_entry = elementary_entry.entry - base_entry
+    delta_entry == zero(R) && return nothing
+
+    factor_type = typeof(identity_matrix(R, 3))
+    base_term_policy = base_entry == zero(R) ? :trivial : :supplied
+    base_term_factors = base_term_policy == :trivial ?
+        factor_type[] :
+        [elementary_matrix(3, elementary_entry.row, elementary_entry.col, base_entry, R)]
+
+    denominators = [elementary_entry.cover_generator, one(R) - elementary_entry.cover_generator]
+    local_certificates = map(enumerate(denominators)) do (local_index, denominator)
+        local_certificate = LocalCertificate(
+            [elementary_entry.row, elementary_entry.col],
+            [denominator, denominator],
+        )
+        local_factor = elementary_matrix(
+            3,
+            elementary_entry.row,
+            elementary_entry.col,
+            denominator * delta_entry,
+            R,
+        )
+        local_realization = quillen_local_realization_certificate(
+            A,
+            selected_variable;
+            local_certificate = local_certificate,
+            denominator = denominator,
+            coverage_multiplier = one(R),
+            correction = QuillenElementaryCorrection(
+                elementary_entry.row,
+                elementary_entry.col,
+                delta_entry,
+            ),
+            factors = [local_factor],
+            local_correction = local_factor,
+            witness_metadata = (;
+                source = :automatic_quillen_supplied_evidence,
+                local_index = local_index,
+                consumer_issue_id = "#220",
+            ),
+            ring = R,
+            size = 3,
+        )
+        return quillen_local_factor_sequence_certificate(
+            local_realization;
+            factor_provenance = (;
+                factor_index = 1,
+                sequence_index = 1,
+                local_index = 1,
+                source = :automatic_quillen_supplied_evidence,
+                consumer_issue_id = "#220",
+            ),
+            metadata = (;
+                source = :automatic_quillen_supplied_evidence,
+                local_index = local_index,
+                consumer_issue_id = "#220",
+            ),
+        )
+    end
+
+    return (;
+        selected_variable,
+        cover_generator = elementary_entry.cover_generator,
+        row = elementary_entry.row,
+        col = elementary_entry.col,
+        entry = elementary_entry.entry,
+        base_entry,
+        delta_entry,
+        base_term_policy,
+        base_term_factors,
+        local_certificates,
+    )
+end
+
+function _polynomial_quillen_supplied_evidence_patch(A)
+    data = _polynomial_quillen_supplied_evidence_data(A)
     data === nothing && return nothing
 
-    R = data.ring
-    n = data.size
-    cover = quillen_denominator_cover_certificate(
-        R,
-        [data.r, one(R) - data.r],
-        [one(R), one(R)],
-    )
-    local_certificates = [
-        _polynomial_quillen_fixture_local_certificate(
-            A,
-            data;
-            denominator = denominator,
-            local_index = local_index,
-        )
-        for (local_index, denominator) in enumerate(cover.denominators)
-    ]
-    normalized = normalize_quillen_local_contributions(
-        local_certificates,
-        cover;
-        original_input = A,
-        selected_variable = data.X,
-    )
-    patch = assemble_deterministic_quillen_patch(
+    R = base_ring(A)
+    patch = assemble_quillen_patch_from_local_evidence(
         A,
-        data.X,
-        local_certificates,
-        normalized,
-        cover;
-        target = A,
-        ring = R,
-        size = n,
+        data.selected_variable,
+        data.local_certificates;
+        exponent = 1,
+        coverage_multipliers = [one(R), one(R)],
+        base_term_policy = data.base_term_policy,
+        base_term_factors = data.base_term_factors,
+        metadata = (; source = :automatic_quillen_supplied_evidence, consumer_issue_id = "#220"),
     )
     verify_quillen_patch(patch) ||
-        error("internal Quillen fixture patch verification failed")
+        error("internal supplied-evidence Quillen patch verification failed")
     return patch
 end
 
@@ -379,16 +472,24 @@ function _polynomial_quillen_patch_target_matrix(patch)
 end
 
 function _polynomial_quillen_patch_route_metadata(patch)
+    denominator_data = hasproperty(patch, :denominator_data) ?
+        copy(collect(patch.denominator_data)) :
+        hasproperty(patch, :denominator_candidate) ?
+        copy(collect(patch.denominator_candidate.raw_denominators)) :
+        Any[]
+    normalized_contribution_count = hasproperty(patch, :normalized_local_contributions) ?
+        length(patch.normalized_local_contributions) :
+        hasproperty(patch, :sequence_expansions) ?
+        length(patch.sequence_expansions) :
+        0
     return (;
         patch_size = patch.size,
         substitution_variable = patch.substitution_variable,
-        denominator_data = copy(collect(patch.denominator_data)),
+        denominator_data = denominator_data,
         local_certificate_count = hasproperty(patch, :local_certificates) ?
             length(patch.local_certificates) :
             length(patch.local_contributions),
-        normalized_contribution_count = hasproperty(patch, :normalized_local_contributions) ?
-            length(patch.normalized_local_contributions) :
-            0,
+        normalized_contribution_count = normalized_contribution_count,
         patch_replay_metadata = hasproperty(patch, :replay_metadata) ?
             patch.replay_metadata :
             nothing,
@@ -515,7 +616,7 @@ function _polynomial_staged_failure_evidence(A; allow_recursive_column_peel::Boo
         return (; error_type = :none, message = "")
     end
 
-    if _polynomial_quillen_fixture_route_certificate(A) !== nothing
+    if _polynomial_quillen_supplied_evidence_route_certificate(A) !== nothing
         return (; error_type = :none, message = "")
     end
 
