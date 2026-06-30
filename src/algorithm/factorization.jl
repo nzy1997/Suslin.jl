@@ -8,6 +8,35 @@ struct PolynomialFactorizationRouteCertificate
     verification
 end
 
+struct SL3RealizationInputContext
+    matrix
+    base_ring
+    coefficient_ring
+    size::Int
+    ring_profile::Symbol
+    generators::Tuple
+    generator_names::Tuple
+    selected_variable
+    selected_variable_index
+    selected_variable_status::Symbol
+    determinant
+    determinant_status::Symbol
+    exact_field_status::Symbol
+    catalog_metadata::NamedTuple
+    local_form_witness
+    local_form_status::Symbol
+    variable_change_metadata
+    variable_change_status::Symbol
+    normality_conjugation_metadata
+    normality_conjugation_status::Symbol
+    quillen_murthy_metadata
+    quillen_murthy_status::Symbol
+    evidence_status::Symbol
+    support_status::Symbol
+    staged_diagnostic::NamedTuple
+    verification
+end
+
 struct PolynomialQuillenPatchRouteAdapter
     target
     route::Symbol
@@ -62,6 +91,422 @@ function _require_polynomial_sl_determinant(A)
     R = base_ring(A)
     det(A) == one(R) || throw(ArgumentError("determinant/unit precondition failed: polynomial inputs must have determinant 1; otherwise the input is outside the staged SL_n factorization path"))
     return nothing
+end
+
+function _sl3_realization_input_context_extract(data, fields::Tuple)
+    data === nothing && return nothing
+    for field in fields
+        hasproperty(data, field) && return getproperty(data, field)
+    end
+    return nothing
+end
+
+function _sl3_realization_input_context_nonempty_identifier(value)::Bool
+    value === nothing && return false
+    value isa AbstractString && return !isempty(value)
+    return true
+end
+
+function _sl3_realization_input_context_has_replay_payload(metadata)::Bool
+    payload = _sl3_realization_input_context_extract(
+        metadata,
+        (
+            :replay_steps,
+            :replay_metadata,
+            :replay_certificate,
+            :replay_payload,
+            :certificate,
+            :verification,
+            :patch,
+            :variable_change_certificate,
+            :normality_certificate,
+            :conjugation_certificate,
+            :quillen_patch,
+            :murthy_certificate,
+        ),
+    )
+    payload === nothing && return false
+    if payload isa Tuple || payload isa AbstractArray || payload isa Set
+        return !isempty(payload)
+    end
+    return true
+end
+
+function _sl3_realization_input_context_selected_variable(R, selected_variable)
+    selected_variable === nothing && return nothing, nothing, :missing
+
+    normalized_selected =
+        hasproperty(selected_variable, :generator) ? getproperty(selected_variable, :generator) :
+        selected_variable
+    index = _ecp_selected_variable_index(R, normalized_selected)
+
+    if hasproperty(selected_variable, :index)
+        metadata_index = getproperty(selected_variable, :index)
+        metadata_index == index || throw(ArgumentError(
+            "selected_variable metadata index does not match the generator position in gens(R)",
+        ))
+    end
+
+    return _require_substitution_generator(R, normalized_selected), index, :passes
+end
+
+function _sl3_realization_input_context_local_form_status(
+    A,
+    R,
+    ring_profile::Symbol,
+    selected_variable,
+    selected_variable_index,
+    local_form_witness,
+)
+    supported_generator = _supported_local_sl3_generator(A, R, ring_profile)
+    if local_form_witness !== nothing
+        monic_value = _sl3_realization_input_context_extract(
+            local_form_witness,
+            (:entry, :polynomial, :p, :local_entry),
+        )
+        position = hasproperty(local_form_witness, :monic_entry_position) ?
+            local_form_witness.monic_entry_position :
+            nothing
+        if monic_value !== nothing &&
+                position isa Tuple &&
+                length(position) == 2 &&
+                selected_variable_index !== nothing
+            row, col = position
+            if row isa Int &&
+                    col isa Int &&
+                    1 <= row <= nrows(A) &&
+                    1 <= col <= ncols(A) &&
+                    parent(monic_value) === R &&
+                    A[row, col] == monic_value &&
+                    _is_monic_in_variable(monic_value, R, selected_variable_index)
+                return :replayed
+            end
+        end
+    end
+
+    if local_form_witness === nothing &&
+            supported_generator !== nothing &&
+            selected_variable == supported_generator
+        return :fast_local
+    end
+
+    return :missing
+end
+
+function _sl3_realization_input_context_metadata_status(metadata, A)
+    metadata === nothing && return :missing
+
+    replay_id = _sl3_realization_input_context_extract(
+        metadata,
+        (:replay_id, :case_id, :mainline_case_id, :upstream_case_id, :patch_case_id, :fixture_id),
+    )
+    target_matrix = _sl3_realization_input_context_extract(
+        metadata,
+        (:target_matrix, :expected_matrix, :matrix),
+    )
+    has_replay_payload = _sl3_realization_input_context_has_replay_payload(metadata)
+    has_replay_id = _sl3_realization_input_context_nonempty_identifier(replay_id)
+
+    if has_replay_id && target_matrix !== nothing && target_matrix == A && has_replay_payload
+        return :replayed
+    elseif has_replay_id || target_matrix !== nothing || has_replay_payload
+        return :recorded
+    end
+
+    return :recorded
+end
+
+function _sl3_realization_input_context_staged_diagnostic(
+    selected_variable_status::Symbol,
+    determinant_status::Symbol,
+    exact_field_status::Symbol,
+    local_form_status::Symbol,
+    variable_change_status::Symbol,
+    normality_conjugation_status::Symbol,
+    quillen_murthy_status::Symbol,
+    evidence_status::Symbol,
+    support_status::Symbol,
+)
+    missing_evidence = Symbol[]
+    partial_evidence = Symbol[]
+
+    local_form_status in (:replayed, :fast_local) || push!(missing_evidence, :local_form)
+    for (label, status) in (
+        (:variable_change, variable_change_status),
+        (:normality_conjugation, normality_conjugation_status),
+        (:quillen_murthy, quillen_murthy_status),
+    )
+        if status == :recorded
+            push!(partial_evidence, label)
+        elseif status != :replayed
+            push!(missing_evidence, label)
+        end
+    end
+
+    message = support_status == :supported ?
+        "SL_3 realization input context is replayable" :
+        evidence_status == :partial ?
+        "SL_3 realization input context is staged with partial replay metadata" :
+        "SL_3 realization input context is staged: replayable evidence is missing"
+
+    return (;
+        status = support_status,
+        missing_evidence = Tuple(missing_evidence),
+        partial_evidence = Tuple(partial_evidence),
+        selected_variable_status,
+        determinant_status,
+        exact_field_status,
+        message,
+    )
+end
+
+function _sl3_realization_input_context_fields(
+    A;
+    selected_variable = nothing,
+    catalog_metadata = (;),
+    local_form_witness = nothing,
+    variable_change_metadata = nothing,
+    normality_conjugation_metadata = nothing,
+    quillen_murthy_metadata = nothing,
+)
+    size = _validate_factorization_matrix(A)
+    size == 3 || throw(ArgumentError("SL_3 realization input context requires a 3 x 3 matrix"))
+
+    R = base_ring(A)
+    ring_profile = _factorization_ring_profile(R)
+    ring_profile == :polynomial ||
+        throw(ArgumentError("SL_3 realization input context requires an ordinary polynomial base ring"))
+
+    coefficient = coefficient_ring(R)
+    Oscar.is_exact_type(typeof(zero(coefficient))) ||
+        throw(ArgumentError("SL_3 realization input context requires an exact coefficient ring"))
+    coefficient isa Field ||
+        throw(ArgumentError("SL_3 realization input context requires a field-backed coefficient ring"))
+
+    _require_polynomial_sl_determinant(A)
+    determinant = det(A)
+
+    generators = Tuple(collect(gens(R)))
+    generator_names = Tuple(string(generator) for generator in generators)
+    selected, selected_index, selected_status =
+        _sl3_realization_input_context_selected_variable(R, selected_variable)
+
+    local_form_status = _sl3_realization_input_context_local_form_status(
+        A,
+        R,
+        ring_profile,
+        selected,
+        selected_index,
+        local_form_witness,
+    )
+    variable_change_status = _sl3_realization_input_context_metadata_status(variable_change_metadata, A)
+    normality_conjugation_status =
+        _sl3_realization_input_context_metadata_status(normality_conjugation_metadata, A)
+    quillen_murthy_status = _sl3_realization_input_context_metadata_status(quillen_murthy_metadata, A)
+
+    replayable_evidence =
+        local_form_status in (:replayed, :fast_local) ||
+        variable_change_status == :replayed ||
+        normality_conjugation_status == :replayed ||
+        quillen_murthy_status == :replayed
+    recorded_only_evidence =
+        !replayable_evidence &&
+        (
+            variable_change_status == :recorded ||
+            normality_conjugation_status == :recorded ||
+            quillen_murthy_status == :recorded
+        )
+
+    evidence_status = replayable_evidence ? :replayable : recorded_only_evidence ? :partial : :missing
+    support_status = replayable_evidence ? :supported : :staged
+    staged_diagnostic = _sl3_realization_input_context_staged_diagnostic(
+        selected_status,
+        :one,
+        :supported,
+        local_form_status,
+        variable_change_status,
+        normality_conjugation_status,
+        quillen_murthy_status,
+        evidence_status,
+        support_status,
+    )
+
+    if hasproperty(catalog_metadata, :expected_status)
+        catalog_metadata.expected_status == support_status || throw(
+            ArgumentError("SL_3 realization input context support status does not match catalog metadata")
+        )
+    end
+
+    return (;
+        matrix = A,
+        base_ring = R,
+        coefficient_ring = coefficient,
+        size,
+        ring_profile,
+        generators,
+        generator_names,
+        selected_variable = selected,
+        selected_variable_index = selected_index,
+        selected_variable_status = selected_status,
+        determinant,
+        determinant_status = :one,
+        exact_field_status = :supported,
+        catalog_metadata,
+        local_form_witness,
+        local_form_status,
+        variable_change_metadata,
+        variable_change_status,
+        normality_conjugation_metadata,
+        normality_conjugation_status,
+        quillen_murthy_metadata,
+        quillen_murthy_status,
+        evidence_status,
+        support_status,
+        staged_diagnostic,
+    )
+end
+
+function _sl3_realization_input_context_core_verification(context)
+    recomputed = _sl3_realization_input_context_fields(
+        context.matrix;
+        selected_variable = context.selected_variable,
+        catalog_metadata = context.catalog_metadata,
+        local_form_witness = context.local_form_witness,
+        variable_change_metadata = context.variable_change_metadata,
+        normality_conjugation_metadata = context.normality_conjugation_metadata,
+        quillen_murthy_metadata = context.quillen_murthy_metadata,
+    )
+
+    matrix_ok = context.matrix == recomputed.matrix
+    base_ring_ok = context.base_ring == recomputed.base_ring
+    coefficient_ring_ok = context.coefficient_ring == recomputed.coefficient_ring
+    size_ok = context.size == recomputed.size
+    ring_profile_ok = context.ring_profile == recomputed.ring_profile
+    generators_ok = context.generators == recomputed.generators
+    generator_names_ok = context.generator_names == recomputed.generator_names
+    selected_variable_ok = context.selected_variable == recomputed.selected_variable
+    selected_variable_index_ok =
+        context.selected_variable_index == recomputed.selected_variable_index
+    selected_variable_status_ok =
+        context.selected_variable_status == recomputed.selected_variable_status
+    determinant_ok = context.determinant == recomputed.determinant
+    determinant_status_ok = context.determinant_status == recomputed.determinant_status
+    exact_field_status_ok = context.exact_field_status == recomputed.exact_field_status
+    catalog_metadata_ok = context.catalog_metadata == recomputed.catalog_metadata
+    local_form_witness_ok = context.local_form_witness == recomputed.local_form_witness
+    local_form_status_ok = context.local_form_status == recomputed.local_form_status
+    variable_change_metadata_ok =
+        context.variable_change_metadata == recomputed.variable_change_metadata
+    variable_change_status_ok =
+        context.variable_change_status == recomputed.variable_change_status
+    normality_conjugation_metadata_ok =
+        context.normality_conjugation_metadata == recomputed.normality_conjugation_metadata
+    normality_conjugation_status_ok =
+        context.normality_conjugation_status == recomputed.normality_conjugation_status
+    quillen_murthy_metadata_ok =
+        context.quillen_murthy_metadata == recomputed.quillen_murthy_metadata
+    quillen_murthy_status_ok =
+        context.quillen_murthy_status == recomputed.quillen_murthy_status
+    evidence_status_ok = context.evidence_status == recomputed.evidence_status
+    support_status_ok = context.support_status == recomputed.support_status
+    staged_diagnostic_ok = context.staged_diagnostic == recomputed.staged_diagnostic
+
+    overall_core_ok =
+        matrix_ok &&
+        base_ring_ok &&
+        coefficient_ring_ok &&
+        size_ok &&
+        ring_profile_ok &&
+        generators_ok &&
+        generator_names_ok &&
+        selected_variable_ok &&
+        selected_variable_index_ok &&
+        selected_variable_status_ok &&
+        determinant_ok &&
+        determinant_status_ok &&
+        exact_field_status_ok &&
+        catalog_metadata_ok &&
+        local_form_witness_ok &&
+        local_form_status_ok &&
+        variable_change_metadata_ok &&
+        variable_change_status_ok &&
+        normality_conjugation_metadata_ok &&
+        normality_conjugation_status_ok &&
+        quillen_murthy_metadata_ok &&
+        quillen_murthy_status_ok &&
+        evidence_status_ok &&
+        support_status_ok &&
+        staged_diagnostic_ok
+
+    return (;
+        matrix_ok,
+        base_ring_ok,
+        coefficient_ring_ok,
+        size_ok,
+        ring_profile_ok,
+        generators_ok,
+        generator_names_ok,
+        selected_variable_ok,
+        selected_variable_index_ok,
+        selected_variable_status_ok,
+        determinant_ok,
+        determinant_status_ok,
+        exact_field_status_ok,
+        catalog_metadata_ok,
+        local_form_witness_ok,
+        local_form_status_ok,
+        variable_change_metadata_ok,
+        variable_change_status_ok,
+        normality_conjugation_metadata_ok,
+        normality_conjugation_status_ok,
+        quillen_murthy_metadata_ok,
+        quillen_murthy_status_ok,
+        evidence_status_ok,
+        support_status_ok,
+        staged_diagnostic_ok,
+        overall_core_ok,
+    )
+end
+
+function _sl3_realization_input_context_verification(context)
+    core = _sl3_realization_input_context_core_verification(context)
+    stored_verification_ok = context.verification == core
+    return merge(core, (; stored_verification_ok, overall_ok = core.overall_core_ok && stored_verification_ok))
+end
+
+function _verify_sl3_realization_input_context(context)::Bool
+    try
+        return _sl3_realization_input_context_verification(context).overall_ok
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function _sl3_realization_input_context(
+    A;
+    selected_variable = nothing,
+    catalog_metadata = (;),
+    local_form_witness = nothing,
+    variable_change_metadata = nothing,
+    normality_conjugation_metadata = nothing,
+    quillen_murthy_metadata = nothing,
+)
+    fields = _sl3_realization_input_context_fields(
+        A;
+        selected_variable,
+        catalog_metadata,
+        local_form_witness,
+        variable_change_metadata,
+        normality_conjugation_metadata,
+        quillen_murthy_metadata,
+    )
+    context = SL3RealizationInputContext(values(merge(fields, (; verification = nothing,)))...)
+    verification = _sl3_realization_input_context_core_verification(context)
+    checked = SL3RealizationInputContext(values(merge(fields, (; verification,)))...)
+    _verify_sl3_realization_input_context(checked) ||
+        error("internal SL_3 realization input context verification failed")
+    return checked
 end
 
 function _supported_local_sl3_generator(A, R, ring_profile::Symbol)
