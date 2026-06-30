@@ -2447,6 +2447,23 @@ function _quillen_sequence_expansion_factors(
     return factors
 end
 
+function _quillen_solver_source_candidate_matches_sequence(
+    solver_result::QuillenDenominatorCoverSolverResult,
+    certificate::QuillenLocalFactorSequenceCertificate,
+    local_index::Int,
+)::Bool
+    source_candidate = solver_result.source_candidate
+    source_candidate isa QuillenDenominatorCoverCandidate || return false
+    verify_quillen_denominator_cover_candidate(source_candidate) || return false
+    1 <= local_index <= length(source_candidate.local_certificates) || return false
+    return source_candidate.original_input == certificate.original_input &&
+           source_candidate.ring == certificate.ring &&
+           source_candidate.size == certificate.size &&
+           source_candidate.selected_variable == certificate.selected_variable &&
+           source_candidate.local_certificates[local_index] == certificate &&
+           source_candidate.raw_denominators == solver_result.raw_denominators
+end
+
 function _same_quillen_sequence_expansion_verification(
     left::QuillenSequenceContributionExpansionVerification,
     right::QuillenSequenceContributionExpansionVerification,
@@ -2482,7 +2499,12 @@ function replay_quillen_sequence_contribution_expansion(
         solver_result_ok &&
         solver_result.ring == R &&
         local_index_ok &&
-        solver_result.raw_denominators[expansion.local_index] == certificate.product_denominator
+        solver_result.raw_denominators[expansion.local_index] == certificate.product_denominator &&
+        _quillen_solver_source_candidate_matches_sequence(
+            solver_result,
+            certificate,
+            expansion.local_index,
+        )
     powered_denominator = local_index_ok ? solver_result.powered_denominators[expansion.local_index] : zero(R)
     coverage_multiplier = local_index_ok ? solver_result.coverage_multipliers[expansion.local_index] : zero(R)
     cover_term = local_index_ok ? solver_result.coverage_terms[expansion.local_index] : zero(R)
@@ -2686,6 +2708,10 @@ function _same_quillen_sequence_expansions(left, right)::Bool
     length(left) == length(right) || return false
     for idx in eachindex(left)
         left[idx].local_index == right[idx].local_index || return false
+        _same_quillen_denominator_cover_solver_result_data(
+            left[idx].solver_result,
+            right[idx].solver_result,
+        ) || return false
         left[idx].cover_term == right[idx].cover_term || return false
         _same_quillen_factors(
             left[idx].global_elementary_factors,
@@ -2801,8 +2827,32 @@ function _quillen_supplied_base_term_factors(R, n::Int, base_term_factors)
     ]
 end
 
+function _quillen_supplied_base_term_factor_is_elementary(factor, R, n::Int)::Bool
+    for row in 1:n
+        factor[row, row] == one(R) || return false
+    end
+    nonzero_offdiagonal_count = 0
+    for row in 1:n, col in 1:n
+        row == col && continue
+        factor[row, col] == zero(R) && continue
+        nonzero_offdiagonal_count += 1
+        nonzero_offdiagonal_count <= 1 || return false
+    end
+    return true
+end
+
+function _quillen_supplied_base_term_factors_are_elementary(factors, R, n::Int)::Bool
+    return all(
+        factor -> _quillen_supplied_base_term_factor_is_elementary(factor, R, n),
+        factors,
+    )
+end
+
 function _quillen_supplied_base_term_ok(policy::Symbol, base_term, factors, product, R, n::Int)
-    policy == :supplied && return !isempty(factors) && product == base_term
+    policy == :supplied &&
+        return !isempty(factors) &&
+               _quillen_supplied_base_term_factors_are_elementary(factors, R, n) &&
+               product == base_term
     policy == :trivial && return isempty(factors) && base_term == identity_matrix(R, n)
     policy == :already_handled && return isempty(factors)
     return false

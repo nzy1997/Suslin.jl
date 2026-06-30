@@ -434,6 +434,38 @@ end
     @test supplied_patch.base_term_policy == :supplied
     @test supplied_patch.base_term_factors == [supplied_identity_factor]
     @test supplied_patch.base_term_product == identity_matrix(identity_base.ring, 3)
+
+    non_elementary_base_factor = identity_matrix(identity_base.ring, 3)
+    non_elementary_base_factor[1, 1] = 2 * one(identity_base.ring)
+    non_elementary_base_factor[2, 2] = identity_base.ring(QQ(1)//QQ(2))
+    non_elementary_base_inverse = identity_matrix(identity_base.ring, 3)
+    non_elementary_base_inverse[1, 1] = identity_base.ring(QQ(1)//QQ(2))
+    non_elementary_base_inverse[2, 2] = 2 * one(identity_base.ring)
+    non_elementary_base_factors = [
+        non_elementary_base_factor,
+        non_elementary_base_inverse,
+    ]
+    @test_throws ArgumentError Suslin.assemble_quillen_patch_from_local_evidence(
+        identity_base.target,
+        identity_base.X,
+        identity_base.certificates;
+        max_exponent = 2,
+        base_term_policy = :supplied,
+        base_term_factors = non_elementary_base_factors,
+    )
+    non_elementary_global_factors = vcat(
+        non_elementary_base_factors,
+        supplied_patch.sequence_elementary_factors,
+    )
+    non_elementary_base_patch = qse_rebuild(
+        supplied_patch;
+        base_term_factors = non_elementary_base_factors,
+        base_term_product = identity_matrix(identity_base.ring, 3),
+        global_elementary_factors = non_elementary_global_factors,
+        product = qse_product(non_elementary_global_factors, identity_base.ring, 3),
+    )
+    @test !Suslin.replay_quillen_supplied_evidence_patch(non_elementary_base_patch).base_term_ok
+
     @test_throws ArgumentError Suslin.assemble_quillen_patch_from_local_evidence(
         identity_base.target,
         identity_base.X,
@@ -483,5 +515,21 @@ end
     @test Suslin.verify_quillen_patch_substitution_chain(wrong_source_chain)
     @test !Suslin.verify_quillen_patch(
         qse_rebuild(patch; substitution_chain = wrong_source_chain),
+    )
+
+    wrong_expansion_solver = qse_rebuild(
+        patch.sequence_expansions[1].solver_result;
+        source_candidate = wrong_variable_candidate,
+    )
+    tampered_expansion = qse_rebuild(
+        patch.sequence_expansions[1];
+        solver_result = wrong_expansion_solver,
+    )
+    tampered_expansions = copy(patch.sequence_expansions)
+    tampered_expansions[1] = tampered_expansion
+    @test Suslin.verify_quillen_denominator_cover_solver_result(wrong_expansion_solver)
+    @test !Suslin.verify_quillen_sequence_contribution_expansion(tampered_expansion)
+    @test !Suslin.verify_quillen_patch(
+        qse_rebuild(patch; sequence_expansions = tampered_expansions),
     )
 end
