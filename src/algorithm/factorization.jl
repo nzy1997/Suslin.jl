@@ -103,8 +103,20 @@ end
 
 function _sl3_realization_input_context_selected_variable(R, selected_variable)
     selected_variable === nothing && return nothing, nothing, :missing
-    index = _ecp_selected_variable_index(R, selected_variable)
-    return _require_substitution_generator(R, selected_variable), index, :passes
+
+    normalized_selected =
+        hasproperty(selected_variable, :generator) ? getproperty(selected_variable, :generator) :
+        selected_variable
+    index = _ecp_selected_variable_index(R, normalized_selected)
+
+    if hasproperty(selected_variable, :index)
+        metadata_index = getproperty(selected_variable, :index)
+        metadata_index == index || throw(ArgumentError(
+            "selected_variable metadata index does not match the generator position in gens(R)",
+        ))
+    end
+
+    return _require_substitution_generator(R, normalized_selected), index, :passes
 end
 
 function _sl3_realization_input_context_local_form_status(

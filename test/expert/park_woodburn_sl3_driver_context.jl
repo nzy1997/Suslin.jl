@@ -54,7 +54,7 @@ end
     fast_entry = entries["sl3-driver-univariate-fast-local-qq"]
     fast_context = Suslin._sl3_realization_input_context(
         fast_entry.matrix;
-        selected_variable = fast_entry.selected_variable.generator,
+        selected_variable = fast_entry.selected_variable,
         catalog_metadata = _catalog_metadata(fast_entry),
         local_form_witness = fast_entry.local_form_witness,
     )
@@ -68,7 +68,7 @@ end
     legacy_entry = entries["sl3-driver-legacy-quillen-patched-substitution-qq"]
     legacy_context = Suslin._sl3_realization_input_context(
         legacy_entry.matrix;
-        selected_variable = legacy_entry.selected_variable.generator,
+        selected_variable = legacy_entry.selected_variable,
         catalog_metadata = _catalog_metadata(legacy_entry),
         quillen_murthy_metadata = legacy_entry.upstream_evidence,
     )
@@ -82,7 +82,7 @@ end
     multivariate_entry = entries["sl3-driver-multivariate-monic-special-form-qq"]
     multivariate_context = Suslin._sl3_realization_input_context(
         multivariate_entry.matrix;
-        selected_variable = multivariate_entry.selected_variable.generator,
+        selected_variable = multivariate_entry.selected_variable,
         catalog_metadata = _catalog_metadata(multivariate_entry),
         local_form_witness = multivariate_entry.local_form_witness,
     )
@@ -94,7 +94,7 @@ end
     staged_entry = entries["sl3-driver-det-one-no-witness-staged-qq"]
     staged_context = Suslin._sl3_realization_input_context(
         staged_entry.matrix;
-        selected_variable = staged_entry.selected_variable.generator,
+        selected_variable = staged_entry.selected_variable,
         catalog_metadata = _catalog_metadata(staged_entry),
     )
     @test staged_context.support_status == :staged
