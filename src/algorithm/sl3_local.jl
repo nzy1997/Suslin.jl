@@ -64,6 +64,7 @@ struct SL3LocalMurthyQ0NonunitReduction
     degree_q_prime::Int
     branch_unit
     branch_unit_inverse
+    local_factor_replay
     witness_source::Symbol
 end
 
@@ -240,13 +241,23 @@ function realize_sl3_local_certificate(context::SL3LocalMurthyInputContext)
     if context.degree_q >= context.degree_p
         return sl3_local_q_degree_normalization_certificate(context)
     end
-    context.global_units.q0 || context.local_units.q0 ||
-        throw(ArgumentError("local Murthy q(0)-unit realization requires q(0) to be a global or local unit"))
-    if context.global_units.q0 &&
-            _sl3_local_supports_murthy_q0_unit_branch(context.R, context.var_idx)
-        return realize_sl3_local_certificate(context.target, context.X)
+    if context.global_units.q0 || context.local_units.q0
+        if context.global_units.q0 &&
+                _sl3_local_supports_murthy_q0_unit_branch(context.R, context.var_idx)
+            return realize_sl3_local_certificate(context.target, context.X)
+        end
+        return _realize_sl3_local_murthy_q0_unit_local_certificate(context)
     end
-    return _realize_sl3_local_murthy_q0_unit_local_certificate(context)
+    if _sl3_local_supports_murthy_q0_unit_branch(context.R, context.var_idx)
+        return realize_sl3_local_certificate(
+            context.target,
+            context.X;
+            murthy_q0_nonunit_witness = context.bezout_witness,
+        )
+    end
+    context.bezout_witness === nothing &&
+        _throw_staged_sl3_local_failure("Murthy q(0)-nonunit local Bezout/resultant extraction is unsupported")
+    return _realize_sl3_local_murthy_q0_nonunit_local_certificate(context)
 end
 
 function sl3_local_q_degree_normalization(A, X; check_monic::Bool=true)
@@ -756,7 +767,22 @@ end
 function _sl3_local_murthy_q0_unit_local_reduction(context::SL3LocalMurthyInputContext)
     model = _sl3_local_fraction_model(context)
     fraction_target = _sl3_local_to_fraction_matrix(context.target, model)
-    source_certificate = realize_sl3_local_certificate(fraction_target, model.Y)
+    source_entries = _sl3_local_target_entries(fraction_target)
+    source_entries === nothing &&
+        error("internal local q(0)-unit replay source left special form")
+    source_form = (;
+        family = :murthy_q0_unit,
+        R = model.S,
+        p = source_entries.p,
+        q = source_entries.q,
+        r = source_entries.r,
+        s = source_entries.s,
+        X = model.Y,
+        target = fraction_target,
+        var_idx = 1,
+        murthy_q0_nonunit_witness = nothing,
+    )
+    source_certificate = _realize_sl3_local_murthy_q0_unit_certificate(source_form)
     source_reduction = _sl3_local_source_q0_reduction(source_certificate)
 
     records = _sl3_local_local_factors_from_fraction_matrices(
@@ -984,6 +1010,7 @@ function _sl3_local_local_factors_from_fraction_matrices(
     return SL3LocalElementaryFactor[
         _sl3_local_local_factor_from_fraction_matrix(factor, context)
         for factor in factors
+        if factor != identity_matrix(base_ring(factor), nrows(factor))
     ]
 end
 
@@ -998,6 +1025,163 @@ function _sl3_local_source_q0_reduction(source_certificate)
         return _sl3_local_source_q0_reduction(witness.normalized_certificate)
     end
     throw(ArgumentError("local q(0)-unit replay source certificate has no q(0)-unit reduction"))
+end
+
+function _realize_sl3_local_murthy_q0_nonunit_local_certificate(
+        context::SL3LocalMurthyInputContext,
+)
+    reduction = _sl3_local_murthy_q0_nonunit_local_reduction(context)
+    certificate = SL3LocalRealizationCertificate(
+        context.target,
+        :murthy_q0_nonunit_bezout_resultant,
+        reduction.local_factor_replay.factors,
+        context.X,
+        (; reduction),
+    )
+    verify_sl3_local_realization(certificate) ||
+        error("internal local Murthy q(0)-nonunit Bezout/resultant certificate verification failed")
+    return certificate
+end
+
+function _sl3_local_murthy_q0_nonunit_local_reduction(
+        context::SL3LocalMurthyInputContext,
+)
+    verify_sl3_local_murthy_input_context(context) ||
+        throw(ArgumentError("local Murthy q(0)-nonunit reduction requires a verified input context"))
+    bezout_data = _sl3_local_murthy_bezout_data(
+        context.R,
+        context.X,
+        context.entries.p,
+        context.entries.q,
+        context.p0,
+        context.q0,
+        context.degree_p,
+        context.degree_q,
+        context.bezout_witness,
+    )
+    if bezout_data === nothing
+        context.bezout_witness === nothing && # COV_EXCL_LINE
+            _throw_staged_sl3_local_failure("Murthy q(0)-nonunit local Bezout/resultant extraction is unsupported")
+        error("internal local Murthy q(0)-nonunit Bezout/resultant witness did not verify") # COV_EXCL_LINE
+    end
+
+    p_prime = bezout_data.p_prime
+    q_prime = bezout_data.q_prime
+    resultant = bezout_data.resultant
+    branch_unit = bezout_data.branch_unit
+    branch_unit_inverse = _unit_inverse_or_nothing(branch_unit)
+
+    bezout_target = _sl3_local_special_form_target(
+        context.R,
+        context.entries.p,
+        context.entries.q,
+        q_prime,
+        p_prime,
+    )
+    child_link_target = _sl3_local_special_form_target(
+        context.R,
+        context.entries.p + q_prime,
+        context.entries.q + p_prime,
+        q_prime,
+        p_prime,
+    )
+    left_factor = elementary_matrix(
+        3,
+        2,
+        1,
+        context.entries.r * p_prime - context.entries.s * q_prime,
+        context.R,
+    )
+    first_elementary_factor = elementary_matrix(3, 1, 2, -one(context.R), context.R)
+    child_context = _sl3_local_murthy_q0_nonunit_child_context(context, child_link_target)
+    child_certificate = realize_sl3_local_certificate(child_context)
+
+    context.target == left_factor * bezout_target ||
+        error("internal local Murthy q(0)-nonunit Bezout reduction first equality failed")
+    bezout_target == first_elementary_factor * child_link_target ||
+        error("internal local Murthy q(0)-nonunit Bezout reduction q0-unit equality failed")
+    verify_sl3_local_realization(child_certificate) ||
+        error("internal local Murthy q(0)-nonunit child certificate verification failed")
+
+    reduction_without_replay = SL3LocalMurthyQ0NonunitReduction(
+        context.target,
+        context.p0,
+        context.q0,
+        p_prime,
+        q_prime,
+        resultant,
+        bezout_target,
+        child_link_target,
+        left_factor,
+        first_elementary_factor,
+        child_certificate,
+        context.X,
+        context.degree_p,
+        context.degree_q,
+        bezout_data.degree_p_prime,
+        bezout_data.degree_q_prime,
+        branch_unit,
+        branch_unit_inverse,
+        nothing,
+        bezout_data.source,
+    )
+    local_factor_replay = sl3_local_elementary_factor_replay(
+        context.target,
+        _sl3_local_q0_nonunit_local_factor_records(reduction_without_replay),
+        context.X,
+    )
+    reduction = SL3LocalMurthyQ0NonunitReduction(
+        context.target,
+        context.p0,
+        context.q0,
+        p_prime,
+        q_prime,
+        resultant,
+        bezout_target,
+        child_link_target,
+        left_factor,
+        first_elementary_factor,
+        child_certificate,
+        context.X,
+        context.degree_p,
+        context.degree_q,
+        bezout_data.degree_p_prime,
+        bezout_data.degree_q_prime,
+        branch_unit,
+        branch_unit_inverse,
+        local_factor_replay,
+        bezout_data.source,
+    )
+    verify_sl3_local_murthy_q0_nonunit_reduction(reduction) ||
+        error("internal local Murthy q(0)-nonunit Bezout/resultant reduction verification failed")
+    return reduction
+end
+
+function _sl3_local_murthy_q0_nonunit_child_context(
+        context::SL3LocalMurthyInputContext,
+        child_link_target,
+)
+    child_local_unit_witnesses =
+        hasproperty(context.local_unit_witnesses, :branch_unit) ?
+        (; q0 = context.local_unit_witnesses.branch_unit) :
+        (;)
+    return sl3_local_murthy_input_context(
+        child_link_target,
+        context.X;
+        local_unit_witnesses = child_local_unit_witnesses,
+    )
+end
+
+function _sl3_local_q0_nonunit_local_factor_records(reduction)
+    prefix_records = sl3_local_denominator_one_records_from_matrices(
+        [reduction.left_factor, reduction.first_elementary_factor],
+        reduction.selected_variable,
+    )
+    child_factors = reduction.child_certificate.factors
+    all(factor -> factor isa SL3LocalElementaryFactor, child_factors) ||
+        throw(ArgumentError("local q(0)-nonunit replay requires child local elementary factors"))
+    child_records = SL3LocalElementaryFactor[factor for factor in child_factors]
+    return vcat(prefix_records, child_records)
 end
 
 function _realize_sl3_local_murthy_q0_nonunit_certificate(form)
@@ -1090,6 +1274,7 @@ function _sl3_local_murthy_q0_nonunit_reduction(form)
         degree_q_prime,
         branch_unit,
         branch_unit_inverse,
+        nothing,
         witness_source,
     )
     verify_sl3_local_murthy_q0_nonunit_reduction(reduction) ||
@@ -1183,6 +1368,7 @@ function _sl3_local_murthy_input_context(p, q, r, s, X; witness, local_unit_witn
     )
     _sl3_local_murthy_validate_required_local_evidence(
         R,
+        var_idx,
         degree_p,
         degree_q,
         q0,
@@ -1369,6 +1555,7 @@ end
 
 function _sl3_local_murthy_validate_required_local_evidence(
         R,
+        var_idx,
         degree_p,
         degree_q,
         q0,
@@ -1378,6 +1565,14 @@ function _sl3_local_murthy_validate_required_local_evidence(
 )
     degree_q >= degree_p && return true
     (global_units.q0 || local_units.q0) && return true
+
+    if bezout_witness === nothing &&
+            !_sl3_local_supports_murthy_q0_unit_branch(R, var_idx) &&
+            !is_unit(_sl3_local_constant_coefficient_outside_variable(q0, var_idx, R))
+        throw(ArgumentError(
+            "Murthy local input context has unsupported local Bezout/resultant extraction without a supplied Bezout witness",
+        ))
+    end
 
     if !(global_units.resultant || local_units.resultant)
         throw(ArgumentError("Murthy local input context requires a local-unit witness for q0 or Bezout resultant evidence"))
@@ -1503,6 +1698,8 @@ function _sl3_local_murthy_bezout_data(
                 throw(ArgumentError("Murthy local input context Bezout q0 witness is incorrect"))
         end
     else
+        (degree_q >= degree_p || is_unit(q0)) && return nothing
+        _sl3_local_supports_murthy_q0_unit_branch(R, var_idx) || return nothing
         g, a, b = gcdx(p, q)
         g_inverse = _unit_inverse_or_nothing(g)
         g_inverse === nothing && return nothing
@@ -2067,6 +2264,7 @@ function _sl3_local_murthy_input_context_verification(context)
         bezout_witness_ok = context.bezout_witness === nothing || bezout_data !== nothing
         required_evidence_ok = _sl3_local_murthy_validate_required_local_evidence(
             R,
+            expected_var_idx,
             degree_p,
             degree_q,
             q0,
@@ -2333,7 +2531,7 @@ function _sl3_local_murthy_q0_unit_local_reduction_verification(
     source_reduction_ok = false
     split_certificate_ok = false
     source_scalars_ok = false
-    local_factor_replay_ok = false
+    local_factor_replay_ok = reduction.local_factor_replay === nothing
     local_factors_ok = false
     elimination_factor_ok = false
     inverse_elimination_factor_ok = false
@@ -2428,26 +2626,24 @@ function _sl3_local_murthy_q0_nonunit_reduction_verification(reduction)
     R = size_ok ? base_ring(target) : nothing
     bezout_ring_ok = size_ok && _same_base_ring(base_ring(bezout_target), R)
     child_link_ring_ok = size_ok && _same_base_ring(base_ring(child_link_target), R)
-    selected_var_idx = size_ok ? findfirst(isequal(reduction.selected_variable), collect(gens(R))) : nothing
-    ordinary_univariate_ok = child_link_ring_ok &&
-        _sl3_local_supports_murthy_q0_unit_branch(R, selected_var_idx === nothing ? 0 : selected_var_idx)
-    entries = ordinary_univariate_ok ? _sl3_local_target_entries(target) : nothing
-    bezout_entries = ordinary_univariate_ok ? _sl3_local_target_entries(bezout_target) : nothing
-    child_entries = ordinary_univariate_ok ? _sl3_local_target_entries(child_link_target) : nothing
+    ordinary_polynomial_ok = child_link_ring_ok && !_is_laurent_polynomial_ring(R)
+    entries = ordinary_polynomial_ok ? _sl3_local_target_entries(target) : nothing
+    bezout_entries = ordinary_polynomial_ok ? _sl3_local_target_entries(bezout_target) : nothing
+    child_entries = ordinary_polynomial_ok ? _sl3_local_target_entries(child_link_target) : nothing
     shape_ok = entries !== nothing && bezout_entries !== nothing && child_entries !== nothing
-    variable_ok = ordinary_univariate_ok &&
+    variable_ok = ordinary_polynomial_ok &&
         parent(reduction.selected_variable) === R &&
         reduction.selected_variable in collect(gens(R))
     var_idx = variable_ok ? findfirst(isequal(reduction.selected_variable), collect(gens(R))) : nothing
-    scalar_ring_ok = ordinary_univariate_ok &&
+    scalar_ring_ok = ordinary_polynomial_ok &&
         parent(reduction.p0) === R &&
         parent(reduction.q0) === R &&
         parent(reduction.p_prime) === R &&
         parent(reduction.q_prime) === R &&
         parent(reduction.resultant) === R &&
         parent(reduction.branch_unit) === R &&
-        parent(reduction.branch_unit_inverse) === R
-    factor_size_ok = ordinary_univariate_ok &&
+        (reduction.branch_unit_inverse === nothing || parent(reduction.branch_unit_inverse) === R)
+    factor_size_ok = ordinary_polynomial_ok &&
         nrows(reduction.left_factor) == 3 &&
         ncols(reduction.left_factor) == 3 &&
         nrows(reduction.first_elementary_factor) == 3 &&
@@ -2468,6 +2664,7 @@ function _sl3_local_murthy_q0_nonunit_reduction_verification(reduction)
     factors_ok = false
     replay_ok = false
     child_certificate_ok = false
+    local_factor_replay_ok = reduction.local_factor_replay === nothing
     final_factors_ok = false
     if shape_ok && variable_ok && scalar_ring_ok && factor_ring_ok && witness_source_ok
         p = entries.p
@@ -2491,11 +2688,6 @@ function _sl3_local_murthy_q0_nonunit_reduction_verification(reduction)
             reduction.degree_q_prime == degree(reduction.q_prime, var_idx) &&
             reduction.degree_p_prime < reduction.degree_q &&
             reduction.degree_q_prime < reduction.degree_p
-        branch_unit_ok =
-            reduction.branch_unit == _sl3_local_constant_coefficient(child_entries.q, var_idx, R) &&
-            reduction.branch_unit ==
-                reduction.q0 + _sl3_local_constant_coefficient(reduction.p_prime, var_idx, R) &&
-            reduction.branch_unit * reduction.branch_unit_inverse == one(R)
         bezout_target_ok =
             bezout_entries.p == p &&
             bezout_entries.q == q &&
@@ -2519,28 +2711,62 @@ function _sl3_local_murthy_q0_nonunit_reduction_verification(reduction)
             child_certificate.target == child_link_target &&
             child_certificate.selected_variable == reduction.selected_variable &&
             child_certificate.branch == :murthy_q0_unit
-        final_factors_ok =
+        child_local_q0_evidence_ok =
             child_certificate_ok &&
-            _sl3_local_factor_product(
-                vcat(
-                    [reduction.left_factor, reduction.first_elementary_factor],
-                    child_certificate.factors,
-                ),
-                R,
-            ) == target
+            child_certificate.witness.reduction isa SL3LocalMurthyQUnitLocalReduction &&
+            child_certificate.witness.reduction.context.target == child_link_target &&
+            child_certificate.witness.reduction.context.q0 == reduction.branch_unit &&
+            child_certificate.witness.reduction.context.local_units.q0
+        branch_unit_ok =
+            reduction.branch_unit == _sl3_local_constant_coefficient(child_entries.q, var_idx, R) &&
+            reduction.branch_unit ==
+                reduction.q0 + _sl3_local_constant_coefficient(reduction.p_prime, var_idx, R) &&
+            (
+                (
+                    reduction.branch_unit_inverse !== nothing &&
+                    reduction.branch_unit * reduction.branch_unit_inverse == one(R)
+                ) ||
+                (
+                    reduction.branch_unit_inverse === nothing &&
+                    child_local_q0_evidence_ok
+                )
+            )
+        if reduction.local_factor_replay === nothing
+            final_factors_ok =
+                child_certificate_ok &&
+                _sl3_local_factor_product(
+                    vcat(
+                        [reduction.left_factor, reduction.first_elementary_factor],
+                        child_certificate.factors,
+                    ),
+                    R,
+                ) == target
+        else
+            expected_records = _sl3_local_q0_nonunit_local_factor_records(reduction)
+            local_factor_replay_ok =
+                reduction.local_factor_replay.target == target &&
+                reduction.local_factor_replay.selected_variable == reduction.selected_variable &&
+                reduction.local_factor_replay.factors == expected_records &&
+                verify_sl3_local_elementary_factor_replay(reduction.local_factor_replay)
+            final_factors_ok =
+                child_certificate_ok &&
+                local_factor_replay_ok &&
+                reduction.local_factor_replay.factors isa Vector{SL3LocalElementaryFactor}
+        end
     end
 
-    overall_ok = size_ok && bezout_ring_ok && child_link_ring_ok && ordinary_univariate_ok &&
+    overall_ok = size_ok && bezout_ring_ok && child_link_ring_ok && ordinary_polynomial_ok &&
         shape_ok && variable_ok && scalar_ring_ok && factor_size_ok && factor_ring_ok &&
         witness_source_ok && determinant_ok && constants_ok && bezout_ok &&
         degree_ok && branch_unit_ok && bezout_target_ok && child_link_target_ok &&
-        factors_ok && replay_ok && child_certificate_ok && final_factors_ok
+        factors_ok && replay_ok && child_certificate_ok && local_factor_replay_ok &&
+        final_factors_ok
     return (;
         overall_ok,
         size_ok,
         bezout_ring_ok,
         child_link_ring_ok,
-        ordinary_univariate_ok,
+        ordinary_polynomial_ok,
         shape_ok,
         variable_ok,
         scalar_ring_ok,
@@ -2557,6 +2783,7 @@ function _sl3_local_murthy_q0_nonunit_reduction_verification(reduction)
         factors_ok,
         replay_ok,
         child_certificate_ok,
+        local_factor_replay_ok,
         final_factors_ok,
     )
 end
@@ -2693,18 +2920,22 @@ function _sl3_local_realization_verification(certificate)
         nothing
     witness_ok = expected_factors !== nothing
     factors_match_ok = witness_ok && _sl3_local_factor_sequences_equal(certificate.factors, expected_factors)
-    local_reduction =
+    local_replay =
         witness_ok &&
         certificate.branch == :murthy_q0_unit &&
         certificate.witness.reduction isa SL3LocalMurthyQUnitLocalReduction ?
-        certificate.witness.reduction :
-        nothing
+        certificate.witness.reduction.local_factor_replay :
+        witness_ok &&
+                certificate.branch == :murthy_q0_nonunit_bezout_resultant &&
+                hasproperty(certificate.witness.reduction, :local_factor_replay) ?
+            certificate.witness.reduction.local_factor_replay :
+            nothing
     factors_ok =
-        local_reduction === nothing ?
+        local_replay === nothing ?
         size_ok && verify_factorization(target, certificate.factors) :
-        verify_sl3_local_elementary_factor_replay(local_reduction.local_factor_replay) &&
-            local_reduction.local_factor_replay.target == target &&
-            local_reduction.local_factor_replay.factors == certificate.factors
+        verify_sl3_local_elementary_factor_replay(local_replay) &&
+            local_replay.target == target &&
+            local_replay.factors == certificate.factors
     overall_ok = size_ok && variable_ok && shape_ok && determinant_ok &&
         witness_ok && factors_match_ok && factors_ok
     return (;
@@ -2806,6 +3037,9 @@ function _sl3_local_certificate_expected_factors(certificate)
             [witness.reduction.inverse_elimination_factor],
         )
     elseif certificate.branch == :murthy_q0_nonunit_bezout_resultant
+        if witness.reduction.local_factor_replay !== nothing
+            return witness.reduction.local_factor_replay.factors
+        end
         return vcat(
             [witness.reduction.left_factor, witness.reduction.first_elementary_factor],
             witness.reduction.child_certificate.factors,
@@ -2967,6 +3201,15 @@ end
 
 function _sl3_local_constant_coefficient(value, var_idx::Int, R)
     return _sl3_local_coefficient_in_variable_degree(value, var_idx, 0, R)
+end
+
+function _sl3_local_constant_coefficient_outside_variable(value, var_idx::Int, R)
+    coefficient = value
+    for idx in eachindex(collect(gens(R)))
+        idx == var_idx && continue
+        coefficient = _sl3_local_constant_coefficient(coefficient, idx, R)
+    end
+    return coefficient
 end
 
 function _is_monic_in_variable(p, var_idx::Int, R)
