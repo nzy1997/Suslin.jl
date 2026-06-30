@@ -13,8 +13,10 @@ function _normality_boundary_required_phrases()
         "rank-one normality certificates",
         "conjugated-elementary normality certificates",
         "staged ECP induction/normality adapter replays a nested conjugated-elementary certificate",
-        "Park-Woodburn `SL_n(k[x_1, ..., x_m])` factorization remains staged",
-        "Murthy local solving, general Quillen local realizability, the general ECP reducer",
+        "Murthy local `SL_3` solver (#182) is supported for the proven ordinary/local-witness contract",
+        "ordinary factor vectors are exposed only when the certificate can materialize them over the base ring",
+        "Quillen automatic patching (#183), general `SL_3` (#184), the general ECP reducer (#185)",
+        "recursive `SL_n` (#186), full public Park-Woodburn acceptance (#187)",
         "Laurent/ToricBuilder mainline acceptance, and Steinberg factor-count optimization remain staged boundaries",
     ]
 end

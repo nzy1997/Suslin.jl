@@ -29,6 +29,21 @@ end
     @test Suslin._verify_polynomial_factorization_route_certificate(supported_cert)
     @test factors == supported_cert.factors
 
+    nonfixture_p = X^2 + X + one(R)
+    nonfixture_q = X
+    nonfixture_local_sl3 = matrix(R, [
+        nonfixture_p               nonfixture_q zero(R);
+        X + one(R) + nonfixture_p X + one(R)   zero(R);
+        zero(R)                    zero(R)      one(R)
+    ])
+    nonfixture_factors = elementary_factorization(nonfixture_local_sl3)
+    @test verify_factorization(nonfixture_local_sl3, nonfixture_factors)
+    nonfixture_cert = Suslin._polynomial_factorization_route_certificate(nonfixture_local_sl3)
+    @test nonfixture_cert.route == :fast_local_sl3
+    @test nonfixture_cert.evidence isa Suslin.SL3LocalRealizationCertificate
+    @test nonfixture_cert.evidence.branch == :murthy_q0_nonunit_bezout_resultant
+    @test nonfixture_factors == nonfixture_cert.factors
+
     larger_sl = identity_matrix(R, 4)
     larger_factors = elementary_factorization(larger_sl)
     @test isempty(larger_factors)
