@@ -125,6 +125,12 @@ end
             _catalog_metadata(negative["sl3-driver-negative-selected-variable-not-generator"]),
     )
     @test_throws ArgumentError Suslin._sl3_realization_input_context(
+        fast_entry.matrix;
+        selected_variable = merge(fast_entry.selected_variable, (; index = 2,)),
+        catalog_metadata = _catalog_metadata(fast_entry),
+        local_form_witness = fast_entry.local_form_witness,
+    )
+    @test_throws ArgumentError Suslin._sl3_realization_input_context(
         negative["sl3-driver-negative-supported-without-witness"].matrix;
         selected_variable =
             negative["sl3-driver-negative-supported-without-witness"].selected_variable.generator,
