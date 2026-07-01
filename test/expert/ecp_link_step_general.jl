@@ -82,16 +82,24 @@ end
         @test length(segment.sl3_route_certificates) == length(segment.sl3_route_matrices)
         @test length(segment.sl3_route_factor_groups) == length(segment.sl3_route_certificates)
         @test length(segment.sl3_route_metadata) == length(segment.sl3_route_certificates)
+        matching_route_metadata = nothing
         for idx in eachindex(segment.sl3_route_certificates)
             route_cert = segment.sl3_route_certificates[idx]
+            metadata = segment.sl3_route_metadata[idx]
             @test route_cert isa Suslin.PolynomialFactorizationRouteCertificate
             @test route_cert.status == :supported
             @test route_cert.matrix == segment.sl3_route_matrices[idx]
             @test Suslin._verify_polynomial_factorization_route_certificate(route_cert)
             @test segment.sl3_route_factor_groups[idx] == tuple(route_cert.factors...)
-            @test segment.sl3_route_metadata[idx].route == route_cert.route
-            @test segment.sl3_route_metadata[idx].factor_count == length(route_cert.factors)
+            @test metadata.route == route_cert.route
+            @test metadata.factor_count == length(route_cert.factors)
+            if route_cert.matrix == segment.sl2_embedding
+                matching_route_metadata = metadata
+                @test metadata.embedded_block_indices == (1, 2)
+                @test metadata.embedded_block_matrix == segment.sl2_block
+            end
         end
+        @test !isnothing(matching_route_metadata)
         @test _general_link_apply(segment.forward_factors, segment.from_column, R) ==
               matrix(R, length(segment.to_column), 1, collect(segment.to_column))
         @test _general_link_apply(segment.inverse_factors, segment.to_column, R) ==
