@@ -2023,6 +2023,120 @@ function _polynomial_sl3_quillen_murthy_route_consumption_metadata(
     )
 end
 
+function _polynomial_sl3_quillen_murthy_raw_route_metadata(raw_consumption)
+    hasproperty(raw_consumption.replay_metadata, :metadata) || return nothing
+    return raw_consumption.replay_metadata.metadata
+end
+
+function _polynomial_sl3_quillen_murthy_route_metadata_payload(route_metadata)
+    route_metadata === nothing && return (;)
+    hasproperty(route_metadata, :metadata) || return (;)
+    return route_metadata.metadata
+end
+
+function _same_polynomial_sl3_quillen_murthy_substitution_chain_data(left, right)::Bool
+    return left.original_matrix == right.original_matrix &&
+           left.ring == right.ring &&
+           left.size == right.size &&
+           left.selected_variable == right.selected_variable &&
+           left.sign_convention == right.sign_convention &&
+           _same_quillen_denominator_cover_solver_result_data(
+               left.solver_result,
+               right.solver_result,
+           ) &&
+           left.cumulative_coefficients == right.cumulative_coefficients &&
+           left.intermediate_matrices == right.intermediate_matrices &&
+           _same_quillen_patch_substitution_steps(left.steps, right.steps) &&
+           left.bracket_matrices == right.bracket_matrices &&
+           left.base_term == right.base_term &&
+           left.metadata == right.metadata &&
+           left.replay_metadata == right.replay_metadata &&
+           _same_quillen_patch_substitution_chain_verification(
+               left.verification,
+               right.verification,
+           )
+end
+
+function _same_polynomial_sl3_quillen_murthy_route_patch_verification(left, right)::Bool
+    return left.local_certificates_ok == right.local_certificates_ok &&
+           left.denominator_candidate_ok == right.denominator_candidate_ok &&
+           left.denominator_candidate_matches == right.denominator_candidate_matches &&
+           left.solver_result_ok == right.solver_result_ok &&
+           left.solver_source_candidate_ok == right.solver_source_candidate_ok &&
+           left.cover_certificate_ok == right.cover_certificate_ok &&
+           left.substitution_chain_ok == right.substitution_chain_ok &&
+           left.substitution_chain_matches == right.substitution_chain_matches &&
+           left.base_term_ok == right.base_term_ok &&
+           left.sequence_expansions_ok == right.sequence_expansions_ok &&
+           _same_quillen_factors(
+               left.global_elementary_factors,
+               right.global_elementary_factors,
+           ) &&
+           left.global_elementary_factors_ok == right.global_elementary_factors_ok &&
+           left.product == right.product &&
+           left.product_ok == right.product_ok &&
+           left.target == right.target &&
+           left.target_ok == right.target_ok &&
+           left.replay_metadata_ok &&
+           right.replay_metadata_ok &&
+           left.overall_ok == right.overall_ok
+end
+
+function _same_polynomial_sl3_quillen_murthy_rewritten_patch_data(adapted, raw)::Bool
+    return verify_quillen_patch(adapted) &&
+           verify_quillen_patch(raw) &&
+           adapted.ring == raw.ring &&
+           adapted.size == raw.size &&
+           adapted.substitution_variable == raw.substitution_variable &&
+           adapted.original_input == raw.original_input &&
+           adapted.local_certificates == raw.local_certificates &&
+           _same_quillen_local_factor_sequence_certificates(
+               adapted.local_certificates,
+               raw.local_certificates,
+           ) &&
+           _same_quillen_denominator_cover_candidate_data(
+               adapted.denominator_candidate,
+               raw.denominator_candidate,
+           ) &&
+           _same_quillen_denominator_cover_solver_result_data(
+               adapted.solver_result,
+               raw.solver_result,
+           ) &&
+           _same_quillen_cover_certificate_data(
+               adapted.cover_certificate,
+               raw.cover_certificate,
+           ) &&
+           _same_polynomial_sl3_quillen_murthy_substitution_chain_data(
+               adapted.substitution_chain,
+               raw.substitution_chain,
+           ) &&
+           adapted.base_term_policy == raw.base_term_policy &&
+           adapted.base_term == raw.base_term &&
+           _polynomial_route_factor_sequences_equal(
+               adapted.base_term_factors,
+               raw.base_term_factors,
+           ) &&
+           adapted.base_term_product == raw.base_term_product &&
+           _same_quillen_sequence_expansions(
+               adapted.sequence_expansions,
+               raw.sequence_expansions,
+           ) &&
+           _same_quillen_factors(
+               adapted.sequence_elementary_factors,
+               raw.sequence_elementary_factors,
+           ) &&
+           _same_quillen_factors(
+               adapted.global_elementary_factors,
+               raw.global_elementary_factors,
+           ) &&
+           adapted.product == raw.product &&
+           adapted.target == raw.target &&
+           _same_polynomial_sl3_quillen_murthy_route_patch_verification(
+               adapted.verification,
+               raw.verification,
+           )
+end
+
 function _polynomial_sl3_quillen_murthy_route_consumption_core_verification(consumption)
     raw_consumption_ok = verify_quillen_murthy_adapter_consumption(consumption.raw_consumption)
     adapter_context_ok =
@@ -2051,9 +2165,23 @@ function _polynomial_sl3_quillen_murthy_route_consumption_core_verification(cons
             verify_quillen_local_factor_sequence_certificate,
             consumption.local_sequence_certificates,
         )
-    patch_ok =
+    raw_route_metadata =
+        raw_consumption_ok ?
+        _polynomial_sl3_quillen_murthy_raw_route_metadata(consumption.raw_consumption) :
+        nothing
+    patch_rewrite_ok =
         local_sequences_ok &&
-        verify_quillen_patch(consumption.patch) &&
+        _same_polynomial_sl3_quillen_murthy_rewritten_patch_data(
+            consumption.patch,
+            consumption.raw_consumption.patch,
+        )
+    patch_route_metadata_ok =
+        patch_rewrite_ok &&
+        raw_route_metadata !== nothing &&
+        hasproperty(consumption.patch.replay_metadata, :metadata) &&
+        consumption.patch.replay_metadata.metadata == raw_route_metadata
+    patch_ok =
+        patch_route_metadata_ok &&
         consumption.patch.original_input == consumption.original_input &&
         consumption.patch.ring == consumption.ring &&
         consumption.patch.size == consumption.size &&
@@ -2071,7 +2199,7 @@ function _polynomial_sl3_quillen_murthy_route_consumption_core_verification(cons
         patch_ok ?
         _polynomial_sl3_quillen_murthy_route_consumption_metadata(
             consumption.raw_consumption,
-            consumption.patch.replay_metadata.metadata,
+            raw_route_metadata,
             consumption.patch,
         ) :
         nothing
@@ -2088,6 +2216,8 @@ function _polynomial_sl3_quillen_murthy_route_consumption_core_verification(cons
         adapter_context_ok,
         adapters_ok,
         local_sequences_ok,
+        patch_rewrite_ok,
+        patch_route_metadata_ok,
         patch_ok,
         replay_metadata_ok,
         overall_core_ok,
@@ -2264,12 +2394,41 @@ function _polynomial_sl3_quillen_murthy_route_core_verification(evidence)
         evidence.quillen_route_adapter.quillen_patch.base_term_policy == evidence.base_term_policy &&
         evidence.base_term_policy == :already_handled &&
         isempty(evidence.base_term_factors)
+    raw_route_metadata =
+        consumption_ok ?
+        _polynomial_sl3_quillen_murthy_raw_route_metadata(
+            evidence.quillen_consumption.raw_consumption,
+        ) :
+        nothing
+    route_metadata_payload =
+        _polynomial_sl3_quillen_murthy_route_metadata_payload(raw_route_metadata)
+    expected_route_metadata =
+        base_term_ok ?
+        _polynomial_sl3_quillen_murthy_route_metadata(
+            evidence.context,
+            evidence.witness_selection,
+            evidence.local_evidence_provider,
+            evidence.base_term_policy,
+            evidence.base_term_factors,
+            route_metadata_payload,
+        ) :
+        nothing
+    route_metadata_ok =
+        base_term_ok &&
+        raw_route_metadata == expected_route_metadata &&
+        hasproperty(evidence.quillen_consumption.replay_metadata, :route_metadata) &&
+        evidence.quillen_consumption.replay_metadata.route_metadata == expected_route_metadata &&
+        hasproperty(evidence.quillen_consumption.patch.replay_metadata, :metadata) &&
+        evidence.quillen_consumption.patch.replay_metadata.metadata == expected_route_metadata &&
+        hasproperty(evidence.quillen_route_adapter.quillen_patch.replay_metadata, :metadata) &&
+        evidence.quillen_route_adapter.quillen_patch.replay_metadata.metadata ==
+            expected_route_metadata
     expected_metadata =
-        adapter_ok ?
+        route_metadata_ok ?
         (;
             source = :sl3_quillen_murthy_polynomial_route,
             route_issue_id = "#238",
-            route_metadata = evidence.quillen_route_adapter.quillen_patch.replay_metadata.metadata,
+            route_metadata = expected_route_metadata,
             consumption_replay_metadata = evidence.quillen_consumption.replay_metadata,
             patch_replay_metadata = evidence.quillen_route_adapter.quillen_patch.replay_metadata,
         ) :
@@ -2283,6 +2442,7 @@ function _polynomial_sl3_quillen_murthy_route_core_verification(evidence)
         consumption_ok &&
         adapter_ok &&
         base_term_ok &&
+        route_metadata_ok &&
         replay_metadata_ok
     return (;
         route_ok,
@@ -2292,6 +2452,7 @@ function _polynomial_sl3_quillen_murthy_route_core_verification(evidence)
         consumption_ok,
         adapter_ok,
         base_term_ok,
+        route_metadata_ok,
         replay_metadata_ok,
         overall_core_ok,
     )

@@ -419,6 +419,45 @@ end
     bad_patch_cert = _pw_replace_certificate(sl3_cert; evidence = bad_patch_evidence)
     @test !Suslin._verify_polynomial_factorization_route_certificate(bad_patch_cert)
 
+    forged_route_metadata = merge(
+        sl3_cert.evidence.quillen_route_adapter.quillen_patch.replay_metadata.metadata,
+        (; provider_issue_id = "#237-forged"),
+    )
+    forged_patch = Suslin._polynomial_sl3_quillen_murthy_route_patch(
+        sl3_cert.evidence.quillen_consumption.raw_consumption.patch,
+        forged_route_metadata,
+    )
+    forged_consumption = _pw_rebuild(
+        sl3_cert.evidence.quillen_consumption;
+        patch = forged_patch,
+        replay_metadata = Suslin._polynomial_sl3_quillen_murthy_route_consumption_metadata(
+            sl3_cert.evidence.quillen_consumption.raw_consumption,
+            forged_route_metadata,
+            forged_patch,
+        ),
+    )
+    forged_adapter = _pw_rebuild(
+        sl3_cert.evidence.quillen_route_adapter;
+        quillen_patch = forged_patch,
+    )
+    forged_evidence = _pw_rebuild(
+        sl3_cert.evidence;
+        quillen_consumption = forged_consumption,
+        quillen_route_adapter = forged_adapter,
+        replay_metadata = (;
+            source = :sl3_quillen_murthy_polynomial_route,
+            route_issue_id = "#238",
+            route_metadata = forged_route_metadata,
+            consumption_replay_metadata = forged_consumption.replay_metadata,
+            patch_replay_metadata = forged_patch.replay_metadata,
+        ),
+    )
+    forged_cert = _pw_replace_certificate(sl3_cert; evidence = forged_evidence)
+    @test Suslin.verify_quillen_patch(forged_patch)
+    @test !Suslin.verify_quillen_murthy_adapter_consumption(forged_consumption)
+    @test !Suslin._verify_polynomial_sl3_quillen_murthy_route_evidence(forged_evidence)
+    @test !Suslin._verify_polynomial_factorization_route_certificate(forged_cert)
+
     nonfixture_quillen_data = Suslin._polynomial_quillen_supplied_evidence_data(nonfixture_quillen)
     @test nonfixture_quillen_data !== nothing
     @test all(
