@@ -595,3 +595,72 @@ end
         ordinary_fixture.variable,
     )
 end
+
+@testset "SL3 provider handoff to Murthy adapter consumption" begin
+    R, (X, u, v) = Oscar.polynomial_ring(QQ, ["X", "u", "v"])
+    p = X + u * v + one(R)
+    q = one(R)
+    r = X + u * v
+    s = one(R)
+    A = matrix(R, [p q zero(R); r s zero(R); zero(R) zero(R) one(R)])
+    context = Suslin._sl3_realization_input_context(
+        A;
+        selected_variable = (; name = "X", generator = X, index = 1, status = :passes),
+        catalog_metadata = (; fixture_id = "issue-237-route-adapter-provider"),
+        local_form_witness = (;
+            entries = (; p, q, r, s),
+            source_matrix = A,
+            selected_variable = X,
+            replay_steps = ((; kind = :issue236_route_adapter_replay),),
+        ),
+    )
+    selection = Suslin._select_sl3_local_form_witness(context)
+    provider = Suslin._sl3_murthy_quillen_local_evidence_provider(selection)
+    sequences = Suslin.quillen_local_sequences_from_murthy_adapters(
+        provider.local_product,
+        provider.selected_variable,
+        [provider.murthy_adapter],
+    )
+    @test provider.staged_diagnostic.status == :supported
+    @test Suslin._same_quillen_local_factor_sequence_certificates(
+        provider.quillen_local_sequences,
+        sequences,
+    )
+
+    localized_fixture = Dict(entry.id => entry for entry in SL3MurthyGuptaFixtureCatalog.catalog().cases)[
+        "mg-local-q0-unit-at-u"
+    ]
+    localized_R = base_ring(localized_fixture.target)
+    localized_index = findfirst(isequal(localized_fixture.variable), collect(gens(localized_R)))
+    localized_context = Suslin._sl3_realization_input_context(
+        localized_fixture.target;
+        selected_variable = (;
+            name = string(localized_fixture.variable),
+            generator = localized_fixture.variable,
+            index = localized_index,
+            status = :passes,
+        ),
+        catalog_metadata = (; fixture_id = "issue-237-localized-provider"),
+        local_form_witness = (;
+            entries = localized_fixture.entries,
+            source_matrix = localized_fixture.target,
+            selected_variable = localized_fixture.variable,
+            replay_steps = ((; kind = :localized_fixture_replay),),
+        ),
+    )
+    localized_selection = Suslin._select_sl3_local_form_witness(localized_context)
+    localized_provider = Suslin._sl3_murthy_quillen_local_evidence_provider(
+        localized_selection;
+        witness = first(localized_fixture.witnesses),
+    )
+    @test localized_provider.murthy_adapter.mode == :localized_replay_handoff
+    @test isempty(localized_provider.quillen_local_sequences)
+    @test localized_provider.staged_diagnostic.status == :staged
+    @test occursin("localized denominator-cleared", localized_provider.staged_diagnostic.message)
+    @test Suslin._verify_sl3_murthy_quillen_local_evidence_provider(localized_provider)
+    @test_throws ArgumentError Suslin.quillen_local_sequences_from_murthy_adapters(
+        localized_provider.local_product,
+        localized_provider.selected_variable,
+        [localized_provider.murthy_adapter],
+    )
+end

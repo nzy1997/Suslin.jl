@@ -23,6 +23,7 @@ struct SL3RealizationInputContext
     determinant_status::Symbol
     exact_field_status::Symbol
     catalog_metadata::NamedTuple
+    creation_identity::NamedTuple
     local_form_witness
     local_form_status::Symbol
     variable_change_metadata
@@ -54,6 +55,24 @@ struct SL3LocalFormWitnessSelection
     support_status::Symbol
     witness_source::Symbol
     staged_diagnostic::NamedTuple
+    verification
+end
+
+struct SL3MurthyQuillenLocalEvidenceProvider
+    context::SL3RealizationInputContext
+    witness_selection::SL3LocalFormWitnessSelection
+    murthy_context
+    murthy_certificate
+    murthy_adapter
+    quillen_local_sequences::Vector
+    selected_variable
+    selected_variable_index
+    local_product
+    denominator_metadata
+    witness_metadata
+    replay_metadata
+    staged_diagnostic::NamedTuple
+    metadata
     verification
 end
 
@@ -296,10 +315,70 @@ function _sl3_realization_input_context_staged_diagnostic(
     )
 end
 
+function _sl3_realization_input_context_matrix_snapshot(matrix)
+    return (;
+        ring = base_ring(matrix),
+        rows = nrows(matrix),
+        cols = ncols(matrix),
+        entries = Tuple(matrix[row, col] for row in 1:nrows(matrix), col in 1:ncols(matrix)),
+    )
+end
+
+function _sl3_realization_input_context_creation_snapshot(
+    matrix,
+    selected_variable,
+    catalog_metadata,
+    local_form_witness,
+)
+    return (;
+        matrix = _sl3_realization_input_context_matrix_snapshot(matrix),
+        selected_variable,
+        catalog_metadata = deepcopy(catalog_metadata),
+        local_form_witness = deepcopy(local_form_witness),
+    )
+end
+
+function _sl3_realization_input_context_creation_identity(
+    matrix,
+    selected_variable,
+    catalog_metadata,
+    local_form_witness,
+)
+    return (;
+        source = :sl3_realization_input_context,
+        snapshot = _sl3_realization_input_context_creation_snapshot(
+            matrix,
+            selected_variable,
+            catalog_metadata,
+            local_form_witness,
+        ),
+    )
+end
+
+function _sl3_realization_input_context_creation_identity_ok(
+    creation_identity,
+    matrix,
+    selected_variable,
+    catalog_metadata,
+    local_form_witness,
+)::Bool
+    creation_identity isa NamedTuple || return false
+    hasproperty(creation_identity, :source) || return false
+    creation_identity.source == :sl3_realization_input_context || return false
+    hasproperty(creation_identity, :snapshot) || return false
+    return creation_identity.snapshot == _sl3_realization_input_context_creation_snapshot(
+        matrix,
+        selected_variable,
+        catalog_metadata,
+        local_form_witness,
+    )
+end
+
 function _sl3_realization_input_context_fields(
     A;
     selected_variable = nothing,
     catalog_metadata = (;),
+    creation_identity = nothing,
     local_form_witness = nothing,
     variable_change_metadata = nothing,
     normality_conjugation_metadata = nothing,
@@ -388,6 +467,14 @@ function _sl3_realization_input_context_fields(
         determinant_status = :one,
         exact_field_status = :supported,
         catalog_metadata,
+        creation_identity = creation_identity === nothing ?
+            _sl3_realization_input_context_creation_identity(
+                A,
+                selected,
+                catalog_metadata,
+                local_form_witness,
+            ) :
+            creation_identity,
         local_form_witness,
         local_form_status,
         variable_change_metadata,
@@ -407,6 +494,7 @@ function _sl3_realization_input_context_core_verification(context)
         context.matrix;
         selected_variable = context.selected_variable,
         catalog_metadata = context.catalog_metadata,
+        creation_identity = context.creation_identity,
         local_form_witness = context.local_form_witness,
         variable_change_metadata = context.variable_change_metadata,
         normality_conjugation_metadata = context.normality_conjugation_metadata,
@@ -429,6 +517,15 @@ function _sl3_realization_input_context_core_verification(context)
     determinant_status_ok = context.determinant_status == recomputed.determinant_status
     exact_field_status_ok = context.exact_field_status == recomputed.exact_field_status
     catalog_metadata_ok = context.catalog_metadata == recomputed.catalog_metadata
+    creation_identity_ok =
+        context.creation_identity == recomputed.creation_identity &&
+        _sl3_realization_input_context_creation_identity_ok(
+            context.creation_identity,
+            context.matrix,
+            context.selected_variable,
+            context.catalog_metadata,
+            context.local_form_witness,
+        )
     local_form_witness_ok = context.local_form_witness == recomputed.local_form_witness
     local_form_status_ok = context.local_form_status == recomputed.local_form_status
     variable_change_metadata_ok =
@@ -446,7 +543,6 @@ function _sl3_realization_input_context_core_verification(context)
     evidence_status_ok = context.evidence_status == recomputed.evidence_status
     support_status_ok = context.support_status == recomputed.support_status
     staged_diagnostic_ok = context.staged_diagnostic == recomputed.staged_diagnostic
-
     overall_core_ok =
         matrix_ok &&
         base_ring_ok &&
@@ -462,6 +558,7 @@ function _sl3_realization_input_context_core_verification(context)
         determinant_status_ok &&
         exact_field_status_ok &&
         catalog_metadata_ok &&
+        creation_identity_ok &&
         local_form_witness_ok &&
         local_form_status_ok &&
         variable_change_metadata_ok &&
@@ -489,6 +586,7 @@ function _sl3_realization_input_context_core_verification(context)
         determinant_status_ok,
         exact_field_status_ok,
         catalog_metadata_ok,
+        creation_identity_ok,
         local_form_witness_ok,
         local_form_status_ok,
         variable_change_metadata_ok,
@@ -1079,6 +1177,505 @@ function _verify_sl3_local_form_witness_selection(selection)::Bool
         err isa InterruptException && rethrow()
         return false
     end
+end
+
+function _sl3_murthy_quillen_local_witness_metadata(
+    selection::SL3LocalFormWitnessSelection,
+)
+    return (;
+        context_metadata = selection.context.catalog_metadata,
+        local_form_witness = selection.local_form_witness,
+        variable_change_metadata = selection.variable_change_metadata,
+        normality_conjugation_metadata = selection.normality_conjugation_metadata,
+        witness_source = selection.witness_source,
+        replay_status = selection.replay_status,
+        support_status = selection.support_status,
+        selected_variable = selection.selected_variable,
+        selected_variable_index = selection.selected_variable_index,
+        selected_variable_name = selection.selected_variable_name,
+    )
+end
+
+function _sl3_murthy_quillen_local_provider_inputs(
+    ;
+    witness,
+    local_unit_witnesses,
+    split_witness,
+    bezout_witness,
+)
+    return (;
+        witness,
+        local_unit_witnesses,
+        split_witness,
+        bezout_witness,
+    )
+end
+
+function _sl3_murthy_quillen_local_witness_payload_ok(
+    selection::SL3LocalFormWitnessSelection,
+)::Bool
+    data = selection.local_form_witness
+    data === nothing && return false
+    _sl3_realization_input_context_has_replay_payload(data) || return false
+
+    source_matrix = _sl3_local_witness_source_matrix(data)
+    source_matrix !== nothing && source_matrix == selection.context.matrix || return false
+
+    selected_variable_hint = _sl3_realization_input_context_extract(
+        data,
+        (:selected_variable, :selected_generator, :generator, :variable),
+    )
+    selected_variable_hint !== nothing || return false
+    replay_selected, replay_index, replay_status =
+        _sl3_realization_input_context_selected_variable(
+            selection.context.base_ring,
+            selected_variable_hint,
+        )
+    replay_status == :passes || return false
+    replay_selected == selection.selected_variable || return false
+    replay_index == selection.selected_variable_index || return false
+
+    entries, local_form_matrix, monicity_witness = _sl3_local_witness_status_from_data(
+        selection.context.base_ring,
+        data,
+        selection.selected_variable,
+        selection.selected_variable_index,
+        "SL_3 Murthy/Quillen local evidence provider #236 witness",
+    )
+    return entries == selection.entries &&
+           local_form_matrix == selection.local_form_matrix &&
+           monicity_witness == selection.monicity_witness
+end
+
+function _sl3_murthy_quillen_local_denominator_metadata(
+    adapter,
+    quillen_local_sequences,
+)
+    factor_denominators = [
+        factor.denominator for factor in adapter.local_factor_replay.factors
+    ]
+    sequence_denominator_products = if adapter.mode == :ordinary_quillen_factor_sequence
+        [sequence.product_denominator for sequence in quillen_local_sequences]
+    else
+        Any[]
+    end
+    return (;
+        factor_denominators,
+        denominator_product = adapter.local_factor_replay.denominator_product,
+        adapter_mode = adapter.mode,
+        sequence_denominator_products,
+    )
+end
+
+function _sl3_murthy_quillen_local_staged_diagnostic(
+    adapter,
+    quillen_local_sequences,
+)
+    if adapter.mode == :ordinary_quillen_factor_sequence
+        return (;
+            reason = :ordinary_quillen_sequences,
+            message = "Murthy local SL_3 evidence provider produced verified ordinary Quillen local sequences",
+            adapter_mode = adapter.mode,
+            quillen_local_sequence_count = length(quillen_local_sequences),
+            status = :supported,
+        )
+    end
+
+    return (;
+        reason = :localized_denominator_cleared_handoff,
+        message = "Murthy local SL_3 evidence provider captured localized denominator-cleared replay; ordinary Quillen local sequence materialization remains staged",
+        adapter_mode = adapter.mode,
+        quillen_local_sequence_count = length(quillen_local_sequences),
+        status = :staged,
+    )
+end
+
+function _sl3_murthy_quillen_local_replay_metadata(
+    selection::SL3LocalFormWitnessSelection,
+    provider_inputs,
+    denominator_metadata,
+    staged_diagnostic,
+    metadata,
+)
+    return (;
+        original_matrix = selection.context.matrix,
+        local_product = selection.local_form_matrix,
+        context_metadata = selection.context.catalog_metadata,
+        witness_source = selection.witness_source,
+        provider_inputs,
+        denominator_metadata,
+        staged_diagnostic,
+        provider_metadata = metadata,
+    )
+end
+
+function _sl3_murthy_quillen_local_evidence_provider_fields(
+    selection::SL3LocalFormWitnessSelection;
+    witness = nothing,
+    local_unit_witnesses = (;),
+    split_witness = nothing,
+    bezout_witness = nothing,
+    metadata = (;),
+)
+    _verify_sl3_local_form_witness_selection(selection) ||
+        throw(ArgumentError("SL_3 Murthy/Quillen local evidence provider requires a verified local-form witness selection"))
+    selection.support_status == :supported ||
+        throw(ArgumentError("SL_3 Murthy/Quillen local evidence provider requires supported local-form evidence"))
+    selection.replay_status == :replayed ||
+        throw(ArgumentError("SL_3 Murthy/Quillen local evidence provider requires replayable local-form evidence"))
+    selection.entries !== nothing ||
+        throw(ArgumentError("SL_3 Murthy/Quillen local evidence provider requires selected special-form entries"))
+    selection.local_form_matrix !== nothing ||
+        throw(ArgumentError("SL_3 Murthy/Quillen local evidence provider requires a selected local-form matrix"))
+    selection.local_form_witness == selection.context.local_form_witness ||
+        throw(ArgumentError("SL_3 Murthy/Quillen local evidence provider requires #236 witness metadata bound to the realization context"))
+    _sl3_murthy_quillen_local_witness_payload_ok(selection) ||
+        throw(ArgumentError("SL_3 Murthy/Quillen local evidence provider requires a replayable #236 local-form witness payload"))
+    selection.local_form_matrix == selection.context.matrix ||
+        throw(ArgumentError("SL_3 Murthy/Quillen local evidence provider currently requires the selected local product to match the original SL_3 context matrix; transformed local-form replay remains staged"))
+
+    provider_inputs = _sl3_murthy_quillen_local_provider_inputs(
+        ;
+        witness,
+        local_unit_witnesses,
+        split_witness,
+        bezout_witness,
+    )
+    witness_metadata = _sl3_murthy_quillen_local_witness_metadata(selection)
+    murthy_context = sl3_local_murthy_input_context(
+        selection.entries.p,
+        selection.entries.q,
+        selection.entries.r,
+        selection.entries.s,
+        selection.selected_variable;
+        witness,
+        local_unit_witnesses,
+        split_witness,
+        bezout_witness,
+    )
+    murthy_certificate = realize_sl3_local_certificate(murthy_context)
+    murthy_adapter = _murthy_quillen_local_adapter(
+        murthy_certificate,
+        selection.local_form_matrix,
+        selection.selected_variable;
+        witness_metadata,
+    )
+    quillen_local_sequences = murthy_adapter.mode == :ordinary_quillen_factor_sequence ?
+        quillen_local_sequences_from_murthy_adapters(
+            selection.local_form_matrix,
+            selection.selected_variable,
+            [murthy_adapter],
+        ) :
+        Any[]
+    denominator_metadata = _sl3_murthy_quillen_local_denominator_metadata(
+        murthy_adapter,
+        quillen_local_sequences,
+    )
+    staged_diagnostic = _sl3_murthy_quillen_local_staged_diagnostic(
+        murthy_adapter,
+        quillen_local_sequences,
+    )
+    replay_metadata = _sl3_murthy_quillen_local_replay_metadata(
+        selection,
+        provider_inputs,
+        denominator_metadata,
+        staged_diagnostic,
+        metadata,
+    )
+
+    return (;
+        context = selection.context,
+        witness_selection = selection,
+        murthy_context,
+        murthy_certificate,
+        murthy_adapter,
+        quillen_local_sequences,
+        selected_variable = selection.selected_variable,
+        selected_variable_index = selection.selected_variable_index,
+        local_product = selection.local_form_matrix,
+        denominator_metadata,
+        witness_metadata,
+        replay_metadata,
+        staged_diagnostic,
+        metadata,
+    )
+end
+
+function _same_cached_provenance_data(left, right)::Bool
+    left === right && return true
+    typeof(left) === typeof(right) || return false
+
+    values_equal = try
+        left == right
+    catch err
+        err isa InterruptException && rethrow()
+        false
+    end
+    values_equal && return true
+
+    if left isa NamedTuple
+        keys(left) == keys(right) || return false
+        for key in keys(left)
+            _same_cached_provenance_data(
+                getproperty(left, key),
+                getproperty(right, key),
+            ) || return false
+        end
+        return true
+    elseif left isa Tuple
+        length(left) == length(right) || return false
+        for idx in eachindex(left, right)
+            _same_cached_provenance_data(left[idx], right[idx]) || return false
+        end
+        return true
+    elseif left isa AbstractArray
+        size(left) == size(right) || return false
+        for idx in eachindex(left, right)
+            _same_cached_provenance_data(left[idx], right[idx]) || return false
+        end
+        return true
+    elseif Base.isstructtype(typeof(left)) && fieldcount(typeof(left)) > 0
+        for name in fieldnames(typeof(left))
+            _same_cached_provenance_data(
+                getfield(left, name),
+                getfield(right, name),
+            ) || return false
+        end
+        return true
+    end
+
+    return false
+end
+
+function _same_sl3_local_realization_certificate_data(left, right)::Bool
+    return left.target == right.target &&
+           left.branch == right.branch &&
+           _polynomial_route_factor_sequences_equal(left.factors, right.factors) &&
+           left.selected_variable == right.selected_variable &&
+           _same_cached_provenance_data(left.witness, right.witness)
+end
+
+function _same_sl3_local_murthy_input_context_data(left, right)::Bool
+    return left.R === right.R &&
+           left.X == right.X &&
+           left.var_idx == right.var_idx &&
+           left.entries == right.entries &&
+           left.target == right.target &&
+           left.determinant == right.determinant &&
+           left.degree_p == right.degree_p &&
+           left.degree_q == right.degree_q &&
+           left.p0 == right.p0 &&
+           left.q0 == right.q0 &&
+           left.p_monic == right.p_monic &&
+           left.global_units == right.global_units &&
+           left.local_units == right.local_units &&
+           left.local_unit_witnesses == right.local_unit_witnesses &&
+           left.split_witness == right.split_witness &&
+           left.bezout_witness == right.bezout_witness
+end
+
+function _same_murthy_quillen_local_adapter_data(left, right)::Bool
+    quillen_sequence_presence_ok =
+        (left.quillen_factor_sequence === nothing) ==
+        (right.quillen_factor_sequence === nothing)
+    quillen_local_presence_ok =
+        (left.quillen_local_certificate === nothing) ==
+        (right.quillen_local_certificate === nothing)
+    return left.original_input == right.original_input &&
+           left.ring == right.ring &&
+           left.size == right.size &&
+           left.selected_variable == right.selected_variable &&
+           _same_sl3_local_realization_certificate_data(
+               left.murthy_certificate,
+               right.murthy_certificate,
+           ) &&
+           _same_sl3_local_factor_replay(left.local_factor_replay, right.local_factor_replay) &&
+           left.mode == right.mode &&
+           left.materialized_factors == right.materialized_factors &&
+           left.local_product == right.local_product &&
+           left.local_correction == right.local_correction &&
+           quillen_sequence_presence_ok &&
+           quillen_local_presence_ok &&
+           left.witness_metadata == right.witness_metadata &&
+           left.replay_metadata == right.replay_metadata
+end
+
+function _sl3_murthy_quillen_local_evidence_provider_core_verification(provider)
+    selection_ok = _verify_sl3_local_form_witness_selection(provider.witness_selection)
+    context_ok =
+        provider.context == provider.witness_selection.context &&
+        _verify_sl3_realization_input_context(provider.context)
+
+    provider_inputs =
+        hasproperty(provider.replay_metadata, :provider_inputs) ?
+        provider.replay_metadata.provider_inputs :
+        hasproperty(provider.metadata, :provider_inputs) ?
+        provider.metadata.provider_inputs :
+        _sl3_murthy_quillen_local_provider_inputs(
+            ;
+            witness = nothing,
+            local_unit_witnesses = (;),
+            split_witness = nothing,
+            bezout_witness = nothing,
+        )
+
+    recomputed = selection_ok ?
+        _sl3_murthy_quillen_local_evidence_provider_fields(
+            provider.witness_selection;
+            witness = provider_inputs.witness,
+            local_unit_witnesses = provider_inputs.local_unit_witnesses,
+            split_witness = provider_inputs.split_witness,
+            bezout_witness = provider_inputs.bezout_witness,
+            metadata = provider.metadata,
+        ) :
+        nothing
+
+    murthy_context_ok =
+        recomputed !== nothing &&
+        verify_sl3_local_murthy_input_context(provider.murthy_context) &&
+        _same_sl3_local_murthy_input_context_data(
+            provider.murthy_context,
+            recomputed.murthy_context,
+        )
+    certificate_ok =
+        recomputed !== nothing &&
+        verify_sl3_local_realization(provider.murthy_certificate) &&
+        _same_sl3_local_realization_certificate_data(
+            provider.murthy_certificate,
+            recomputed.murthy_certificate,
+        )
+    adapter_ok =
+        recomputed !== nothing &&
+        _verify_murthy_quillen_local_adapter(provider.murthy_adapter) &&
+        _same_murthy_quillen_local_adapter_data(
+            provider.murthy_adapter,
+            recomputed.murthy_adapter,
+        )
+    selected_variable_ok =
+        recomputed !== nothing &&
+        provider.selected_variable == recomputed.selected_variable
+    selected_variable_index_ok =
+        recomputed !== nothing &&
+        provider.selected_variable_index == recomputed.selected_variable_index
+    local_product_ok =
+        recomputed !== nothing &&
+        provider.local_product == recomputed.local_product
+    denominator_metadata_ok =
+        recomputed !== nothing &&
+        provider.denominator_metadata == recomputed.denominator_metadata
+    witness_metadata_ok =
+        recomputed !== nothing &&
+        provider.witness_metadata == recomputed.witness_metadata
+    replay_metadata_ok =
+        recomputed !== nothing &&
+        provider.replay_metadata == recomputed.replay_metadata
+    staged_diagnostic_ok =
+        recomputed !== nothing &&
+        provider.staged_diagnostic == recomputed.staged_diagnostic
+    metadata_ok =
+        recomputed !== nothing &&
+        provider.metadata == recomputed.metadata
+    expected_quillen_local_sequences =
+        adapter_ok &&
+        provider.murthy_adapter.mode == :ordinary_quillen_factor_sequence ?
+        quillen_local_sequences_from_murthy_adapters(
+            provider.local_product,
+            provider.selected_variable,
+            [provider.murthy_adapter],
+        ) :
+        Any[]
+    quillen_local_sequences_ok =
+        recomputed !== nothing &&
+        provider.quillen_local_sequences isa AbstractVector &&
+        (
+            provider.murthy_adapter.mode == :ordinary_quillen_factor_sequence ?
+            all(
+                verify_quillen_local_factor_sequence_certificate,
+                provider.quillen_local_sequences,
+            ) &&
+            _same_quillen_local_factor_sequence_certificates(
+                provider.quillen_local_sequences,
+                expected_quillen_local_sequences,
+            ) :
+            isempty(provider.quillen_local_sequences)
+        )
+
+    overall_core_ok =
+        selection_ok &&
+        context_ok &&
+        murthy_context_ok &&
+        certificate_ok &&
+        adapter_ok &&
+        selected_variable_ok &&
+        selected_variable_index_ok &&
+        local_product_ok &&
+        denominator_metadata_ok &&
+        witness_metadata_ok &&
+        replay_metadata_ok &&
+        staged_diagnostic_ok &&
+        metadata_ok &&
+        quillen_local_sequences_ok
+
+    return (;
+        selection_ok,
+        context_ok,
+        murthy_context_ok,
+        certificate_ok,
+        adapter_ok,
+        selected_variable_ok,
+        selected_variable_index_ok,
+        local_product_ok,
+        denominator_metadata_ok,
+        witness_metadata_ok,
+        replay_metadata_ok,
+        staged_diagnostic_ok,
+        metadata_ok,
+        quillen_local_sequences_ok,
+        overall_core_ok,
+    )
+end
+
+function _sl3_murthy_quillen_local_evidence_provider_verification(provider)
+    core = _sl3_murthy_quillen_local_evidence_provider_core_verification(provider)
+    stored_verification_ok = provider.verification == core
+    return merge(core, (; stored_verification_ok, overall_ok = core.overall_core_ok && stored_verification_ok))
+end
+
+function _verify_sl3_murthy_quillen_local_evidence_provider(provider)::Bool
+    try
+        return _sl3_murthy_quillen_local_evidence_provider_verification(provider).overall_ok
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function _sl3_murthy_quillen_local_evidence_provider(
+    selection::SL3LocalFormWitnessSelection;
+    witness = nothing,
+    local_unit_witnesses = (;),
+    split_witness = nothing,
+    bezout_witness = nothing,
+    metadata = (;),
+)
+    fields = _sl3_murthy_quillen_local_evidence_provider_fields(
+        selection;
+        witness,
+        local_unit_witnesses,
+        split_witness,
+        bezout_witness,
+        metadata,
+    )
+    unchecked = SL3MurthyQuillenLocalEvidenceProvider(
+        values(merge(fields, (; verification = nothing,)))...,
+    )
+    verification = _sl3_murthy_quillen_local_evidence_provider_core_verification(unchecked)
+    checked = SL3MurthyQuillenLocalEvidenceProvider(
+        values(merge(fields, (; verification,)))...,
+    )
+    _verify_sl3_murthy_quillen_local_evidence_provider(checked) ||
+        error("internal SL_3 Murthy/Quillen local evidence provider verification failed")
+    return checked
 end
 
 function _supported_local_sl3_generator(A, R, ring_profile::Symbol)
