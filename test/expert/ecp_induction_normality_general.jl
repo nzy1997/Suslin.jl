@@ -48,6 +48,19 @@ function _replace_conjugated_certificate_field(cert, field::Symbol, value)
     return _replace_record_field(cert, field, value)
 end
 
+function _tamper_lower_certificate_first_factor(cert)
+    factors = copy(cert.factors)
+    factors[1] = identity_matrix(cert.ring, length(cert.original_column))
+    return Suslin.ECPColumnReductionCertificate(
+        cert.original_column,
+        cert.ring,
+        cert.stages,
+        factors,
+        cert.final_column,
+        cert.verification,
+    )
+end
+
 function _tamper_nested_first_factor(cert, R, n::Int)
     factors = copy(cert.factors)
     factors[1] = identity_matrix(R, n)
@@ -123,6 +136,13 @@ end
 
     tampered_lower_certificate = _replace_record_field(cert, :lower_reduction_certificate, nothing)
     @test !Suslin.verify_ecp_induction_normality_certificate(tampered_lower_certificate)
+
+    corrupted_lower_certificate = _replace_record_field(
+        cert,
+        :lower_reduction_certificate,
+        _tamper_lower_certificate_first_factor(cert.lower_reduction_certificate),
+    )
+    @test !Suslin.verify_ecp_induction_normality_certificate(corrupted_lower_certificate)
 
     tampered_lifted_factors = copy(cert.lifted_lower_variable_factors)
     tampered_lifted_factors[1] = identity_matrix(R, length(column))
