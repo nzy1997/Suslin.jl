@@ -52,11 +52,13 @@ verify_factorization(A, factors)
   denominator-cleared certificate replay.
 - Staged ordinary-polynomial `SL_3` inputs include determinant-one matrices with
   no supported local-form, variable-change, normality/conjugation, Murthy, or
-  Quillen evidence path. ECP (#185), recursive `SL_n` (#186), full public
-  Park-Woodburn acceptance (#187), coefficient-ring support beyond exact
-  field-backed ordinary polynomial rings, arbitrary Laurent `GL_n` determinant
-  correction, Laurent/ToricBuilder mainline acceptance, and Steinberg
-  factor-count optimization remain out of scope.
+  Quillen evidence path. Outside the evidence-backed #184 slice above,
+  Quillen automatic patching (#183), general `SL_3` (#184), the general ECP
+  reducer (#185), recursive `SL_n` (#186), full public Park-Woodburn
+  acceptance (#187), coefficient-ring support beyond exact field-backed
+  ordinary polynomial rings, arbitrary Laurent `GL_n` determinant correction,
+  Laurent/ToricBuilder mainline acceptance, and Steinberg factor-count
+  optimization remain staged boundaries.
 
 See [ToricBuilder Integration Contract](@ref) for the first recorded
 consumer-boundary fixture contract.
