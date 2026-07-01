@@ -421,13 +421,19 @@ end
 
     forged_route_metadata = merge(
         sl3_cert.evidence.quillen_route_adapter.quillen_patch.replay_metadata.metadata,
-        (; provider_issue_id = "#237-forged"),
+        (;
+            context_metadata = merge(
+                sl3_cert.evidence.context.catalog_metadata,
+                (; driver_issue_id = "#238-forged-context"),
+            ),
+        ),
     )
     forged_patch = Suslin._polynomial_sl3_quillen_murthy_route_patch(
         sl3_cert.evidence.quillen_consumption.raw_consumption.patch,
         forged_route_metadata,
     )
-    forged_consumption = _pw_rebuild(
+    @test Suslin.verify_quillen_patch(forged_patch)
+    unchecked_forged_consumption = _pw_rebuild(
         sl3_cert.evidence.quillen_consumption;
         patch = forged_patch,
         replay_metadata = Suslin._polynomial_sl3_quillen_murthy_route_consumption_metadata(
@@ -435,12 +441,18 @@ end
             forged_route_metadata,
             forged_patch,
         ),
+        verification = nothing,
     )
-    forged_adapter = _pw_rebuild(
-        sl3_cert.evidence.quillen_route_adapter;
-        quillen_patch = forged_patch,
+    forged_consumption_verification =
+        Suslin._polynomial_sl3_quillen_murthy_route_consumption_core_verification(
+            unchecked_forged_consumption,
+        )
+    forged_consumption = _pw_rebuild(
+        unchecked_forged_consumption;
+        verification = forged_consumption_verification,
     )
-    forged_evidence = _pw_rebuild(
+    forged_adapter = Suslin._polynomial_quillen_patch_route_adapter(issue238.A, forged_patch)
+    unchecked_forged_evidence = _pw_rebuild(
         sl3_cert.evidence;
         quillen_consumption = forged_consumption,
         quillen_route_adapter = forged_adapter,
@@ -449,11 +461,31 @@ end
             route_issue_id = "#238",
             route_metadata = forged_route_metadata,
             consumption_replay_metadata = forged_consumption.replay_metadata,
-            patch_replay_metadata = forged_patch.replay_metadata,
+            patch_replay_metadata = forged_adapter.quillen_patch.replay_metadata,
         ),
+        verification = nothing,
     )
-    forged_cert = _pw_replace_certificate(sl3_cert; evidence = forged_evidence)
-    @test Suslin.verify_quillen_patch(forged_patch)
+    forged_evidence_verification =
+        Suslin._polynomial_sl3_quillen_murthy_route_core_verification(
+            unchecked_forged_evidence,
+        )
+    forged_evidence = _pw_rebuild(
+        unchecked_forged_evidence;
+        verification = forged_evidence_verification,
+    )
+    unchecked_forged_cert = _pw_replace_certificate(
+        sl3_cert;
+        factors = copy(forged_adapter.global_elementary_factors),
+        product = forged_adapter.product,
+        evidence = forged_evidence,
+        verification = nothing,
+    )
+    forged_cert_verification =
+        Suslin._polynomial_factorization_route_core_verification(unchecked_forged_cert)
+    forged_cert = _pw_replace_certificate(
+        unchecked_forged_cert;
+        verification = forged_cert_verification,
+    )
     @test !Suslin.verify_quillen_murthy_adapter_consumption(forged_consumption)
     @test !Suslin._verify_polynomial_sl3_quillen_murthy_route_evidence(forged_evidence)
     @test !Suslin._verify_polynomial_factorization_route_certificate(forged_cert)
