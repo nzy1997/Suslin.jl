@@ -218,7 +218,9 @@ end
     @test issue238_factors == issue238_cert.factors
     @test Suslin._verify_polynomial_factorization_route_certificate(issue238_cert)
 
-    missing_witness = identity_matrix(issue238_R, 3)
+    missing_witness =
+        elementary_matrix(3, 1, 3, issue238_X, issue238_R) *
+        elementary_matrix(3, 2, 1, issue238_r, issue238_R)
     missing_witness_err = _captured_error(() -> elementary_factorization(missing_witness))
     @test missing_witness_err isa ArgumentError
     @test occursin("missing Quillen/local realizability witness", sprint(showerror, missing_witness_err))
