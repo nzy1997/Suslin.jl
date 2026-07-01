@@ -400,6 +400,13 @@ end
     transport_identity = (; overall_ok = true)
     reducible_endpoint = (one(R), zero(R), zero(R))
     unsupported_endpoint = (x, y, x * y)
+    @test_throws ArgumentError Suslin._ecp_link_step_endpoint_transport(
+        R,
+        qq_record.path_columns[1],
+        qq_record.path_columns[2],
+        qq_record.segments[1].link_identity,
+        :unsupported_link_step_family,
+    )
     @test_throws ArgumentError Suslin._ecp_link_step_identity_transport(
         R,
         unsupported_endpoint,
