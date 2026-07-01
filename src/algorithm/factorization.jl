@@ -2572,7 +2572,6 @@ function _polynomial_quillen_supplied_evidence_data(A)
         [gen == selected_variable ? zero(R) : gen for gen in ring_gens],
     )
     delta_entry = elementary_entry.entry - base_entry
-    delta_entry == zero(R) && return nothing
 
     factor_type = typeof(identity_matrix(R, 3))
     base_term_policy = base_entry == zero(R) ? :trivial : :supplied

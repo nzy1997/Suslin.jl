@@ -648,6 +648,27 @@ end
         tampered_patch_certificate,
     )
 
+    base_only_elementary = elementary_matrix(3, 1, 3, g, S)
+    base_only_data = Suslin._polynomial_quillen_supplied_evidence_data(base_only_elementary)
+    @test base_only_data !== nothing
+    @test base_only_data.base_entry == g
+    @test base_only_data.delta_entry == zero(S)
+    @test base_only_data.base_term_policy == :supplied
+    @test base_only_data.base_term_factors == [base_only_elementary]
+    @test all(
+        Suslin.verify_quillen_local_factor_sequence_certificate,
+        base_only_data.local_certificates,
+    )
+    base_only_cert = Suslin._polynomial_factorization_route_certificate(
+        base_only_elementary;
+        allow_recursive_column_peel = false,
+    )
+    @test base_only_cert.status == :supported
+    @test base_only_cert.route == :quillen_patch
+    @test base_only_cert.product == base_only_elementary
+    @test _pw_route_product(base_only_cert.factors, S, 3) == base_only_elementary
+    @test Suslin._verify_polynomial_factorization_route_certificate(base_only_cert)
+
     R = base_ring(fast_cert.matrix)
     n = nrows(fast_cert.matrix)
 

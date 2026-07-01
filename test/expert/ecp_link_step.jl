@@ -232,6 +232,7 @@ end
         variable_order = gf2_entry.ring.generators,
         selected_variable = gf2_entry.ring.generators[1],
         supplied_link_witness = _gf2_link_witness(gf2_entry),
+        route_mode = :legacy_fixture,
     )
     @test gf2_record.verification.overall_ok == true
     @test length(gf2_record.path_columns) == 2
@@ -253,6 +254,7 @@ end
         variable_order = qq_entry.ring.generators,
         selected_variable = qq_entry.ring.generators[1],
         supplied_link_witness = qq_witness,
+        route_mode = :legacy_fixture,
     )
     @test qq_record.verification.overall_ok == true
     @test length(qq_record.path_columns) == 3
@@ -264,6 +266,8 @@ end
     @test qq_record.verification.composed_reduction_ok == true
     @test all(segment -> segment.support_family == :supplied_fixture_identity_sl2_endpoint_transport, qq_record.segments)
     @test all(segment -> segment.verification.endpoint_transport_ok, qq_record.segments)
+    @test Suslin._ecp_link_step_supported_family(qq_record.link_witness) ==
+          :supplied_fixture_identity_sl2_endpoint_transport
     _assert_link_step_segment_maps(qq_record)
     _assert_link_step_composed_maps(qq_record)
     @test Suslin.verify_ecp_link_step_certificate(qq_record)
@@ -338,10 +342,18 @@ end
         supplied_link_witness = relabelled_unit_tail.witness,
     )
     @test Suslin.verify_ecp_link_witness(relabelled_unit_tail_record)
+    relabelled_unit_tail_auto = Suslin.ecp_link_step_certificate(
+        relabelled_unit_tail.column,
+        relabelled_unit_tail.R;
+        link_witness = relabelled_unit_tail_record,
+    )
+    @test relabelled_unit_tail_auto.route_mode == :polynomial_sl3
+    @test Suslin.verify_ecp_link_step_certificate(relabelled_unit_tail_auto)
     @test_throws ArgumentError Suslin.ecp_link_step_certificate(
         relabelled_unit_tail.column,
         relabelled_unit_tail.R;
         link_witness = relabelled_unit_tail_record,
+        route_mode = :legacy_fixture,
     )
 
     extra_generator = _extra_generator_gf2_case()
@@ -353,10 +365,18 @@ end
         supplied_link_witness = extra_generator.witness,
     )
     @test Suslin.verify_ecp_link_witness(extra_generator_record)
+    extra_generator_auto = Suslin.ecp_link_step_certificate(
+        extra_generator.column,
+        extra_generator.R;
+        link_witness = extra_generator_record,
+    )
+    @test extra_generator_auto.route_mode == :polynomial_sl3
+    @test Suslin.verify_ecp_link_step_certificate(extra_generator_auto)
     @test_throws ArgumentError Suslin.ecp_link_step_certificate(
         extra_generator.column,
         extra_generator.R;
         link_witness = extra_generator_record,
+        route_mode = :legacy_fixture,
     )
 
     zero_delta_differences, zero_delta_ok = Suslin._ecp_link_step_divided_differences(
@@ -382,6 +402,13 @@ end
     transport_identity = (; overall_ok = true)
     reducible_endpoint = (one(R), zero(R), zero(R))
     unsupported_endpoint = (x, y, x * y)
+    @test_throws ArgumentError Suslin._ecp_link_step_endpoint_transport(
+        R,
+        qq_record.path_columns[1],
+        qq_record.path_columns[2],
+        qq_record.segments[1].link_identity,
+        :unsupported_link_step_family,
+    )
     @test_throws ArgumentError Suslin._ecp_link_step_identity_transport(
         R,
         unsupported_endpoint,
