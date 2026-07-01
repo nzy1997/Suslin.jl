@@ -232,6 +232,7 @@ end
         variable_order = gf2_entry.ring.generators,
         selected_variable = gf2_entry.ring.generators[1],
         supplied_link_witness = _gf2_link_witness(gf2_entry),
+        route_mode = :legacy_fixture,
     )
     @test gf2_record.verification.overall_ok == true
     @test length(gf2_record.path_columns) == 2
@@ -253,6 +254,7 @@ end
         variable_order = qq_entry.ring.generators,
         selected_variable = qq_entry.ring.generators[1],
         supplied_link_witness = qq_witness,
+        route_mode = :legacy_fixture,
     )
     @test qq_record.verification.overall_ok == true
     @test length(qq_record.path_columns) == 3
