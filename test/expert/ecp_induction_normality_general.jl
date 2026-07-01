@@ -56,18 +56,18 @@ end
 
 function _same_context_case()
     R, (x, y) = Oscar.polynomial_ring(QQ, ["x", "y"])
-    column = [y + one(R), one(R), zero(R)]
+    column = [one(R), y, zero(R)]
     witness = (;
         source = :supplied_link_witness,
         residue_probes = ((; id = :same_context_probe, kind = :deterministic_fixture, maximal_ideal_generators = (y,)),),
         tail_reductions = ((;
             probe_id = :same_context_probe,
-            G = one(R),
+            G = y,
             lifted_tail_coefficients = (one(R), zero(R)),
-            tilde_G = one(R),
+            tilde_G = y,
         ),),
         resultants = (one(R),),
-        bezout_coefficients = ((; f = zero(R), h = one(R)),),
+        bezout_coefficients = ((; f = one(R), h = zero(R)),),
         coverage_multipliers = (one(R),),
         path_points = (zero(R), x),
     )
@@ -78,38 +78,6 @@ function _same_context_case()
         selected_variable = x,
         supplied_link_witness = witness,
     )
-    return (; R, column, link)
-end
-
-function _unsupported_lower_case()
-    R, (x, y) = Oscar.polynomial_ring(QQ, ["x", "y"])
-    column = [x + y, x^2 + one(R), x * y + one(R), zero(R)]
-    witness = (;
-        source = :supplied_link_witness,
-        residue_probes = (
-            (; id = :unsupported_y_probe, kind = :deterministic_fixture, maximal_ideal_generators = (y,)),
-            (; id = :unsupported_x_probe, kind = :deterministic_fixture, maximal_ideal_generators = (x,)),
-        ),
-        tail_reductions = (
-            (; probe_id = :unsupported_y_probe, G = x^2 + one(R), lifted_tail_coefficients = (one(R), zero(R), zero(R)), tilde_G = x^2 + one(R)),
-            (; probe_id = :unsupported_x_probe, G = x * y + one(R), lifted_tail_coefficients = (zero(R), one(R), zero(R)), tilde_G = x * y + one(R)),
-        ),
-        resultants = (one(R), one(R)),
-        bezout_coefficients = (
-            (; f = zero(R), h = one(R)),
-            (; f = zero(R), h = one(R)),
-        ),
-        coverage_multipliers = (one(R), zero(R)),
-        path_points = (zero(R), x, x),
-    )
-    link_witness = Suslin.ecp_link_witness(
-        column,
-        R;
-        variable_order = (x, y),
-        selected_variable = x,
-        supplied_link_witness = witness,
-    )
-    link = Suslin.ecp_link_step_certificate(column, R; link_witness = link_witness)
     return (; R, column, link)
 end
 
@@ -189,11 +157,11 @@ end
         link_step = same_context.link,
     )
 
-    unsupported = _unsupported_lower_case()
     @test_throws Regex("missing lower-variable reduction") Suslin.ecp_induction_normality_certificate(
-        unsupported.column,
-        unsupported.R;
-        link_step = unsupported.link,
+        column,
+        R;
+        link_step = link,
+        lower_reduction = (; factors = lower.factors),
     )
 
     valid_normality_witness = (;
