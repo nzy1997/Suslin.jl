@@ -776,7 +776,7 @@ function ecp_induction_normality_certificate(
 
     lower_column = collect(link_step.lower_variable_column)
     descent_measure = _ecp_induction_descent_measure(link_step, R)
-    descent_measure.strict_descent ||
+    _ecp_descent_measure_strict(descent_measure) ||
         throw(ArgumentError("ECP induction/normality staged failure: same-context recursive lower-variable call did not strictly reduce selected-variable profile"))
     lower_certificate, lower_factors = try
         _ecp_verified_lower_reduction(lower_reduction, lower_column, R)
@@ -2298,6 +2298,16 @@ function _ecp_induction_descent_measure(link_step::ECPLinkStepCertificate, R)
     )
 end
 
+function _ecp_descent_measure_strict(measure)::Bool
+    try
+        return measure.componentwise_nonincreasing === true &&
+            measure.strict_descent === true
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
 function _ecp_construct_normality_witness(lifted_lower_factors, n::Int, R, selected_variable)
     lower_product = _factor_sequence_product(lifted_lower_factors, R, n)
     entry = _coerce_into_ring(R, selected_variable + one(R), "constructed normality witness sl2_entry")
@@ -2787,7 +2797,7 @@ function _ecp_induction_normality_replay_summary(certificate)
     descent_measure_ok = descent_measure !== nothing &&
         certificate.descent_measure == descent_measure
     descent_strict_ok = descent_measure !== nothing &&
-        descent_measure.strict_descent
+        _ecp_descent_measure_strict(descent_measure)
 
     lower_certificate, lower_factors = try
         _ecp_verified_lower_reduction(
