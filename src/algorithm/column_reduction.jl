@@ -134,12 +134,42 @@ struct ECPLinkStepCertificate
     link_witness::ECPLinkWitnessRecord
     path_points
     path_columns
+    route_mode::Symbol
     segments
     lower_variable_column
     transformed_column
     forward_factors::Vector
     reduction_factors::Vector
     verification
+end
+
+function ECPLinkStepCertificate(
+    original_column,
+    ring,
+    link_witness,
+    path_points,
+    path_columns,
+    segments,
+    lower_variable_column,
+    transformed_column,
+    forward_factors::Vector,
+    reduction_factors::Vector,
+    verification,
+)
+    return ECPLinkStepCertificate(
+        original_column,
+        ring,
+        link_witness,
+        path_points,
+        path_columns,
+        :auto,
+        segments,
+        lower_variable_column,
+        transformed_column,
+        forward_factors,
+        reduction_factors,
+        verification,
+    )
 end
 
 struct ECPInductionNormalityCertificate
@@ -665,6 +695,7 @@ function ecp_link_step_certificate(
     selected_variable = nothing,
     selected_monic_index::Integer = 1,
     supplied_link_witness = nothing,
+    route_mode::Symbol = :auto,
 )
     _is_laurent_polynomial_ring(R) &&
         throw(ArgumentError("ECP link steps currently support ordinary polynomial columns only"))
@@ -681,7 +712,8 @@ function ecp_link_step_certificate(
         throw(ArgumentError("ECP link step input column must match the link witness column"))
 
     path_columns = _ecp_link_step_path_columns(witness)
-    segments = _ecp_link_step_segments(witness, path_columns)
+    resolved_route_mode = _ecp_link_step_resolve_route_mode(witness, route_mode)
+    segments = _ecp_link_step_segments(witness, path_columns; route_mode = resolved_route_mode)
     forward_factors = _ecp_link_step_forward_factors(segments)
     reduction_factors = _ecp_link_step_reduction_factors(segments)
     provisional = ECPLinkStepCertificate(
@@ -690,6 +722,7 @@ function ecp_link_step_certificate(
         witness,
         witness.path_points,
         path_columns,
+        resolved_route_mode,
         segments,
         first(path_columns),
         tuple(column...),
@@ -706,6 +739,7 @@ function ecp_link_step_certificate(
         provisional.link_witness,
         provisional.path_points,
         provisional.path_columns,
+        provisional.route_mode,
         provisional.segments,
         provisional.lower_variable_column,
         provisional.transformed_column,
@@ -2967,14 +3001,14 @@ function _ecp_evaluate_at_selected_variable(values, selected_variable_index::Int
     )...)
 end
 
-function _ecp_link_step_segments(witness::ECPLinkWitnessRecord, path_columns)
+function _ecp_link_step_segments(witness::ECPLinkWitnessRecord, path_columns; route_mode::Symbol = :auto)
     return tuple((
-        _ecp_link_step_segment(witness, idx, path_columns)
+        _ecp_link_step_segment(witness, idx, path_columns; route_mode)
         for idx in eachindex(witness.tail_reductions)
     )...)
 end
 
-function _ecp_link_step_segment(witness::ECPLinkWitnessRecord, idx::Int, path_columns)
+function _ecp_link_step_segment(witness::ECPLinkWitnessRecord, idx::Int, path_columns; route_mode::Symbol = :auto)
     R = witness.ring
     n = length(witness.original_column)
     from_path_point = witness.path_points[idx]
@@ -2983,11 +3017,18 @@ function _ecp_link_step_segment(witness::ECPLinkWitnessRecord, idx::Int, path_co
     from_column = path_columns[idx]
     to_column = path_columns[idx + 1]
     link_identity = _ecp_link_step_identity(witness, idx, from_column, to_column, delta)
-    support_family = _ecp_link_step_supported_family(witness)
-    transport = _ecp_link_step_identity_transport(R, from_column, to_column, link_identity, support_family)
+    support_family = _ecp_link_step_supported_family(witness, route_mode)
+    transport = _ecp_link_step_endpoint_transport(R, from_column, to_column, link_identity, support_family)
 
-    sl2_block = identity_matrix(R, 2)
+    sl2_block = _ecp_link_step_embedded_sl2_block(transport.sl3_route_matrices, R, n, (1, 2))
     sl2_embedding = block_embedding(sl2_block, n, (1, 2))
+    sl3_route_metadata = _ecp_link_step_embedded_route_metadata(
+        transport.sl3_route_metadata,
+        transport.sl3_route_matrices,
+        sl2_embedding,
+        sl2_block,
+        (1, 2),
+    )
     forward_factors = copy(transport.factors)
     inverse_factors = _ecp_inverse_factor_sequence(forward_factors)
     elementary_factors = copy(forward_factors)
@@ -3005,6 +3046,10 @@ function _ecp_link_step_segment(witness::ECPLinkWitnessRecord, idx::Int, path_co
         transport.from_certificate,
         transport.to_certificate,
         link_identity,
+        transport.sl3_route_matrices,
+        transport.sl3_route_certificates,
+        transport.sl3_route_factor_groups,
+        sl3_route_metadata,
     )
     verification.overall_ok ||
         throw(ArgumentError("ECP link step segment $(idx) failed exact replay verification"))
@@ -3024,6 +3069,10 @@ function _ecp_link_step_segment(witness::ECPLinkWitnessRecord, idx::Int, path_co
         endpoint_transport_matrix = transport.endpoint_transport_matrix,
         from_certificate = transport.from_certificate,
         to_certificate = transport.to_certificate,
+        sl3_route_matrices = transport.sl3_route_matrices,
+        sl3_route_certificates = transport.sl3_route_certificates,
+        sl3_route_factor_groups = transport.sl3_route_factor_groups,
+        sl3_route_metadata,
         link_identity,
         verification,
     )
@@ -3095,12 +3144,194 @@ function _ecp_link_step_divided_differences(from_column, to_column, delta, R)
     return tuple(quotients...), true
 end
 
-function _ecp_link_step_supported_family(witness::ECPLinkWitnessRecord)
-    if _ecp_link_step_matches_gf2_fixture(witness) || _ecp_link_step_matches_qq_fixture(witness)
-        return :supplied_fixture_identity_sl2_endpoint_transport
+function _ecp_link_step_resolve_route_mode(witness::ECPLinkWitnessRecord, route_mode::Symbol)
+    route_mode in (:auto, :legacy_fixture, :polynomial_sl3) ||
+        throw(ArgumentError("unsupported ECP link step route_mode $(route_mode)"))
+    if route_mode == :auto
+        return _ecp_link_step_prefers_legacy_fixture(witness) ?
+            :legacy_fixture :
+            :polynomial_sl3
     end
-    probe_ids = tuple((probe.id for probe in witness.residue_probes)...)
-    throw(ArgumentError("unsupported ECP link step family for supplied link witness probes $(probe_ids)"))
+    return route_mode
+end
+
+function _ecp_link_step_prefers_legacy_fixture(witness::ECPLinkWitnessRecord)
+    if _ecp_link_step_matches_gf2_fixture(witness) || _ecp_link_step_matches_qq_fixture(witness)
+        return true
+    end
+    return get(witness.metadata, :source, nothing) == :supplied_link_witness &&
+        !isempty(witness.residue_probes) &&
+        all(probe -> get(probe, :kind, nothing) == :deterministic_fixture, witness.residue_probes)
+end
+
+function _ecp_link_step_supported_family(witness::ECPLinkWitnessRecord, route_mode::Symbol)
+    resolved = _ecp_link_step_resolve_route_mode(witness, route_mode)
+    if resolved == :legacy_fixture
+        if _ecp_link_step_matches_gf2_fixture(witness) || _ecp_link_step_matches_qq_fixture(witness)
+            return :supplied_fixture_identity_sl2_endpoint_transport
+        end
+        probe_ids = tuple((probe.id for probe in witness.residue_probes)...)
+        throw(ArgumentError("unsupported ECP legacy fixture link step family for supplied link witness probes $(probe_ids)"))
+    end
+    return :polynomial_sl3_route_endpoint_transport
+end
+
+function _ecp_link_step_supported_family(witness::ECPLinkWitnessRecord)
+    return _ecp_link_step_supported_family(witness, :auto)
+end
+
+function _ecp_link_step_extract_embedded_sl2_block(route_matrix, R, n::Int, indices)
+    nrows(route_matrix) == n && ncols(route_matrix) == n || return nothing
+    _same_base_ring(base_ring(route_matrix), R) || return nothing
+    i, j = indices
+    block = matrix(R, 2, 2, [route_matrix[i, i], route_matrix[i, j], route_matrix[j, i], route_matrix[j, j]])
+    return block_embedding(block, n, indices) == route_matrix ? block : nothing
+end
+
+function _ecp_link_step_embedded_sl2_block(route_matrices, R, n::Int, indices)
+    identity_block = identity_matrix(R, 2)
+    for route_matrix in route_matrices
+        block = _ecp_link_step_extract_embedded_sl2_block(route_matrix, R, n, indices)
+        block === nothing && continue
+        block == identity_block && continue
+        return block
+    end
+    return identity_block
+end
+
+function _ecp_link_step_embedded_route_metadata(route_metadata, route_matrices, sl2_embedding, sl2_block, indices)
+    length(route_metadata) == length(route_matrices) ||
+        throw(ArgumentError("route metadata must align with route matrices"))
+    return tuple((
+        route_matrices[idx] == sl2_embedding ?
+            merge(route_metadata[idx], (;
+                embedded_block_indices = indices,
+                embedded_block_matrix = sl2_block,
+            )) :
+            route_metadata[idx]
+        for idx in eachindex(route_metadata)
+    )...)
+end
+
+function _ecp_link_step_route_certificate(factor)
+    certificate = _polynomial_factorization_route_certificate(
+        factor;
+        allow_recursive_column_peel = false,
+    )
+    certificate.status == :supported ||
+        throw(ArgumentError("ECP link step SL_3 route obligation is staged"))
+    _verify_polynomial_factorization_route_certificate(certificate) ||
+        throw(ArgumentError("ECP link step SL_3 route certificate does not verify"))
+    certificate.product == factor ||
+        throw(ArgumentError("ECP link step SL_3 route certificate product does not match its obligation"))
+    return certificate
+end
+
+function _ecp_link_step_route_split_seed(factor)
+    R = base_ring(factor)
+    generators = tuple(gens(R)...)
+    isempty(generators) &&
+        throw(ArgumentError("ECP link step staged SL_3 route obligation has no polynomial generator seed"))
+    return first(generators)
+end
+
+function _ecp_link_step_elementary_factor_entry(factor)
+    R = base_ring(factor)
+    n = nrows(factor)
+    n == ncols(factor) || throw(ArgumentError("expected a square elementary factor"))
+    identity = identity_matrix(R, n)
+    positions = [(row, col) for row in 1:n, col in 1:n if factor[row, col] != identity[row, col]]
+    length(positions) == 1 || throw(ArgumentError("expected an elementary factor with one off-diagonal entry"))
+    row, col = only(positions)
+    row != col || throw(ArgumentError("expected an off-diagonal elementary factor"))
+    return row, col, factor[row, col]
+end
+
+function _ecp_link_step_route_certificates_for_factor(factor)
+    direct = _polynomial_factorization_route_certificate(
+        factor;
+        allow_recursive_column_peel = false,
+    )
+    if direct.status == :supported
+        _verify_polynomial_factorization_route_certificate(direct) ||
+            throw(ArgumentError("ECP link step SL_3 route certificate does not verify"))
+        direct.product == factor ||
+            throw(ArgumentError("ECP link step SL_3 route certificate product does not match its obligation"))
+        return (direct,)
+    end
+
+    row, col, entry = _ecp_link_step_elementary_factor_entry(factor)
+    R = base_ring(factor)
+    seed = _ecp_link_step_route_split_seed(factor)
+    lifted = elementary_matrix(nrows(factor), row, col, entry + seed, R)
+    seed_inverse = elementary_matrix(nrows(factor), row, col, -seed, R)
+    lifted_cert = _ecp_link_step_route_certificate(lifted)
+    seed_inverse_cert = _ecp_link_step_route_certificate(seed_inverse)
+    lifted * seed_inverse == factor ||
+        throw(ArgumentError("ECP link step staged SL_3 route split does not reproduce its obligation"))
+    return (lifted_cert, seed_inverse_cert)
+end
+
+function _ecp_link_step_route_metadata(route_certificates)
+    return tuple((
+        (;
+            source = :polynomial_factorization_route_certificate,
+            obligation_index = idx,
+            route = route_certificates[idx].route,
+            status = route_certificates[idx].status,
+            factor_count = length(route_certificates[idx].factors),
+        )
+        for idx in eachindex(route_certificates)
+    )...)
+end
+
+function _ecp_link_step_endpoint_transport(R, from_column, to_column, link_identity, support_family::Symbol)
+    link_identity.overall_ok ||
+        throw(ArgumentError("ECP link step requires a replayed link identity"))
+    from_certificate = try
+        ecp_column_reduction_certificate(collect(from_column), R)
+    catch err
+        err isa InterruptException && rethrow()
+        throw(ArgumentError("unsupported ECP link step source path column"))
+    end
+    to_certificate = try
+        ecp_column_reduction_certificate(collect(to_column), R)
+    catch err
+        err isa InterruptException && rethrow()
+        throw(ArgumentError("unsupported ECP link step target path column"))
+    end
+    raw_factors = vcat(_ecp_inverse_factor_sequence(to_certificate.factors), from_certificate.factors)
+
+    if support_family == :supplied_fixture_identity_sl2_endpoint_transport
+        endpoint_transport_matrix = _factor_sequence_product(raw_factors, R, length(from_column))
+        endpoint_transport_matrix * matrix(R, length(from_column), 1, collect(from_column)) ==
+            matrix(R, length(to_column), 1, collect(to_column)) ||
+            throw(ErrorException("internal error: ECP link step endpoint transport does not map path endpoints"))
+        return (; from_certificate, to_certificate, endpoint_transport_matrix, factors = raw_factors,
+            sl3_route_matrices = (), sl3_route_certificates = (), sl3_route_factor_groups = (),
+            sl3_route_metadata = ())
+    elseif support_family == :polynomial_sl3_route_endpoint_transport
+        route_certificates = Any[]
+        for factor in raw_factors
+            append!(route_certificates, _ecp_link_step_route_certificates_for_factor(factor))
+        end
+        sl3_route_certificates = tuple(route_certificates...)
+        sl3_route_matrices = tuple((cert.matrix for cert in sl3_route_certificates)...)
+        sl3_route_factor_groups = tuple((tuple(cert.factors...) for cert in sl3_route_certificates)...)
+        factors = Any[]
+        for group in sl3_route_factor_groups
+            append!(factors, group)
+        end
+        endpoint_transport_matrix = _factor_sequence_product(factors, R, length(from_column))
+        endpoint_transport_matrix * matrix(R, length(from_column), 1, collect(from_column)) ==
+            matrix(R, length(to_column), 1, collect(to_column)) ||
+            throw(ErrorException("internal error: ECP link step endpoint transport does not map path endpoints"))
+        sl3_route_metadata = _ecp_link_step_route_metadata(sl3_route_certificates)
+        return (; from_certificate, to_certificate, endpoint_transport_matrix, factors,
+            sl3_route_matrices, sl3_route_certificates, sl3_route_factor_groups,
+            sl3_route_metadata)
+    end
+    throw(ArgumentError("unsupported ECP link step family $(support_family)"))
 end
 
 function _ecp_link_step_base_characteristic_is(R, value::Integer)
@@ -3213,33 +3444,7 @@ function _ecp_link_step_matches_qq_fixture(witness::ECPLinkWitnessRecord)
 end
 
 function _ecp_link_step_identity_transport(R, from_column, to_column, link_identity, support_family::Symbol)
-    link_identity.overall_ok ||
-        throw(ArgumentError("ECP link step requires a replayed link identity"))
-    support_family == :supplied_fixture_identity_sl2_endpoint_transport ||
-        throw(ArgumentError("unsupported ECP link step family $(support_family)"))
-    from_certificate = try
-        ecp_column_reduction_certificate(collect(from_column), R)
-    catch err
-        err isa InterruptException && rethrow()
-        throw(ArgumentError("unsupported ECP link step source path column"))
-    end
-    to_certificate = try
-        ecp_column_reduction_certificate(collect(to_column), R)
-    catch err
-        err isa InterruptException && rethrow()
-        throw(ArgumentError("unsupported ECP link step target path column"))
-    end
-    factors = vcat(_ecp_inverse_factor_sequence(to_certificate.factors), from_certificate.factors)
-    endpoint_transport_matrix = _factor_sequence_product(factors, R, length(from_column))
-    endpoint_transport_matrix * matrix(R, length(from_column), 1, collect(from_column)) ==
-        matrix(R, length(to_column), 1, collect(to_column)) ||
-        throw(ErrorException("internal error: ECP link step endpoint transport does not map path endpoints"))
-    return (;
-        from_certificate,
-        to_certificate,
-        endpoint_transport_matrix,
-        factors,
-    )
+    return _ecp_link_step_endpoint_transport(R, from_column, to_column, link_identity, support_family)
 end
 
 function _ecp_default_public_normality_witness(lower_factors, n::Int, R)
@@ -3282,6 +3487,10 @@ function _ecp_link_step_segment_verification(
     from_certificate,
     to_certificate,
     link_identity,
+    sl3_route_matrices,
+    sl3_route_certificates,
+    sl3_route_factor_groups,
+    sl3_route_metadata,
 )
     n = length(from_column)
     from_matrix = matrix(R, n, 1, collect(from_column))
@@ -3289,16 +3498,45 @@ function _ecp_link_step_segment_verification(
     sl2_block_ok = nrows(sl2_block) == 2 &&
         ncols(sl2_block) == 2 &&
         _same_base_ring(base_ring(sl2_block), R) &&
-        det(sl2_block) == one(R) &&
-        sl2_block == identity_matrix(R, 2)
+        det(sl2_block) == one(R)
     sl2_embedding_ok = sl2_embedding == block_embedding(sl2_block, n, (1, 2))
-    support_family_ok = support_family == :supplied_fixture_identity_sl2_endpoint_transport
+    support_family_ok = support_family in (
+        :supplied_fixture_identity_sl2_endpoint_transport,
+        :polynomial_sl3_route_endpoint_transport,
+    )
     endpoint_reductions_ok = verify_ecp_column_reduction(from_certificate) &&
         verify_ecp_column_reduction(to_certificate) &&
         from_certificate.original_column == collect(from_column) &&
         to_certificate.original_column == collect(to_column)
     endpoint_transport_ok = endpoint_transport_matrix == _factor_sequence_product(forward_factors, R, n)
     elementary_factors_ok = _ecp_factor_sequences_equal(elementary_factors, forward_factors)
+    route_lengths_ok = length(sl3_route_matrices) == length(sl3_route_certificates) &&
+        length(sl3_route_matrices) == length(sl3_route_factor_groups) &&
+        length(sl3_route_matrices) == length(sl3_route_metadata)
+    route_certificates_ok = route_lengths_ok && all((
+        _verify_polynomial_factorization_route_certificate(sl3_route_certificates[idx]) &&
+        sl3_route_certificates[idx].status == :supported &&
+        sl3_route_certificates[idx].matrix == sl3_route_matrices[idx] &&
+        tuple(sl3_route_certificates[idx].factors...) == sl3_route_factor_groups[idx]
+        for idx in eachindex(sl3_route_certificates)
+    ))
+    route_metadata_ok = route_lengths_ok && all((
+        get(sl3_route_metadata[idx], :source, nothing) == :polynomial_factorization_route_certificate &&
+        get(sl3_route_metadata[idx], :obligation_index, nothing) == idx &&
+        get(sl3_route_metadata[idx], :route, nothing) == sl3_route_certificates[idx].route &&
+        get(sl3_route_metadata[idx], :status, nothing) == sl3_route_certificates[idx].status &&
+        get(sl3_route_metadata[idx], :factor_count, nothing) == length(sl3_route_certificates[idx].factors)
+        for idx in eachindex(sl3_route_metadata)
+    ))
+    route_family_ok = if support_family == :supplied_fixture_identity_sl2_endpoint_transport
+        isempty(sl3_route_matrices) &&
+            isempty(sl3_route_certificates) &&
+            isempty(sl3_route_factor_groups) &&
+            isempty(sl3_route_metadata) &&
+            sl2_block == identity_matrix(R, 2)
+    else
+        route_lengths_ok && route_certificates_ok && route_metadata_ok
+    end
     forward_map_ok = _apply_reduction_factors(forward_factors, collect(from_column), R) == to_matrix
     inverse_map_ok = _apply_reduction_factors(inverse_factors, collect(to_column), R) == from_matrix
     inverse_sequence_ok = _ecp_factor_sequences_equal(inverse_factors, _ecp_inverse_factor_sequence(forward_factors))
@@ -3308,6 +3546,7 @@ function _ecp_link_step_segment_verification(
         endpoint_reductions_ok &&
         endpoint_transport_ok &&
         elementary_factors_ok &&
+        route_family_ok &&
         link_identity.overall_ok &&
         forward_map_ok &&
         inverse_map_ok &&
@@ -3320,6 +3559,10 @@ function _ecp_link_step_segment_verification(
         endpoint_reductions_ok,
         endpoint_transport_ok,
         elementary_factors_ok,
+        route_family_ok,
+        route_lengths_ok,
+        route_certificates_ok,
+        route_metadata_ok,
         link_identity_ok = link_identity.overall_ok,
         forward_map_ok,
         inverse_map_ok,
@@ -3350,6 +3593,8 @@ function _ecp_link_step_replay_summary(certificate)
     path_points_ok = certificate.path_points == certificate.link_witness.path_points
     recomputed_path_columns = witness_ok ? _ecp_link_step_path_columns(certificate.link_witness) : ()
     path_columns_ok = certificate.path_columns == recomputed_path_columns
+    route_mode_ok = certificate.route_mode ==
+        _ecp_link_step_resolve_route_mode(certificate.link_witness, certificate.route_mode)
     transformed_column_ok = !isempty(recomputed_path_columns) &&
         certificate.transformed_column == certificate.original_column &&
         certificate.transformed_column == recomputed_path_columns[end]
@@ -3357,7 +3602,11 @@ function _ecp_link_step_replay_summary(certificate)
         certificate.lower_variable_column == recomputed_path_columns[1]
 
     recomputed_segments = try
-        path_columns_ok ? _ecp_link_step_segments(certificate.link_witness, recomputed_path_columns) : ()
+        path_columns_ok ? _ecp_link_step_segments(
+            certificate.link_witness,
+            recomputed_path_columns;
+            route_mode = certificate.route_mode,
+        ) : ()
     catch err
         err isa InterruptException && rethrow()
         ()
@@ -3382,6 +3631,7 @@ function _ecp_link_step_replay_summary(certificate)
         input_ok &&
         path_points_ok &&
         path_columns_ok &&
+        route_mode_ok &&
         transformed_column_ok &&
         lower_variable_column_ok &&
         segments_ok &&
@@ -3395,6 +3645,7 @@ function _ecp_link_step_replay_summary(certificate)
         input_ok,
         path_points_ok,
         path_columns_ok,
+        route_mode_ok,
         transformed_column_ok,
         lower_variable_column_ok,
         segments_ok,
@@ -3430,6 +3681,10 @@ function _ecp_link_step_segment_equivalent(left, right)
         left.endpoint_transport_matrix == right.endpoint_transport_matrix &&
         _ecp_column_certificates_equivalent(left.from_certificate, right.from_certificate) &&
         _ecp_column_certificates_equivalent(left.to_certificate, right.to_certificate) &&
+        tuple(left.sl3_route_matrices...) == tuple(right.sl3_route_matrices...) &&
+        _ecp_route_certificates_equivalent(left.sl3_route_certificates, right.sl3_route_certificates) &&
+        tuple(left.sl3_route_factor_groups...) == tuple(right.sl3_route_factor_groups...) &&
+        left.sl3_route_metadata == right.sl3_route_metadata &&
         left.link_identity == right.link_identity &&
         left.verification == right.verification
 end
@@ -3442,6 +3697,21 @@ function _ecp_column_certificates_equivalent(left, right)
         _ecp_factor_sequences_equal(left.factors, right.factors) &&
         left.final_column == right.final_column &&
         left.verification == right.verification
+end
+
+function _ecp_route_certificates_equivalent(left, right)
+    length(left) == length(right) || return false
+    for idx in eachindex(left)
+        _verify_polynomial_factorization_route_certificate(left[idx]) || return false
+        _verify_polynomial_factorization_route_certificate(right[idx]) || return false
+        left[idx].matrix == right[idx].matrix || return false
+        left[idx].route == right[idx].route || return false
+        tuple(left[idx].factors...) == tuple(right[idx].factors...) || return false
+        left[idx].product == right[idx].product || return false
+        left[idx].status == right[idx].status || return false
+        left[idx].verification == right[idx].verification || return false
+    end
+    return true
 end
 
 function _ecp_column_reduction_replay_summary(certificate)
