@@ -55,6 +55,18 @@ function _general_replace_route_certificate_factor(certificate, factor_index::In
     )
 end
 
+function _general_link_witness_data(witness; residue_probes = witness.residue_probes)
+    return (;
+        source = :supplied_link_witness,
+        residue_probes,
+        tail_reductions = witness.tail_reductions,
+        resultants = witness.resultants,
+        bezout_coefficients = witness.bezout_coefficients,
+        coverage_multipliers = witness.coverage_multipliers,
+        path_points = witness.path_points,
+    )
+end
+
 @testset "ECP link steps route through general SL3 certificates" begin
     cases = ECPMainlineFixtureCatalog.cases_by_id()
     entry = cases["ecp-mainline-sl3-route-qq"]
@@ -110,6 +122,30 @@ end
           matrix(R, length(record.transformed_column), 1, collect(record.transformed_column))
     @test _general_link_apply(record.reduction_factors, record.transformed_column, R) ==
           matrix(R, length(record.lower_variable_column), 1, collect(record.lower_variable_column))
+
+    nonfixture_probes = (
+        merge(witness.residue_probes[1], (; maximal_ideal_generators = (entry.ring.generators[1],))),
+        witness.residue_probes[2],
+    )
+    nonfixture_witness = Suslin.ecp_link_witness(
+        column,
+        R;
+        variable_order = entry.ring.generators,
+        selected_variable = entry.selected_variable.generator,
+        supplied_link_witness = _general_link_witness_data(
+            witness;
+            residue_probes = nonfixture_probes,
+        ),
+    )
+    @test Suslin.verify_ecp_link_witness(nonfixture_witness)
+    @test !Suslin._ecp_link_step_matches_qq_fixture(nonfixture_witness)
+    auto_record = Suslin.ecp_link_step_certificate(column, R; link_witness = nonfixture_witness)
+    @test auto_record.route_mode == :polynomial_sl3
+    @test all(
+        segment -> segment.support_family == :polynomial_sl3_route_endpoint_transport,
+        auto_record.segments,
+    )
+    @test Suslin.verify_ecp_link_step_certificate(auto_record)
 
     first_segment = record.segments[1]
     first_route = first_segment.sl3_route_certificates[1]

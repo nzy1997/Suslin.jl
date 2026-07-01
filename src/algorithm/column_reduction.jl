@@ -3148,20 +3148,14 @@ function _ecp_link_step_resolve_route_mode(witness::ECPLinkWitnessRecord, route_
     route_mode in (:auto, :legacy_fixture, :polynomial_sl3) ||
         throw(ArgumentError("unsupported ECP link step route_mode $(route_mode)"))
     if route_mode == :auto
-        return _ecp_link_step_prefers_legacy_fixture(witness) ?
+        return (
+            _ecp_link_step_matches_gf2_fixture(witness) ||
+            _ecp_link_step_matches_qq_fixture(witness)
+        ) ?
             :legacy_fixture :
             :polynomial_sl3
     end
     return route_mode
-end
-
-function _ecp_link_step_prefers_legacy_fixture(witness::ECPLinkWitnessRecord)
-    if _ecp_link_step_matches_gf2_fixture(witness) || _ecp_link_step_matches_qq_fixture(witness)
-        return true
-    end
-    return get(witness.metadata, :source, nothing) == :supplied_link_witness &&
-        !isempty(witness.residue_probes) &&
-        all(probe -> get(probe, :kind, nothing) == :deterministic_fixture, witness.residue_probes)
 end
 
 function _ecp_link_step_supported_family(witness::ECPLinkWitnessRecord, route_mode::Symbol)
@@ -3227,51 +3221,6 @@ function _ecp_link_step_route_certificate(factor)
     return certificate
 end
 
-function _ecp_link_step_route_split_seed(factor)
-    R = base_ring(factor)
-    generators = tuple(gens(R)...)
-    isempty(generators) &&
-        throw(ArgumentError("ECP link step staged SL_3 route obligation has no polynomial generator seed"))
-    return first(generators)
-end
-
-function _ecp_link_step_elementary_factor_entry(factor)
-    R = base_ring(factor)
-    n = nrows(factor)
-    n == ncols(factor) || throw(ArgumentError("expected a square elementary factor"))
-    identity = identity_matrix(R, n)
-    positions = [(row, col) for row in 1:n, col in 1:n if factor[row, col] != identity[row, col]]
-    length(positions) == 1 || throw(ArgumentError("expected an elementary factor with one off-diagonal entry"))
-    row, col = only(positions)
-    row != col || throw(ArgumentError("expected an off-diagonal elementary factor"))
-    return row, col, factor[row, col]
-end
-
-function _ecp_link_step_route_certificates_for_factor(factor)
-    direct = _polynomial_factorization_route_certificate(
-        factor;
-        allow_recursive_column_peel = false,
-    )
-    if direct.status == :supported
-        _verify_polynomial_factorization_route_certificate(direct) ||
-            throw(ArgumentError("ECP link step SL_3 route certificate does not verify"))
-        direct.product == factor ||
-            throw(ArgumentError("ECP link step SL_3 route certificate product does not match its obligation"))
-        return (direct,)
-    end
-
-    row, col, entry = _ecp_link_step_elementary_factor_entry(factor)
-    R = base_ring(factor)
-    seed = _ecp_link_step_route_split_seed(factor)
-    lifted = elementary_matrix(nrows(factor), row, col, entry + seed, R)
-    seed_inverse = elementary_matrix(nrows(factor), row, col, -seed, R)
-    lifted_cert = _ecp_link_step_route_certificate(lifted)
-    seed_inverse_cert = _ecp_link_step_route_certificate(seed_inverse)
-    lifted * seed_inverse == factor ||
-        throw(ArgumentError("ECP link step staged SL_3 route split does not reproduce its obligation"))
-    return (lifted_cert, seed_inverse_cert)
-end
-
 function _ecp_link_step_route_metadata(route_certificates)
     return tuple((
         (;
@@ -3313,7 +3262,7 @@ function _ecp_link_step_endpoint_transport(R, from_column, to_column, link_ident
     elseif support_family == :polynomial_sl3_route_endpoint_transport
         route_certificates = Any[]
         for factor in raw_factors
-            append!(route_certificates, _ecp_link_step_route_certificates_for_factor(factor))
+            push!(route_certificates, _ecp_link_step_route_certificate(factor))
         end
         sl3_route_certificates = tuple(route_certificates...)
         sl3_route_matrices = tuple((cert.matrix for cert in sl3_route_certificates)...)
@@ -3463,6 +3412,7 @@ function _ecp_inverse_elementary_factor(factor)
     n == ncols(factor) || throw(ArgumentError("expected a square elementary factor"))
     identity = identity_matrix(R, n)
     positions = [(row, col) for row in 1:n, col in 1:n if factor[row, col] != identity[row, col]]
+    isempty(positions) && return identity
     length(positions) == 1 || throw(ArgumentError("expected an elementary factor with one off-diagonal entry"))
     row, col = only(positions)
     row != col || throw(ArgumentError("expected an off-diagonal elementary factor"))

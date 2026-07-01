@@ -340,10 +340,18 @@ end
         supplied_link_witness = relabelled_unit_tail.witness,
     )
     @test Suslin.verify_ecp_link_witness(relabelled_unit_tail_record)
+    relabelled_unit_tail_auto = Suslin.ecp_link_step_certificate(
+        relabelled_unit_tail.column,
+        relabelled_unit_tail.R;
+        link_witness = relabelled_unit_tail_record,
+    )
+    @test relabelled_unit_tail_auto.route_mode == :polynomial_sl3
+    @test Suslin.verify_ecp_link_step_certificate(relabelled_unit_tail_auto)
     @test_throws ArgumentError Suslin.ecp_link_step_certificate(
         relabelled_unit_tail.column,
         relabelled_unit_tail.R;
         link_witness = relabelled_unit_tail_record,
+        route_mode = :legacy_fixture,
     )
 
     extra_generator = _extra_generator_gf2_case()
@@ -355,10 +363,18 @@ end
         supplied_link_witness = extra_generator.witness,
     )
     @test Suslin.verify_ecp_link_witness(extra_generator_record)
+    extra_generator_auto = Suslin.ecp_link_step_certificate(
+        extra_generator.column,
+        extra_generator.R;
+        link_witness = extra_generator_record,
+    )
+    @test extra_generator_auto.route_mode == :polynomial_sl3
+    @test Suslin.verify_ecp_link_step_certificate(extra_generator_auto)
     @test_throws ArgumentError Suslin.ecp_link_step_certificate(
         extra_generator.column,
         extra_generator.R;
         link_witness = extra_generator_record,
+        route_mode = :legacy_fixture,
     )
 
     zero_delta_differences, zero_delta_ok = Suslin._ecp_link_step_divided_differences(
