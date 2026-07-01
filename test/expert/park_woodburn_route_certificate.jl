@@ -398,6 +398,28 @@ end
     bad_provider_cert = _pw_replace_certificate(sl3_cert; evidence = bad_provider_evidence)
     @test !Suslin._verify_polynomial_factorization_route_certificate(bad_provider_cert)
 
+    tampered_issue236_witness = merge(
+        sl3_cert.evidence.context.local_form_witness,
+        (; monic_entry_position = (1, 2)),
+    )
+    tampered_issue236_context = _pw_rebuild(
+        sl3_cert.evidence.context;
+        local_form_witness = tampered_issue236_witness,
+    )
+    tampered_issue236_evidence = _pw_rebuild(
+        sl3_cert.evidence;
+        context = tampered_issue236_context,
+    )
+    tampered_issue236_cert =
+        _pw_replace_certificate(sl3_cert; evidence = tampered_issue236_evidence)
+    @test !Suslin._verify_sl3_realization_input_context(tampered_issue236_context)
+    @test !Suslin._verify_polynomial_sl3_quillen_murthy_route_evidence(
+        tampered_issue236_evidence,
+    )
+    @test !Suslin._verify_polynomial_factorization_route_certificate(
+        tampered_issue236_cert,
+    )
+
     tampered_consumption = _pw_rebuild(
         sl3_cert.evidence.quillen_consumption;
         replay_metadata = (; source = :tampered_consumption),

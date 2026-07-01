@@ -75,6 +75,50 @@ end
     @test issue238_cert.evidence isa Suslin.PolynomialSL3QuillenMurthyRouteEvidence
     @test issue238_factors == issue238_cert.factors
     @test Suslin._verify_polynomial_factorization_route_certificate(issue238_cert)
+    @test issue238_cert.status == :supported
+    issue238_evidence = issue238_cert.evidence
+    @test issue238_evidence.context.catalog_metadata.context_issue_id == "#235"
+    @test issue238_evidence.context.catalog_metadata.driver_issue_id == "#184"
+    @test Suslin._verify_sl3_realization_input_context(issue238_evidence.context)
+    @test issue238_evidence.witness_selection.local_form_witness.witness_issue_id == "#236"
+    @test Suslin._verify_sl3_local_form_witness_selection(
+        issue238_evidence.witness_selection,
+    )
+    @test issue238_evidence.local_evidence_provider.metadata.provider_issue_id == "#237"
+    @test Suslin._verify_sl3_murthy_quillen_local_evidence_provider(
+        issue238_evidence.local_evidence_provider,
+    )
+    @test Suslin.verify_quillen_murthy_adapter_consumption(
+        issue238_evidence.quillen_consumption,
+    )
+    @test Suslin._verify_polynomial_quillen_patch_route_adapter(
+        issue238_evidence.quillen_route_adapter,
+    )
+    issue238_route_metadata =
+        issue238_evidence.quillen_route_adapter.quillen_patch.replay_metadata.metadata
+    @test issue238_route_metadata.context_issue_id == "#235"
+    @test issue238_route_metadata.witness_issue_id == "#236"
+    @test issue238_route_metadata.provider_issue_id == "#237"
+    @test issue238_route_metadata.patch_issue_id == "#220"
+
+    corrupted_issue238_factors = copy(issue238_factors)
+    corrupted_issue238_factors[1] =
+        corrupted_issue238_factors[1] *
+        elementary_matrix(3, 1, 2, one(issue238_R), issue238_R)
+    @test !verify_factorization(issue238_A, corrupted_issue238_factors)
+
+    missing_issue236_witness =
+        elementary_matrix(3, 1, 3, issue238_X, issue238_R) *
+        elementary_matrix(3, 2, 1, issue238_r, issue238_R)
+    missing_issue236_factors, missing_issue236_err =
+        _pw_acceptance_result_or_error(missing_issue236_witness)
+    @test missing_issue236_factors === nothing
+    @test missing_issue236_err isa ArgumentError
+    @test occursin(
+        "evidence-backed SL_3 polynomial route",
+        sprint(showerror, missing_issue236_err),
+    )
+    @test occursin("#236 local-form witness", sprint(showerror, missing_issue236_err))
 
     S = base_ring(quillen)
     X, r, g = collect(gens(S))
