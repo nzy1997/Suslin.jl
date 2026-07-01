@@ -196,24 +196,24 @@ end
         link_step = unsupported.link,
     )
 
-    bad_normality_witness = merge(
-        _replace_namedtuple_field(
-            (;
-                source = :supplied_normality_witness,
-                conjugator = inv(_general_factor_product(lower.factors, R, length(column))),
-                sl2_indices = (length(column), 1),
-                sl2_entry = zero(R),
-            ),
-            :sl2_entry,
-            zero(R),
-        ),
-        NamedTuple(),
+    valid_normality_witness = (;
+        source = :supplied_normality_witness,
+        conjugator = inv(_general_factor_product(lower.factors, R, length(column))),
+        sl2_indices = (length(column), 1),
+        sl2_entry = one(R),
+    )
+    mismatched_normality_certificate = Suslin.realize_conjugate_elementary_certificate(
+        valid_normality_witness.conjugator,
+        length(column),
+        1,
+        valid_normality_witness.sl2_entry + one(R),
     )
     @test_throws Regex("missing normality rewrite") Suslin.ecp_induction_normality_certificate(
         column,
         R;
         link_step = link,
         lower_reduction = lower,
-        normality_witness = bad_normality_witness,
+        normality_witness = valid_normality_witness,
+        normality_certificate = mismatched_normality_certificate,
     )
 end
