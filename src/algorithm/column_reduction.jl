@@ -177,6 +177,7 @@ struct ECPInductionNormalityCertificate
     ring
     link_step::ECPLinkStepCertificate
     lower_variable_column
+    descent_measure
     lower_reduction_certificate
     lower_variable_factors::Vector
     lifted_lower_variable_factors::Vector
@@ -774,26 +775,54 @@ function ecp_induction_normality_certificate(
         throw(ArgumentError("ECP induction/normality input column must match the link-step column"))
 
     lower_column = collect(link_step.lower_variable_column)
-    lower_certificate, lower_factors = _ecp_verified_lower_reduction(lower_reduction, lower_column, R)
+    descent_measure = _ecp_induction_descent_measure(link_step, R)
+    _ecp_descent_measure_strict(descent_measure) ||
+        throw(ArgumentError("ECP induction/normality staged failure: same-context recursive lower-variable call did not strictly reduce selected-variable profile"))
+    lower_certificate, lower_factors = try
+        _ecp_verified_lower_reduction(lower_reduction, lower_column, R)
+    catch err
+        err isa InterruptException && rethrow()
+        throw(ArgumentError("ECP induction/normality staged failure: missing lower-variable reduction: $(sprint(showerror, err))"))
+    end
     lifted_lower_factors = [_lift_polynomial_reduction_factor(factor, R) for factor in lower_factors]
-    normality_rewrite = _ecp_induction_normality_rewrite(
-        normality_witness,
-        normality_certificate,
-        lower_column,
+    resolved_normality_witness = normality_witness === nothing ?
+        _ecp_construct_normality_witness(
+            lifted_lower_factors,
+            length(lower_column),
+            R,
+            descent_measure.selected_variable,
+        ) :
+        normality_witness
+    normality_rewrite = try
+        _ecp_induction_normality_rewrite(
+            resolved_normality_witness,
+            normality_certificate,
+            lower_column,
+            lifted_lower_factors,
+            R,
+        )
+    catch err
+        err isa InterruptException && rethrow()
+        throw(ArgumentError("ECP induction/normality staged failure: missing normality rewrite: $(sprint(showerror, err))"))
+    end
+    final_factors = _ecp_induction_final_factors(
         lifted_lower_factors,
+        normality_rewrite.rewrite_factors,
+        link_step.reduction_factors,
         R,
+        length(column),
     )
-    final_factors = vcat(lifted_lower_factors, normality_rewrite.rewrite_factors, link_step.reduction_factors)
     final_column = _apply_reduction_factors(final_factors, column, R)
     provisional = ECPInductionNormalityCertificate(
         tuple(column...),
         R,
         link_step,
         tuple(lower_column...),
+        descent_measure,
         lower_certificate,
         lower_factors,
         lifted_lower_factors,
-        normality_witness,
+        resolved_normality_witness,
         normality_rewrite.normality_certificate,
         normality_rewrite,
         final_factors,
@@ -808,6 +837,7 @@ function ecp_induction_normality_certificate(
         provisional.ring,
         provisional.link_step,
         provisional.lower_variable_column,
+        provisional.descent_measure,
         provisional.lower_reduction_certificate,
         provisional.lower_variable_factors,
         provisional.lifted_lower_variable_factors,
@@ -2225,13 +2255,74 @@ function _ecp_verified_lower_reduction(lower_reduction, lower_column, R)
         throw(ArgumentError("lower-variable factor sequence must contain only elementary factors over R"))
     _apply_reduction_factors(factors, lower_column, R) == _target_reduced_column(R, length(lower_column)) ||
         throw(ArgumentError("lower-variable factor sequence does not reduce v(0) to e_n"))
-    return nothing, factors
+    certificate = ecp_column_reduction_certificate(lower_column, R)
+    _ecp_factor_sequences_equal(factors, certificate.factors) ||
+        throw(ArgumentError("lower-variable factor sequence must match the verified lower ECP certificate"))
+    return certificate, certificate.factors
 end
 
 function _ecp_is_concrete_factor_sequence(value)
     value isa AbstractVector && return true
     value isa Tuple && !(value isa NamedTuple) && return true
     return false
+end
+
+function _ecp_selected_variable_profile(column, R, selected_variable_index::Int)
+    return tuple((Int(degree(entry, selected_variable_index)) for entry in column)...)
+end
+
+function _ecp_induction_descent_measure(link_step::ECPLinkStepCertificate, R)
+    verify_ecp_link_step_certificate(link_step) ||
+        throw(ArgumentError("ECP induction/normality descent requires a verified link-step certificate"))
+    _same_base_ring(link_step.ring, R) ||
+        throw(ArgumentError("ECP induction/normality descent ring must match the link-step ring"))
+    selected_variable_index = link_step.link_witness.selected_variable_index
+    selected_variable = gens(R)[selected_variable_index]
+    parent_profile = _ecp_selected_variable_profile(link_step.original_column, R, selected_variable_index)
+    lower_profile = _ecp_selected_variable_profile(link_step.lower_variable_column, R, selected_variable_index)
+    componentwise_nonincreasing = all(
+        lower_profile[idx] <= parent_profile[idx]
+        for idx in eachindex(parent_profile)
+    )
+    strict_descent = componentwise_nonincreasing &&
+        any(lower_profile[idx] < parent_profile[idx] for idx in eachindex(parent_profile))
+    return (;
+        variable_count = ngens(R),
+        column_length = length(link_step.original_column),
+        selected_variable_index,
+        selected_variable,
+        parent_profile,
+        lower_profile,
+        componentwise_nonincreasing,
+        strict_descent,
+    )
+end
+
+function _ecp_descent_measure_strict(measure)::Bool
+    try
+        return measure.componentwise_nonincreasing === true &&
+            measure.strict_descent === true
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function _ecp_construct_normality_witness(lifted_lower_factors, n::Int, R, selected_variable)
+    lower_product = _factor_sequence_product(lifted_lower_factors, R, n)
+    entry = _coerce_into_ring(R, selected_variable + one(R), "constructed normality witness sl2_entry")
+    entry != zero(R) ||
+        throw(ArgumentError("constructed normality witness produced an identity SL_2 contribution"))
+    return (;
+        source = :constructed_normality_witness,
+        conjugator = inv(lower_product),
+        sl2_indices = (n, 1),
+        sl2_entry = entry,
+    )
+end
+
+function _ecp_induction_final_factors(lifted_lower_factors, rewrite_factors, link_reduction_factors, R, n::Int)
+    return vcat(lifted_lower_factors, rewrite_factors, link_reduction_factors)
 end
 
 function _ecp_induction_normality_rewrite(normality_witness, lower_column, lifted_lower_factors, R)
@@ -2243,8 +2334,8 @@ function _ecp_induction_normality_rewrite(normality_witness, normality_certifica
         throw(ArgumentError("ECP induction/normality requires explicit normality witness data"))
     _ecp_normality_witness_keys_ok(normality_witness) ||
         throw(ArgumentError("normality witness must contain source, conjugator, sl2_indices, and sl2_entry"))
-    normality_witness.source == :supplied_normality_witness ||
-        throw(ArgumentError("normality witness must use source = :supplied_normality_witness"))
+    normality_witness.source in (:supplied_normality_witness, :constructed_normality_witness) ||
+        throw(ArgumentError("normality witness must use a supported ECP normality witness source"))
 
     n = length(lower_column)
     lower_product = _factor_sequence_product(lifted_lower_factors, R, n)
@@ -2288,7 +2379,7 @@ function _ecp_induction_normality_rewrite(normality_witness, normality_certifica
     fixed_lower_column_ok = rewrite_product * lower_matrix == lower_matrix
     rewrite_product_ok = rewrite_product == expected_rewrite_product
     return (;
-        source = :supplied_normality_witness,
+        source = normality_witness.source,
         conjugator,
         lower_product,
         sl2_indices,
@@ -2695,12 +2786,20 @@ function _ecp_induction_normality_replay_summary(certificate)
     input_ok = link_step_ok && certificate.original_column == certificate.link_step.original_column
     lower_variable_column_ok = link_step_ok &&
         certificate.lower_variable_column == certificate.link_step.lower_variable_column
+    descent_measure = try
+        link_step_ok ? _ecp_induction_descent_measure(certificate.link_step, R) : nothing
+    catch err
+        err isa InterruptException && rethrow()
+        nothing
+    end
+    descent_measure_ok = descent_measure !== nothing &&
+        certificate.descent_measure == descent_measure
+    descent_strict_ok = descent_measure !== nothing &&
+        _ecp_descent_measure_strict(descent_measure)
 
     lower_certificate, lower_factors = try
         _ecp_verified_lower_reduction(
-            certificate.lower_reduction_certificate === nothing ?
-                certificate.lower_variable_factors :
-                certificate.lower_reduction_certificate,
+            certificate.lower_reduction_certificate,
             collect(certificate.lower_variable_column),
             R,
         )
@@ -2708,9 +2807,14 @@ function _ecp_induction_normality_replay_summary(certificate)
         err isa InterruptException && rethrow()
         nothing, Any[]
     end
-    lower_reduction_ok = _ecp_factor_sequences_equal(certificate.lower_variable_factors, lower_factors)
+    lower_reduction_certificate_ok = lower_certificate !== nothing &&
+        certificate.lower_reduction_certificate == lower_certificate &&
+        verify_ecp_column_reduction(certificate.lower_reduction_certificate)
+    lower_reduction_ok = lower_reduction_certificate_ok &&
+        _ecp_factor_sequences_equal(certificate.lower_variable_factors, lower_factors)
     lifted_lower_factors = [_lift_polynomial_reduction_factor(factor, R) for factor in lower_factors]
-    lifted_lower_factors_ok = _ecp_factor_sequences_equal(certificate.lifted_lower_variable_factors, lifted_lower_factors)
+    lifted_lower_factors_ok = lower_reduction_certificate_ok &&
+        _ecp_factor_sequences_equal(certificate.lifted_lower_variable_factors, lifted_lower_factors)
 
     normality_rewrite = try
         _ecp_induction_normality_rewrite(
@@ -2733,7 +2837,13 @@ function _ecp_induction_normality_replay_summary(certificate)
 
     expected_final_factors = normality_rewrite === nothing ?
         Any[] :
-        vcat(certificate.lifted_lower_variable_factors, normality_rewrite.rewrite_factors, certificate.link_step.reduction_factors)
+        _ecp_induction_final_factors(
+            certificate.lifted_lower_variable_factors,
+            normality_rewrite.rewrite_factors,
+            certificate.link_step.reduction_factors,
+            R,
+            n,
+        )
     final_factors_ok = _ecp_factor_sequences_equal(certificate.final_factors, expected_final_factors)
     final_column = final_factors_ok ?
         _apply_reduction_factors(certificate.final_factors, collect(certificate.original_column), R) :
@@ -2744,6 +2854,9 @@ function _ecp_induction_normality_replay_summary(certificate)
     overall_ok = link_step_ok &&
         input_ok &&
         lower_variable_column_ok &&
+        descent_measure_ok &&
+        descent_strict_ok &&
+        lower_reduction_certificate_ok &&
         lower_reduction_ok &&
         lifted_lower_factors_ok &&
         normality_rewrite_ok &&
@@ -2757,6 +2870,9 @@ function _ecp_induction_normality_replay_summary(certificate)
         link_step_ok,
         input_ok,
         lower_variable_column_ok,
+        descent_measure_ok,
+        descent_strict_ok,
+        lower_reduction_certificate_ok,
         lower_reduction_ok,
         lifted_lower_factors_ok,
         normality_rewrite_ok,
@@ -2775,6 +2891,8 @@ function _ecp_is_elementary_factor(factor, R, n::Int)
         _same_base_ring(base_ring(factor), R) || return false
         identity = identity_matrix(R, n)
         positions = [(row, col) for row in 1:n, col in 1:n if factor[row, col] != identity[row, col]]
+        # Link-step certificates can store the zero elementary factor E_ij(0).
+        isempty(positions) && return true
         length(positions) == 1 || return false
         row, col = only(positions)
         return row != col

@@ -313,12 +313,14 @@ end
         normality_witness = identity_witness,
     )
 
-    @test_throws ArgumentError Suslin.ecp_induction_normality_certificate(
+    automatic_normality = Suslin.ecp_induction_normality_certificate(
         qq.column,
         qq.R;
         link_step = qq.link,
         lower_reduction = qq.lower,
     )
+    @test automatic_normality.normality_witness.source == :constructed_normality_witness
+    @test Suslin.verify_ecp_induction_normality_certificate(automatic_normality)
 
     wrong_conjugator_witness = merge(qq.witness, (; conjugator = identity_matrix(qq.R, length(qq.column))))
     @test_throws ArgumentError Suslin.ecp_induction_normality_certificate(
