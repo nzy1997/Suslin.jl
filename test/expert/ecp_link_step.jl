@@ -266,6 +266,8 @@ end
     @test qq_record.verification.composed_reduction_ok == true
     @test all(segment -> segment.support_family == :supplied_fixture_identity_sl2_endpoint_transport, qq_record.segments)
     @test all(segment -> segment.verification.endpoint_transport_ok, qq_record.segments)
+    @test Suslin._ecp_link_step_supported_family(qq_record.link_witness) ==
+          :supplied_fixture_identity_sl2_endpoint_transport
     _assert_link_step_segment_maps(qq_record)
     _assert_link_step_composed_maps(qq_record)
     @test Suslin.verify_ecp_link_step_certificate(qq_record)
