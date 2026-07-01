@@ -1721,6 +1721,11 @@ function _supported_local_sl3_generator(A, R, ring_profile::Symbol)
     return ring_gens[1]
 end
 
+function _polynomial_sl3_quillen_murthy_staged_failure_message(sl3_error)
+    detail = sl3_error === nothing ? "" : ": $(sprint(showerror, sl3_error))"
+    return "determinant-one polynomial input is outside the implemented evidence-backed SL_3 polynomial route$(detail)"
+end
+
 function _throw_staged_factorization_failure(A, ring_profile::Symbol, normalization)
     n = nrows(A)
 
@@ -1735,8 +1740,7 @@ function _throw_staged_factorization_failure(A, ring_profile::Symbol, normalizat
 
     if length(collect(gens(base_ring(A)))) > 1
         sl3_error = n == 3 ? _polynomial_sl3_quillen_murthy_route_error(A) : nothing
-        detail = sl3_error === nothing ? "" : " ($(sprint(showerror, sl3_error)))"
-        throw(ArgumentError("determinant-one polynomial input is outside the implemented Quillen/local evidence route: missing Quillen/local realizability witness$(detail)"))
+        throw(ArgumentError(_polynomial_sl3_quillen_murthy_staged_failure_message(sl3_error)))
     end
 
     if n > 3
@@ -1914,6 +1918,8 @@ end
 function _polynomial_sl3_quillen_murthy_local_form_witness(A, selected_variable, entries)
     return (;
         entries,
+        p = entries.p,
+        monic_entry_position = (1, 1),
         source_matrix = A,
         selected_variable,
         replay_steps = ((; kind = :issue238_already_special_form_replay),),
@@ -2304,14 +2310,20 @@ function _polynomial_sl3_quillen_murthy_route_fields(A; metadata = (;))
         local_form_witness,
     )
     selection = _select_sl3_local_form_witness(context)
-    provider = _sl3_murthy_quillen_local_evidence_provider(
-        selection;
-        metadata = (;
-            source = :sl3_quillen_murthy_polynomial_route,
-            route_issue_id = "#238",
-            provider_issue_id = "#237",
-        ),
-    )
+    provider = try
+        _sl3_murthy_quillen_local_evidence_provider(
+            selection;
+            metadata = (;
+                source = :sl3_quillen_murthy_polynomial_route,
+                route_issue_id = "#238",
+                provider_issue_id = "#237",
+            ),
+        )
+    catch err
+        err isa InterruptException && rethrow()
+        err isa ArgumentError || rethrow()
+        throw(ArgumentError("SL_3 Quillen/Murthy route is missing #237 ordinary Quillen local evidence: $(sprint(showerror, err))"))
+    end
     provider.staged_diagnostic.status == :supported ||
         throw(ArgumentError("SL_3 Quillen/Murthy route is missing #237 ordinary Quillen local evidence: $(provider.staged_diagnostic.message)"))
     provider.murthy_adapter.mode == :ordinary_quillen_factor_sequence ||
@@ -2326,14 +2338,20 @@ function _polynomial_sl3_quillen_murthy_route_fields(A; metadata = (;))
         base_term_factors,
         metadata,
     )
-    raw_consumption = consume_murthy_quillen_adapters_for_patch(
-        A,
-        selected_variable,
-        [provider.murthy_adapter];
-        base_term_policy,
-        base_term_factors,
-        metadata = route_metadata,
-    )
+    raw_consumption = try
+        consume_murthy_quillen_adapters_for_patch(
+            A,
+            selected_variable,
+            [provider.murthy_adapter];
+            base_term_policy,
+            base_term_factors,
+            metadata = route_metadata,
+        )
+    catch err
+        err isa InterruptException && rethrow()
+        err isa ArgumentError || rethrow()
+        throw(ArgumentError("SL_3 Quillen/Murthy route is missing #220 verified global Quillen patch evidence: $(sprint(showerror, err))"))
+    end
     verify_quillen_murthy_adapter_consumption(raw_consumption) ||
         throw(ArgumentError("SL_3 Quillen/Murthy route #219/#220 adapter consumption and global patch evidence does not replay"))
     consumption = _polynomial_sl3_quillen_murthy_route_consumption(raw_consumption, route_metadata)
@@ -2363,7 +2381,11 @@ function _polynomial_sl3_quillen_murthy_route_core_verification(evidence)
     route_ok = evidence.route == :quillen_patch
     context_ok =
         _verify_sl3_realization_input_context(evidence.context) &&
-        evidence.context.matrix == evidence.target
+        evidence.context.matrix == evidence.target &&
+        evidence.context.local_form_status == :replayed &&
+        evidence.context.evidence_status == :replayable &&
+        evidence.context.support_status == :supported &&
+        evidence.context.staged_diagnostic.status == :supported
     selection_ok =
         context_ok &&
         _verify_sl3_local_form_witness_selection(evidence.witness_selection) &&
@@ -2912,7 +2934,7 @@ function _polynomial_staged_failure_evidence(A; allow_recursive_column_peel::Boo
         end
         return (;
             error_type = :ArgumentError,
-            message = "determinant-one polynomial input is outside the implemented Quillen/local evidence route: missing Quillen/local realizability witness ($(sprint(showerror, sl3_error)))",
+            message = _polynomial_sl3_quillen_murthy_staged_failure_message(sl3_error),
         )
     end
 

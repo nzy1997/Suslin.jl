@@ -133,6 +133,9 @@ function _issue238_assert_sl3_route_evidence(cert, A)
     @test evidence.target == A
     @test evidence.route == :quillen_patch
     @test Suslin._verify_sl3_realization_input_context(evidence.context)
+    @test evidence.context.local_form_status == :replayed
+    @test evidence.context.evidence_status == :replayable
+    @test evidence.context.support_status == :supported
     @test Suslin._verify_sl3_local_form_witness_selection(evidence.witness_selection)
     @test Suslin._verify_sl3_murthy_quillen_local_evidence_provider(
         evidence.local_evidence_provider,
@@ -663,7 +666,7 @@ end
         _pw_captured_error(() -> Suslin._polynomial_verified_certificate_factors(staged_empty_message_cert))
     @test staged_empty_message_err isa ArgumentError
     @test occursin(
-        "missing Quillen/local realizability witness",
+        "evidence-backed SL_3 polynomial route",
         sprint(showerror, staged_empty_message_err),
     )
 

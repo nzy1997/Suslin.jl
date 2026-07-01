@@ -92,7 +92,8 @@ end
     multivariate_sl3 = identity_matrix(S, 3)
     multivariate_err = _captured_error(() -> elementary_factorization(multivariate_sl3))
     @test multivariate_err isa ArgumentError
-    @test occursin("missing Quillen/local realizability witness", sprint(showerror, multivariate_err))
+    @test occursin("evidence-backed SL_3 polynomial route", sprint(showerror, multivariate_err))
+    @test occursin("#236 local-form witness", sprint(showerror, multivariate_err))
 
     ZR, (ZX, Zr) = Oscar.polynomial_ring(ZZ, ["X", "r"])
     unsupported_coefficient_quillen =
@@ -223,8 +224,18 @@ end
         elementary_matrix(3, 2, 1, issue238_r, issue238_R)
     missing_witness_err = _captured_error(() -> elementary_factorization(missing_witness))
     @test missing_witness_err isa ArgumentError
-    @test occursin("missing Quillen/local realizability witness", sprint(showerror, missing_witness_err))
+    @test occursin("evidence-backed SL_3 polynomial route", sprint(showerror, missing_witness_err))
     @test occursin("#236 local-form witness", sprint(showerror, missing_witness_err))
+
+    missing_provider_evidence =
+        elementary_matrix(3, 1, 2, one(issue238_R), issue238_R) *
+        elementary_matrix(3, 2, 1, issue238_X, issue238_R) *
+        elementary_matrix(3, 1, 2, one(issue238_R), issue238_R)
+    missing_provider_err =
+        _captured_error(() -> elementary_factorization(missing_provider_evidence))
+    @test missing_provider_err isa ArgumentError
+    @test occursin("evidence-backed SL_3 polynomial route", sprint(showerror, missing_provider_err))
+    @test occursin("#237 ordinary Quillen local evidence", sprint(showerror, missing_provider_err))
 
     quillen_unsupported =
         elementary_matrix(3, 2, 1, Sr + one(S), S) *
@@ -232,14 +243,14 @@ end
     quillen_unsupported_err =
         _captured_error(() -> elementary_factorization(quillen_unsupported))
     @test quillen_unsupported_err isa ArgumentError
-    @test occursin("missing Quillen/local realizability witness", sprint(showerror, quillen_unsupported_err))
+    @test occursin("evidence-backed SL_3 polynomial route", sprint(showerror, quillen_unsupported_err))
 
     recursive_unsupported = entries["pw-poly-recursive-column-peel-gf2"].matrix
     recursive_unsupported_err =
         _captured_error(() -> elementary_factorization(recursive_unsupported))
     @test recursive_unsupported_err isa ArgumentError
     @test occursin(
-        "missing Quillen/local realizability witness",
+        "evidence-backed SL_3 polynomial route",
         sprint(showerror, recursive_unsupported_err),
     )
 end
