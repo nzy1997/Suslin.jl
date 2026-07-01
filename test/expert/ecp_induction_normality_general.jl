@@ -50,7 +50,10 @@ end
 
 function _tamper_lower_certificate_first_factor(cert)
     factors = copy(cert.factors)
-    factors[1] = identity_matrix(cert.ring, length(cert.original_column))
+    identity = identity_matrix(cert.ring, length(cert.original_column))
+    idx = findfirst(factor -> factor != identity, factors)
+    idx === nothing && error("expected lower ECP certificate to contain a non-identity factor")
+    factors[idx] = identity
     return Suslin.ECPColumnReductionCertificate(
         cert.original_column,
         cert.ring,
@@ -124,6 +127,11 @@ end
     @test Suslin.verify_conjugate_elementary_certificate(cert.normality_certificate)
     @test cert.normality_rewrite.normality_certificate == cert.normality_certificate
     @test Suslin.verify_ecp_induction_normality_certificate(cert)
+    @test cert.final_factors == vcat(
+        cert.lifted_lower_variable_factors,
+        cert.normality_rewrite.rewrite_factors,
+        cert.link_step.reduction_factors,
+    )
     @test _apply_factors(cert.final_factors, column, R) ==
           Suslin._target_reduced_column(R, length(column))
 
@@ -137,6 +145,10 @@ end
     tampered_lower_certificate = _replace_record_field(cert, :lower_reduction_certificate, nothing)
     @test !Suslin.verify_ecp_induction_normality_certificate(tampered_lower_certificate)
 
+    @test any(
+        factor -> factor != identity_matrix(R, length(cert.lower_reduction_certificate.original_column)),
+        cert.lower_reduction_certificate.factors,
+    )
     corrupted_lower_certificate = _replace_record_field(
         cert,
         :lower_reduction_certificate,

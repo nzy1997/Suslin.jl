@@ -2322,9 +2322,7 @@ function _ecp_construct_normality_witness(lifted_lower_factors, n::Int, R, selec
 end
 
 function _ecp_induction_final_factors(lifted_lower_factors, rewrite_factors, link_reduction_factors, R, n::Int)
-    identity = identity_matrix(R, n)
-    concatenated = vcat(lifted_lower_factors, rewrite_factors, link_reduction_factors)
-    return [factor for factor in concatenated if factor != identity]
+    return vcat(lifted_lower_factors, rewrite_factors, link_reduction_factors)
 end
 
 function _ecp_induction_normality_rewrite(normality_witness, lower_column, lifted_lower_factors, R)
@@ -2893,6 +2891,8 @@ function _ecp_is_elementary_factor(factor, R, n::Int)
         _same_base_ring(base_ring(factor), R) || return false
         identity = identity_matrix(R, n)
         positions = [(row, col) for row in 1:n, col in 1:n if factor[row, col] != identity[row, col]]
+        # Link-step certificates can store the zero elementary factor E_ij(0).
+        isempty(positions) && return true
         length(positions) == 1 || return false
         row, col = only(positions)
         return row != col
