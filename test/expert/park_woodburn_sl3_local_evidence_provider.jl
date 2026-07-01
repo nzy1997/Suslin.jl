@@ -9,6 +9,13 @@ if !isdefined(Main, :SL3MurthyGuptaFixtureCatalog)
     include(PARK_WOODBURN_SL3_LOCAL_EVIDENCE_FIXTURE_PATH)
 end
 
+mutable struct Issue237InterruptComparable
+    value::Int
+end
+
+Base.:(==)(::Issue237InterruptComparable, ::Issue237InterruptComparable) =
+    throw(InterruptException())
+
 function _issue237_rebuild(record; kwargs...)
     overrides = Dict{Symbol,Any}(pair.first => pair.second for pair in kwargs)
     values = map(fieldnames(typeof(record))) do name
@@ -170,6 +177,34 @@ end
     @test provider.quillen_local_sequences[1].local_product == case.A
     @test provider.quillen_local_sequences[1].witness_metadata == provider.witness_metadata
     @test Suslin._verify_sl3_murthy_quillen_local_evidence_provider(provider)
+
+    @test_throws ArgumentError Suslin._sl3_realization_input_context(
+        case.A;
+        selected_variable = (; name = "X", generator = case.X, index = 1, status = :passes),
+        catalog_metadata = merge(case.context_metadata, (; expected_status = :unsupported)),
+        local_form_witness = case.witness_metadata,
+    )
+
+    @test Suslin._same_cached_provenance_data(
+        (Ref(1), Ref(2)),
+        (Ref(1), Ref(2)),
+    )
+    @test !Suslin._same_cached_provenance_data(
+        (Ref(1),),
+        (Ref(1), Ref(2)),
+    )
+    @test Suslin._same_cached_provenance_data(
+        [Ref(1), Ref(2)],
+        [Ref(1), Ref(2)],
+    )
+    @test !Suslin._same_cached_provenance_data(
+        [Ref(1)],
+        [Ref(1), Ref(2)],
+    )
+    @test_throws InterruptException Suslin._same_cached_provenance_data(
+        Issue237InterruptComparable(1),
+        Issue237InterruptComparable(1),
+    )
 
     retagged_witness_metadata = merge(
         case.witness_metadata,
