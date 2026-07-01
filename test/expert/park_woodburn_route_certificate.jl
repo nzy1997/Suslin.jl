@@ -381,6 +381,8 @@ end
     @test isempty(sl3_cert.evidence.base_term_factors)
     @test sl3_cert.evidence.quillen_route_adapter.quillen_patch.base_term_policy ==
           :already_handled
+    @test Suslin._polynomial_sl3_quillen_murthy_route_error(issue238.A) === nothing
+    @test Suslin._polynomial_staged_failure_evidence(issue238.A).error_type == :none
 
     bad_provider = _pw_rebuild(
         sl3_cert.evidence.local_evidence_provider;
@@ -407,6 +409,12 @@ end
     bad_consumption_cert = _pw_replace_certificate(sl3_cert; evidence = bad_consumption_evidence)
     @test !Suslin._verify_polynomial_factorization_route_certificate(bad_consumption_cert)
 
+    malformed_consumption = _pw_rebuild(
+        sl3_cert.evidence.quillen_consumption;
+        murthy_adapters = Any[nothing],
+    )
+    @test !Suslin.verify_quillen_murthy_adapter_consumption(malformed_consumption)
+
     tampered_patch = _pw_rebuild(
         sl3_cert.evidence.quillen_route_adapter.quillen_patch;
         replay_metadata = (; source = :tampered_patch),
@@ -421,6 +429,35 @@ end
     )
     bad_patch_cert = _pw_replace_certificate(sl3_cert; evidence = bad_patch_evidence)
     @test !Suslin._verify_polynomial_factorization_route_certificate(bad_patch_cert)
+
+    bad_quillen_patch_shape_cert = _pw_replace_certificate(sl3_cert; evidence = (;))
+    @test !Suslin._verify_polynomial_factorization_route_certificate(
+        bad_quillen_patch_shape_cert,
+    )
+
+    exploding_replay_metadata_evidence = _pw_rebuild(
+        sl3_cert.evidence;
+        replay_metadata = PWRouteExplodingEq(),
+    )
+    @test !Suslin._verify_polynomial_sl3_quillen_murthy_route_evidence(
+        exploding_replay_metadata_evidence,
+    )
+
+    missing_global_patch_evidence_err = _pw_captured_error(() ->
+        Suslin._polynomial_sl3_quillen_murthy_route_fields(
+            issue238.A;
+            metadata = PWRouteExplodingEq(),
+        )
+    )
+    @test missing_global_patch_evidence_err isa ArgumentError
+    @test occursin(
+        "#220 verified global Quillen patch evidence",
+        sprint(showerror, missing_global_patch_evidence_err),
+    )
+    @test occursin(
+        "route evidence equality sentinel",
+        sprint(showerror, missing_global_patch_evidence_err),
+    )
 
     route_metadata =
         sl3_cert.evidence.quillen_route_adapter.quillen_patch.replay_metadata.metadata
