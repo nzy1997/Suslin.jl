@@ -159,6 +159,7 @@ end
     unsupported_err = captured_reduction_error(unsupported, R)
     @test unsupported_err isa ArgumentError
     @test occursin("unsupported exact unimodular column reduction", sprint(showerror, unsupported_err))
+    @test occursin("general ECP pipeline", sprint(showerror, unsupported_err))
     @test !occursin("not unimodular", sprint(showerror, unsupported_err))
 
     short_err = captured_reduction_error([one(R), zero(R)], R)

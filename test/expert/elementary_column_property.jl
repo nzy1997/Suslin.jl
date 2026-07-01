@@ -44,6 +44,26 @@ function _ecp_acceptance_gf2_cases()
     ]
 end
 
+function _ecp_acceptance_length4_general_case()
+    R, (x, y) = Oscar.polynomial_ring(QQ, ["x", "y"])
+    column = [
+        x * y,
+        x * (one(R) - y),
+        (one(R) - x) * y,
+        (one(R) - x) * (one(R) - y),
+    ]
+    for (target, source, coeff) in (
+        (2, 4, -x * y - y),
+        (3, 2, -x * y - y),
+        (4, 3, x^2),
+        (2, 3, x * y + y),
+        (2, 3, -y - one(R)),
+    )
+        column[target] += coeff * column[source]
+    end
+    return R, column
+end
+
 function _ecp_acceptance_good_link_witness(column, R)
     x, y = gens(R)
     G = y * column[2] + column[3]
@@ -123,6 +143,35 @@ end
     legacy = Suslin.ecp_column_reduction_certificate(canonical, R)
     @test any(stage -> stage.kind == :monicity_normalization, legacy.stages)
     @test legacy.factors != staged.factors
+
+    general_R, general_column = _ecp_acceptance_length4_general_case()
+    @test length(general_column) > 3
+    @test Suslin.is_unimodular_column(general_column, general_R)
+    @test !any(is_unit, general_column)
+    @test Suslin._reduce_supported_unimodular_column_certificate(general_column, general_R) === nothing
+    @test Suslin._reduce_via_supported_three_block_certificate(general_column, general_R) === nothing
+
+    general_cert = Suslin.ecp_column_reduction_certificate(general_column, general_R)
+    @test Suslin.verify_ecp_column_reduction(general_cert)
+    @test general_cert.stages[end].kind == :ecp_pipeline
+    @test general_cert.stages[end].route_metadata.route == :general_ecp_pipeline
+    @test general_cert.stages[end].route_metadata.link_route_mode == :direct_elementary
+    @test general_cert.stages[end].route_metadata.normalized_column_length == length(general_column)
+    @test _ecp_acceptance_apply(general_cert.factors, general_column, general_R) ==
+          _ecp_acceptance_target(general_R, length(general_column))
+    @test Suslin.reduce_unimodular_column(general_column, general_R) == general_cert.factors
+
+    tampered_factors = copy(general_cert.factors)
+    tampered_factors[1] = identity_matrix(general_R, length(general_column))
+    tampered_cert = Suslin.ECPColumnReductionCertificate(
+        general_cert.original_column,
+        general_cert.ring,
+        general_cert.stages,
+        tampered_factors,
+        general_cert.final_column,
+        general_cert.verification,
+    )
+    @test !Suslin.verify_ecp_column_reduction(tampered_cert)
 
     explicit_public_staged = Suslin._ecp_public_staged_reduction_certificate(
         canonical,
