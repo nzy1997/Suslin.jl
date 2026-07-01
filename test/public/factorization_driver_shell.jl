@@ -202,6 +202,28 @@ end
     @test nonfixture_quillen_cert.evidence.quillen_patch isa
           Suslin.QuillenSuppliedEvidencePatchAssembly
 
+    issue238_R, (issue238_X, issue238_r, issue238_g) =
+        Oscar.polynomial_ring(QQ, ["X", "r", "g"])
+    issue238_p = issue238_X + issue238_r * issue238_g + one(issue238_R)
+    issue238_A = matrix(issue238_R, [
+        issue238_p one(issue238_R) zero(issue238_R);
+        issue238_X + issue238_r * issue238_g one(issue238_R) zero(issue238_R);
+        zero(issue238_R) zero(issue238_R) one(issue238_R)
+    ])
+    issue238_factors = elementary_factorization(issue238_A)
+    @test verify_factorization(issue238_A, issue238_factors)
+    issue238_cert = Suslin._polynomial_factorization_route_certificate(issue238_A)
+    @test issue238_cert.route == :quillen_patch
+    @test issue238_cert.evidence isa Suslin.PolynomialSL3QuillenMurthyRouteEvidence
+    @test issue238_factors == issue238_cert.factors
+    @test Suslin._verify_polynomial_factorization_route_certificate(issue238_cert)
+
+    missing_witness = identity_matrix(issue238_R, 3)
+    missing_witness_err = _captured_error(() -> elementary_factorization(missing_witness))
+    @test missing_witness_err isa ArgumentError
+    @test occursin("missing Quillen/local realizability witness", sprint(showerror, missing_witness_err))
+    @test occursin("#236 local-form witness", sprint(showerror, missing_witness_err))
+
     quillen_unsupported =
         elementary_matrix(3, 2, 1, Sr + one(S), S) *
         elementary_matrix(3, 1, 2, SX * Sr + Sg + one(S), S)

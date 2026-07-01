@@ -58,6 +58,24 @@ end
     @test Suslin._verify_polynomial_quillen_patch_route_adapter(quillen_cert.evidence)
     @test Suslin._verify_polynomial_factorization_route_certificate(quillen_cert)
 
+    issue238_R, (issue238_X, issue238_r, issue238_g) =
+        Oscar.polynomial_ring(QQ, ["X", "r", "g"])
+    issue238_p = issue238_X + issue238_r * issue238_g + one(issue238_R)
+    issue238_A = matrix(issue238_R, [
+        issue238_p one(issue238_R) zero(issue238_R);
+        issue238_X + issue238_r * issue238_g one(issue238_R) zero(issue238_R);
+        zero(issue238_R) zero(issue238_R) one(issue238_R)
+    ])
+    issue238_factors, issue238_err = _pw_acceptance_result_or_error(issue238_A)
+    @test issue238_err === nothing
+    @test issue238_factors !== nothing
+    @test verify_factorization(issue238_A, issue238_factors)
+    issue238_cert = Suslin._polynomial_factorization_route_certificate(issue238_A)
+    @test issue238_cert.route == :quillen_patch
+    @test issue238_cert.evidence isa Suslin.PolynomialSL3QuillenMurthyRouteEvidence
+    @test issue238_factors == issue238_cert.factors
+    @test Suslin._verify_polynomial_factorization_route_certificate(issue238_cert)
+
     S = base_ring(quillen)
     X, r, g = collect(gens(S))
     nonfixture_quillen = elementary_matrix(

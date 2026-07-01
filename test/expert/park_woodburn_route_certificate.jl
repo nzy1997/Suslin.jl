@@ -107,6 +107,56 @@ function _pw_corrupt_route_peel_evidence(cert)
     return _pw_replace_certificate(cert; evidence = bad_evidence)
 end
 
+function _issue238_sl3_route_case()
+    R, (X, r, g) = Oscar.polynomial_ring(QQ, ["X", "r", "g"])
+    p = X + r * g + one(R)
+    q = one(R)
+    s = one(R)
+    lower = X + r * g
+    A = matrix(R, [
+        p q zero(R);
+        lower s zero(R);
+        zero(R) zero(R) one(R)
+    ])
+    @assert det(A) == one(R)
+    return (; R, X, r, g, p, q, s, lower, A)
+end
+
+function _issue238_assert_sl3_route_evidence(cert, A)
+    @test cert.route == :quillen_patch
+    @test cert.status == :supported
+    @test cert.evidence isa Suslin.PolynomialSL3QuillenMurthyRouteEvidence
+    @test Suslin._verify_polynomial_factorization_route_certificate(cert)
+    @test verify_factorization(A, cert.factors)
+
+    evidence = cert.evidence
+    @test evidence.target == A
+    @test evidence.route == :quillen_patch
+    @test Suslin._verify_sl3_realization_input_context(evidence.context)
+    @test Suslin._verify_sl3_local_form_witness_selection(evidence.witness_selection)
+    @test Suslin._verify_sl3_murthy_quillen_local_evidence_provider(
+        evidence.local_evidence_provider,
+    )
+    @test Suslin.verify_quillen_murthy_adapter_consumption(evidence.quillen_consumption)
+    @test Suslin._verify_polynomial_quillen_patch_route_adapter(
+        evidence.quillen_route_adapter,
+    )
+    @test evidence.local_evidence_provider.staged_diagnostic.status == :supported
+    @test evidence.local_evidence_provider.murthy_adapter.mode ==
+          :ordinary_quillen_factor_sequence
+    @test evidence.quillen_consumption.patch == evidence.quillen_route_adapter.quillen_patch
+    @test evidence.quillen_route_adapter.quillen_patch.replay_metadata.metadata.source ==
+          :sl3_quillen_murthy_polynomial_route
+    @test evidence.quillen_route_adapter.quillen_patch.replay_metadata.metadata.context_issue_id ==
+          "#235"
+    @test evidence.quillen_route_adapter.quillen_patch.replay_metadata.metadata.witness_issue_id ==
+          "#236"
+    @test evidence.quillen_route_adapter.quillen_patch.replay_metadata.metadata.provider_issue_id ==
+          "#237"
+    @test evidence.quillen_route_adapter.quillen_patch.replay_metadata.metadata.patch_issue_id ==
+          "#220"
+end
+
 function _pw_replace_reduction(
         reduction;
         ring = reduction.ring,
@@ -316,6 +366,59 @@ end
           elementary_matrix(3, 1, 3, g + one(S), S)
     @test nonfixture_quillen_cert.evidence.quillen_patch.substitution_chain.verification.telescope_ok
     @test verify_factorization(nonfixture_quillen, nonfixture_quillen_cert.factors)
+
+    issue238 = _issue238_sl3_route_case()
+    sl3_cert = Suslin._polynomial_factorization_route_certificate(
+        issue238.A;
+        allow_recursive_column_peel = false,
+    )
+    _issue238_assert_sl3_route_evidence(sl3_cert, issue238.A)
+    @test sl3_cert.factors == sl3_cert.evidence.quillen_route_adapter.global_elementary_factors
+    @test sl3_cert.evidence.base_term_policy == :already_handled
+    @test isempty(sl3_cert.evidence.base_term_factors)
+    @test sl3_cert.evidence.quillen_route_adapter.quillen_patch.base_term_policy ==
+          :already_handled
+
+    bad_provider = _pw_rebuild(
+        sl3_cert.evidence.local_evidence_provider;
+        staged_diagnostic = merge(
+            sl3_cert.evidence.local_evidence_provider.staged_diagnostic,
+            (; status = :staged),
+        ),
+    )
+    bad_provider_evidence = _pw_rebuild(
+        sl3_cert.evidence;
+        local_evidence_provider = bad_provider,
+    )
+    bad_provider_cert = _pw_replace_certificate(sl3_cert; evidence = bad_provider_evidence)
+    @test !Suslin._verify_polynomial_factorization_route_certificate(bad_provider_cert)
+
+    tampered_consumption = _pw_rebuild(
+        sl3_cert.evidence.quillen_consumption;
+        replay_metadata = (; source = :tampered_consumption),
+    )
+    bad_consumption_evidence = _pw_rebuild(
+        sl3_cert.evidence;
+        quillen_consumption = tampered_consumption,
+    )
+    bad_consumption_cert = _pw_replace_certificate(sl3_cert; evidence = bad_consumption_evidence)
+    @test !Suslin._verify_polynomial_factorization_route_certificate(bad_consumption_cert)
+
+    tampered_patch = _pw_rebuild(
+        sl3_cert.evidence.quillen_route_adapter.quillen_patch;
+        replay_metadata = (; source = :tampered_patch),
+    )
+    tampered_adapter = _pw_rebuild(
+        sl3_cert.evidence.quillen_route_adapter;
+        quillen_patch = tampered_patch,
+    )
+    bad_patch_evidence = _pw_rebuild(
+        sl3_cert.evidence;
+        quillen_route_adapter = tampered_adapter,
+    )
+    bad_patch_cert = _pw_replace_certificate(sl3_cert; evidence = bad_patch_evidence)
+    @test !Suslin._verify_polynomial_factorization_route_certificate(bad_patch_cert)
+
     nonfixture_quillen_data = Suslin._polynomial_quillen_supplied_evidence_data(nonfixture_quillen)
     @test nonfixture_quillen_data !== nothing
     @test all(
