@@ -1945,6 +1945,8 @@ function _ecp_resolve_selected_monic_index(
 end
 
 function _ecp_monicity_normalization_full_reduction_certificate(column::AbstractVector, R)
+    length(column) >= 3 || return nothing
+
     supported = _reduce_supported_unimodular_column_certificate(column, R)
     supported !== nothing && return supported
 
@@ -4799,11 +4801,13 @@ function _diagnose_polynomial_unimodular_column_reduction(
 
         if allow_general_ecp_pipeline
             push!(attempted, :general_ecp_pipeline)
+            general_failed = false
             general = try
                 _reduce_via_general_ecp_pipeline_certificate(column, R)
             catch err
                 err isa InterruptException && rethrow()
                 err isa ArgumentError || rethrow()
+                general_failed = true
                 push!(
                     details,
                     _column_reduction_stage_detail(
@@ -4828,7 +4832,8 @@ function _diagnose_polynomial_unimodular_column_reduction(
                 )
                 return (; supported = true, stage = :general_ecp_pipeline)
             end
-            push!(details, _column_reduction_stage_detail(:general_ecp_pipeline, R, :unsupported))
+            general_failed ||
+                push!(details, _column_reduction_stage_detail(:general_ecp_pipeline, R, :unsupported))
         end
 
         push!(attempted, :monicity_normalization)
@@ -4856,23 +4861,25 @@ function _diagnose_polynomial_unimodular_column_reduction(
 
     if allow_general_ecp_pipeline
         push!(attempted, :general_ecp_pipeline)
+        general_failed = false
         general = try
             _reduce_via_general_ecp_pipeline_certificate(column, R)
-            catch err
-                err isa InterruptException && rethrow()
-                err isa ArgumentError || rethrow()
-                push!(
-                    details,
+        catch err
+            err isa InterruptException && rethrow()
+            err isa ArgumentError || rethrow()
+            general_failed = true
+            push!(
+                details,
                 _column_reduction_stage_detail(
                     :general_ecp_pipeline,
                     R,
                     :staged_failure;
-                        message = _column_reduction_error_message(err),
-                    ),
-                )
-                nothing
-            end
-            if general !== nothing
+                    message = _column_reduction_error_message(err),
+                ),
+            )
+            nothing
+        end
+        if general !== nothing
             push!(
                 details,
                 _column_reduction_stage_detail(
@@ -4885,7 +4892,8 @@ function _diagnose_polynomial_unimodular_column_reduction(
             )
             return (; supported = true, stage = :general_ecp_pipeline)
         end
-        push!(details, _column_reduction_stage_detail(:general_ecp_pipeline, R, :unsupported))
+        general_failed ||
+            push!(details, _column_reduction_stage_detail(:general_ecp_pipeline, R, :unsupported))
     end
 
     push!(attempted, :monicity_normalization)

@@ -115,7 +115,11 @@ function _assert_checked_context(
     variable_order = tuple(gens(R)...),
     selected_variable = nothing,
 )
-    diagnostic = Suslin.diagnose_unimodular_column_reduction(column, R)
+    diagnostic = Suslin.diagnose_unimodular_column_reduction(
+        column,
+        R;
+        allow_general_ecp_pipeline = false,
+    )
     normalized_order = tuple(Suslin._ecp_normalize_variable_order(R, variable_order)...)
 
     @test ctx isa Suslin.ECPInputContext
