@@ -110,16 +110,16 @@ function _sln_recursive_driver_selected_variable(R, selected_variable, variable_
     selected = try
         _sln_recursive_driver_normalize_variable(R, selected_variable)
     catch err
-        err isa InterruptException && rethrow()
-        return nothing, nothing, :missing
+        err isa InterruptException && rethrow() # COV_EXCL_LINE
+        return nothing, nothing, :missing # COV_EXCL_LINE
     end
     any(variable -> variable == selected, variable_order) || return nothing, nothing, :missing
 
     selected_index = try
         _ecp_selected_variable_index(R, selected)
     catch err
-        err isa InterruptException && rethrow()
-        return nothing, nothing, :missing
+        err isa InterruptException && rethrow() # COV_EXCL_LINE
+        return nothing, nothing, :missing # COV_EXCL_LINE
     end
 
     return selected, selected_index, :passes
@@ -270,7 +270,7 @@ function _sln_recursive_driver_staged_diagnostic(
 
     status = reason_code === nothing ? :supported : :staged
     if reason_code !== nothing && !(reason_code in _SLN_RECURSIVE_DRIVER_STAGED_REASON_CODES)
-        error("unknown SL_n recursive driver staged reason code")
+        error("unknown SL_n recursive driver staged reason code") # COV_EXCL_LINE
     end
 
     message = status == :supported ?

@@ -75,6 +75,40 @@ end
     @test empty_ecp_shell_ctx.ecp_evidence_status == :missing
     @test empty_ecp_shell_ctx.staged_reason_code == :missing_ecp_evidence
 
+    recorded_symbol_ecp_ctx = Suslin._sln_recursive_driver_input_context(
+        mainline.matrix;
+        variable_order = mainline.ring.generators,
+        selected_variable = mainline.ring.generators[1],
+        ecp_witness_metadata = (; source_case_id = :symbolic_ecp_shell),
+        final_route_metadata = mainline.final_route,
+        route_provenance_metadata = mainline.route_provenance,
+        catalog_id = mainline.id,
+    )
+    @test recorded_symbol_ecp_ctx.ecp_evidence_status == :recorded
+    @test recorded_symbol_ecp_ctx.staged_reason_code == :missing_ecp_evidence
+
+    recorded_tuple_payload_ecp_ctx = Suslin._sln_recursive_driver_input_context(
+        mainline.matrix;
+        variable_order = mainline.ring.generators,
+        selected_variable = mainline.ring.generators[1],
+        ecp_witness_metadata = (; replay_steps = ((; kind = :recorded_shell),)),
+        final_route_metadata = mainline.final_route,
+        route_provenance_metadata = mainline.route_provenance,
+        catalog_id = mainline.id,
+    )
+    @test recorded_tuple_payload_ecp_ctx.ecp_evidence_status == :recorded
+
+    recorded_scalar_payload_ecp_ctx = Suslin._sln_recursive_driver_input_context(
+        mainline.matrix;
+        variable_order = mainline.ring.generators,
+        selected_variable = mainline.ring.generators[1],
+        ecp_witness_metadata = (; replay_payload = :recorded_scalar_payload),
+        final_route_metadata = mainline.final_route,
+        route_provenance_metadata = mainline.route_provenance,
+        catalog_id = mainline.id,
+    )
+    @test recorded_scalar_payload_ecp_ctx.ecp_evidence_status == :recorded
+
     multistep = entries["sln-driver-sl5-gf2-two-step"]
     multistep_ctx = _sln_context_from_entry(multistep)
     @test multistep_ctx.dimension == 5
@@ -120,6 +154,42 @@ end
     )
     @test missing_variable_ctx.staged_reason_code == :missing_variable_metadata
 
+    invalid_order_ctx = Suslin._sln_recursive_driver_input_context(
+        staged.matrix;
+        variable_order = (staged.ring.generators[1] + one(staged.ring.object),),
+        selected_variable = staged.ring.generators[1],
+        ecp_witness_metadata = staged.peel_steps[1].last_column_ecp,
+        final_route_metadata = staged.final_route,
+        route_provenance_metadata = staged.route_provenance,
+        catalog_id = staged.id,
+    )
+    @test invalid_order_ctx.variable_order_status == :missing
+    @test invalid_order_ctx.staged_reason_code == :missing_variable_metadata
+
+    invalid_selected_ctx = Suslin._sln_recursive_driver_input_context(
+        staged.matrix;
+        variable_order = staged.ring.generators,
+        selected_variable = staged.ring.generators[1] + one(staged.ring.object),
+        ecp_witness_metadata = staged.peel_steps[1].last_column_ecp,
+        final_route_metadata = staged.final_route,
+        route_provenance_metadata = staged.route_provenance,
+        catalog_id = staged.id,
+    )
+    @test invalid_selected_ctx.selected_variable_status == :missing
+    @test invalid_selected_ctx.staged_reason_code == :missing_variable_metadata
+
+    malformed_final_route_ctx = Suslin._sln_recursive_driver_input_context(
+        staged.matrix;
+        variable_order = staged.ring.generators,
+        selected_variable = staged.ring.generators[1],
+        ecp_witness_metadata = staged.peel_steps[1].last_column_ecp,
+        final_route_metadata = (; status = :replayed, case_id = "malformed-final-route", matrix = (;)),
+        route_provenance_metadata = staged.route_provenance,
+        catalog_id = staged.id,
+    )
+    @test malformed_final_route_ctx.final_route_evidence_status == :recorded
+    @test malformed_final_route_ctx.staged_reason_code == :missing_final_sl3_route
+
     det_bad = negative["sln-driver-negative-det-not-one"]
     det_bad_ctx = Suslin._sln_recursive_driver_input_context(
         det_bad.matrix;
@@ -149,4 +219,5 @@ end
     @test_throws ArgumentError Suslin._sln_recursive_driver_input_context(
         identity_matrix(mainline.ring.object, 2),
     )
+    @test !Suslin._verify_sln_recursive_driver_input_context((;))
 end
