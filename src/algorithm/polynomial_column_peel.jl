@@ -3,10 +3,34 @@ struct PolynomialColumnPeelStep
     input_matrix
     last_column::Vector
     left_factors::Vector
+    left_certificate
     after_left_matrix
     right_factors::Vector
     peeled_matrix
     next_block
+end
+
+function PolynomialColumnPeelStep(
+    dimension::Int,
+    input_matrix,
+    last_column::Vector,
+    left_factors::Vector,
+    after_left_matrix,
+    right_factors::Vector,
+    peeled_matrix,
+    next_block,
+)
+    return PolynomialColumnPeelStep(
+        dimension,
+        input_matrix,
+        last_column,
+        left_factors,
+        nothing,
+        after_left_matrix,
+        right_factors,
+        peeled_matrix,
+        next_block,
+    )
 end
 
 struct PolynomialColumnPeelCertificate
@@ -154,7 +178,8 @@ function _polynomial_column_peel_step(current)
     R = base_ring(current)
     d = nrows(current)
     last_column = [current[row, d] for row in 1:d]
-    left_factors = reduce_unimodular_column(last_column, R)
+    left_certificate = ecp_column_reduction_certificate(last_column, R)
+    left_factors = left_certificate.factors
     left_product = _factor_product(left_factors, R, d)
     recorded_column = matrix(R, d, 1, last_column)
     target_column = _column_peel_target_column(R, d)
@@ -182,6 +207,7 @@ function _polynomial_column_peel_step(current)
         current,
         last_column,
         left_factors,
+        left_certificate,
         after_left,
         right_factors,
         peeled,
@@ -273,6 +299,12 @@ function _polynomial_column_peel_core_verification(cert)
         err isa InterruptException && rethrow()
         false
     end
+    left_certificates_ok = try
+        all(_polynomial_column_peel_left_certificate_ok, cert.peel_steps)
+    catch err
+        err isa InterruptException && rethrow()
+        false
+    end
     final_certificate_ok = _polynomial_column_peel_final_certificate_ok(cert)
     factor_sequence_ok = try
         replayed_factors = _replay_polynomial_column_peel_factors(
@@ -297,18 +329,36 @@ function _polynomial_column_peel_core_verification(cert)
         err isa InterruptException && rethrow()
         false
     end
-    overall_core_ok = preconditions_ok && step_chain_ok && steps_ok && final_certificate_ok &&
-        factor_sequence_ok && product_ok && factors_ok
+    overall_core_ok = preconditions_ok && step_chain_ok && steps_ok && left_certificates_ok &&
+        final_certificate_ok && factor_sequence_ok && product_ok && factors_ok
     return (
         overall_core_ok=overall_core_ok,
         preconditions_ok=preconditions_ok,
         step_chain_ok=step_chain_ok,
         steps_ok=steps_ok,
+        left_certificates_ok=left_certificates_ok,
         final_certificate_ok=final_certificate_ok,
         factor_sequence_ok=factor_sequence_ok,
         product_ok=product_ok,
         factors_ok=factors_ok,
     )
+end
+
+function _polynomial_column_peel_left_certificate_ok(step)::Bool
+    try
+        certificate = step.left_certificate
+        certificate === nothing && return true
+        certificate isa ECPColumnReductionCertificate || return false
+        verify_ecp_column_reduction(certificate) || return false
+        certificate.original_column == step.last_column || return false
+        _same_base_ring(certificate.ring, base_ring(step.input_matrix)) || return false
+        _factor_sequences_equal(certificate.factors, step.left_factors) || return false
+        certificate.final_column == _column_peel_target_column(certificate.ring, step.dimension) || return false
+        return true
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
 end
 
 function _polynomial_column_peel_preconditions_ok(cert)::Bool
