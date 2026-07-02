@@ -50,15 +50,23 @@ verify_factorization(A, factors)
   when the certificate can materialize them over the base ring, while
   nontrivial local-witness cases are verified through localized
   denominator-cleared certificate replay.
+- The ordinary-polynomial ECP unimodular-column reducer (#185) is accepted for
+  exact field-backed ordinary polynomial rings through
+  `reduce_unimodular_column`, `ecp_column_reduction_certificate`, and replaying
+  ECP certificate verifiers. The route covers the checked input context (#243),
+  monicity normalization (#244), link witness extraction (#245), link-step
+  replay (#246), induction/normality composition (#247), and public reducer
+  dispatch (#248). Polynomial column peel records the verified ECP certificate
+  used for each last-column peel step, which gives later #186 work a stable
+  consumer boundary without claiming recursive `SL_n` matrix factorization.
 - Staged ordinary-polynomial `SL_3` inputs include determinant-one matrices with
   no supported local-form, variable-change, normality/conjugation, Murthy, or
   Quillen evidence path. Outside the evidence-backed #184 slice above,
-  Quillen automatic patching (#183), general `SL_3` (#184), the general ECP
-  reducer (#185), recursive `SL_n` (#186), full public Park-Woodburn
-  acceptance (#187), coefficient-ring support beyond exact field-backed
-  ordinary polynomial rings, arbitrary Laurent `GL_n` determinant correction,
-  Laurent/ToricBuilder mainline acceptance, and Steinberg factor-count
-  optimization remain staged boundaries.
+  Quillen automatic patching (#183), general `SL_3` (#184), recursive `SL_n`
+  (#186), full public Park-Woodburn acceptance (#187), coefficient-ring
+  support beyond exact field-backed ordinary polynomial rings, arbitrary
+  Laurent `GL_n` determinant correction, Laurent/ToricBuilder mainline
+  acceptance, and Steinberg factor-count optimization remain staged boundaries.
 
 See [ToricBuilder Integration Contract](@ref) for the first recorded
 consumer-boundary fixture contract.

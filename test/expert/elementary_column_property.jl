@@ -181,6 +181,8 @@ end
     @test general_cert.stages[end].route_metadata.normalized_column_length == length(general_column)
     @test _ecp_acceptance_apply(general_cert.factors, general_column, general_R) ==
           _ecp_acceptance_target(general_R, length(general_column))
+    @test det(_ecp_acceptance_product(general_cert.factors, general_R, length(general_column))) ==
+          one(general_R)
     @test Suslin.reduce_unimodular_column(general_column, general_R) == general_cert.factors
 
     tampered_factors = copy(general_cert.factors)

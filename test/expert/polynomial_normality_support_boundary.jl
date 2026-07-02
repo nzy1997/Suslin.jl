@@ -15,8 +15,10 @@ function _normality_boundary_required_phrases()
         "staged ECP induction/normality adapter replays a nested conjugated-elementary certificate",
         "Murthy local `SL_3` solver (#182) is supported for the proven ordinary/local-witness contract",
         "ordinary factor vectors are exposed only when the certificate can materialize them over the base ring",
-        "Quillen automatic patching (#183), general `SL_3` (#184), the general ECP reducer (#185)",
-        "recursive `SL_n` (#186), full public Park-Woodburn acceptance (#187)",
+        "ordinary-polynomial ECP unimodular-column reducer (#185) is accepted",
+        "Polynomial column peel records the verified ECP certificate used for each last-column peel step",
+        "Quillen automatic patching (#183), general `SL_3` (#184), recursive `SL_n` (#186)",
+        "full public Park-Woodburn acceptance (#187), coefficient-ring support beyond exact field-backed ordinary polynomial rings",
         "Laurent/ToricBuilder mainline acceptance, and Steinberg factor-count optimization remain staged boundaries",
     ]
 end

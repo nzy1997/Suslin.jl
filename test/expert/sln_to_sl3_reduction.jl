@@ -26,6 +26,17 @@ function _issue15_supported_matrix(R, blocks, n::Int)
     return product
 end
 
+function _issue15_wrap_column_peel_matrix(final_block, tail_entries)
+    R = base_ring(final_block)
+    n = nrows(final_block) + 1
+    length(tail_entries) == n - 1 || throw(ArgumentError("tail_entries must match final block size"))
+    wrapped = block_embedding(final_block, n, collect(1:(n - 1)))
+    for row in 1:(n - 1)
+        wrapped[row, n] = tail_entries[row]
+    end
+    return wrapped
+end
+
 function _issue15_captured_error(f)
     try
         f()
@@ -142,6 +153,23 @@ Oscar.base_ring(::Issue15InterruptMatrix) = throw(InterruptException())
     custom_reduction = reduce_sln_to_sl3(custom; block_locations = [[2, 4, 6]])
     @test verify_sln_to_sl3_reduction(custom_reduction)
     @test verify_factorization(custom, custom_reduction.factors)
+
+    peel_matrix = _issue15_wrap_column_peel_matrix(
+        block_a,
+        [X, X + one(R), X^2 + X],
+    )
+    @test nrows(peel_matrix) > 3
+    peel_cert = Suslin._polynomial_column_peel_certificate(peel_matrix)
+    @test Suslin._verify_polynomial_column_peel_certificate(peel_cert)
+    @test length(peel_cert.peel_steps) == 1
+    first_step = only(peel_cert.peel_steps)
+    @test first_step.dimension == nrows(peel_matrix)
+    @test first_step.left_certificate isa Suslin.ECPColumnReductionCertificate
+    @test Suslin.verify_ecp_column_reduction(first_step.left_certificate)
+    @test first_step.left_certificate.original_column == first_step.last_column
+    @test first_step.left_certificate.factors == first_step.left_factors
+    @test first_step.left_certificate.final_column ==
+          Suslin._column_peel_target_column(R, first_step.dimension)
 end
 
 @testset "SL_n to local SL3 reduction staged failures" begin
@@ -154,6 +182,12 @@ end
     @test unsupported_err isa ArgumentError
     @test occursin("staged SL_n to local SL_3 reduction failure", sprint(showerror, unsupported_err))
     @test !occursin("local SL_3 special-form recognition failed", sprint(showerror, unsupported_err))
+
+    det_not_one = identity_matrix(R, 4)
+    det_not_one[1, 1] = one(R) + X
+    det_err = _issue15_captured_error(() -> Suslin._polynomial_column_peel_certificate(det_not_one))
+    @test det_err isa ArgumentError
+    @test occursin("determinant-one input", sprint(showerror, det_err))
 
     bad_locations_err = _issue15_captured_error(() -> reduce_sln_to_sl3(identity_matrix(R, 6); block_locations = [[1, 2, 2]]))
     @test bad_locations_err isa ArgumentError
