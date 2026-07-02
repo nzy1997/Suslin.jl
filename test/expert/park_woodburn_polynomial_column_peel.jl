@@ -218,6 +218,19 @@ Base.iterate(::_PWPolyBadFactorList, state = 1) = state == 1 ? ((;), 2) : nothin
 Base.:(==)(::_PWPolyBadFactorList, other) = true
 Base.:(==)(other, ::_PWPolyBadFactorList) = true
 
+struct _PWPolyExplodingFinalRoute
+end
+
+Base.getproperty(::_PWPolyExplodingFinalRoute, ::Symbol) =
+    throw(ArgumentError("polynomial final route sentinel"))
+
+struct _PWPolyExplodingColumnPeelCertificate
+end
+
+Base.hasproperty(::_PWPolyExplodingColumnPeelCertificate, ::Symbol) = true
+Base.getproperty(::_PWPolyExplodingColumnPeelCertificate, ::Symbol) =
+    throw(ArgumentError("polynomial column-peel certificate sentinel"))
+
 @testset "Park-Woodburn ordinary polynomial column-peel certificates" begin
     if !isdefined(Main, :ParkWoodburnPolynomialFixtureCatalog)
         include(PARK_WOODBURN_POLY_PEEL_CATALOG_PATH)
@@ -419,4 +432,13 @@ Base.:(==)(other, ::_PWPolyBadFactorList) = true
     @test !malformed_verification.factors_ok
     @test !Suslin._polynomial_column_peel_preconditions_ok((; original_matrix = 1, peel_steps = []))
     @test !Suslin._polynomial_column_peel_final_certificate_ok((;))
+    @test !Suslin._polynomial_column_peel_quillen_issue184_final_route_ok(
+        _PWPolyExplodingFinalRoute(),
+    )
+    @test Suslin._polynomial_column_peel_final_route_provenance(
+        _PWPolyExplodingFinalRoute(),
+    ) == :unsupported_final_route
+    @test !Suslin._polynomial_column_peel_final_route_provenance_ok(
+        _PWPolyExplodingColumnPeelCertificate(),
+    )
 end
