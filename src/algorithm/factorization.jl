@@ -101,6 +101,15 @@ struct PolynomialSL3QuillenMurthyRouteEvidence
     verification
 end
 
+struct PolynomialSL3SuppliedQuillenRouteEvidence
+    target
+    route::Symbol
+    supplied_evidence
+    quillen_route_adapter::PolynomialQuillenPatchRouteAdapter
+    replay_metadata::NamedTuple
+    verification
+end
+
 struct PolynomialSL3QuillenMurthyRouteConsumption
     original_input
     ring
@@ -1901,6 +1910,150 @@ function _polynomial_quillen_supplied_evidence_route_certificate(A)
     return _polynomial_quillen_patch_route_certificate(A, patch)
 end
 
+function _polynomial_sl3_supplied_quillen_route_fields(A; metadata = (;))
+    nrows(A) == 3 && ncols(A) == 3 ||
+        throw(ArgumentError("SL_3 supplied-Quillen route requires a 3 x 3 input"))
+    data = _polynomial_quillen_supplied_evidence_data(A)
+    data === nothing &&
+        throw(ArgumentError("SL_3 supplied-Quillen route requires supplied Quillen evidence"))
+    patch = _polynomial_quillen_supplied_evidence_patch(A)
+    adapter = _polynomial_quillen_patch_route_adapter(A, patch)
+    replay_metadata = (;
+        source = :sl3_supplied_quillen_polynomial_route,
+        route_issue_id = "#263",
+        driver_issue_id = "#184",
+        patch_replay_metadata = adapter.quillen_patch.replay_metadata,
+        adapter_replay_metadata = adapter.replay_metadata,
+        metadata,
+    )
+    return (;
+        target = adapter.target_matrix,
+        route = :quillen_patch,
+        supplied_evidence = data,
+        quillen_route_adapter = adapter,
+        replay_metadata,
+    )
+end
+
+function _same_polynomial_sl3_supplied_quillen_data(left, right)::Bool
+    return left.selected_variable == right.selected_variable &&
+        left.cover_generator == right.cover_generator &&
+        left.row == right.row &&
+        left.col == right.col &&
+        left.entry == right.entry &&
+        left.base_entry == right.base_entry &&
+        left.delta_entry == right.delta_entry &&
+        left.base_term_policy == right.base_term_policy &&
+        _polynomial_route_factor_sequences_equal(left.base_term_factors, right.base_term_factors) &&
+        length(left.local_certificates) == length(right.local_certificates) &&
+        all(verify_quillen_local_factor_sequence_certificate, left.local_certificates)
+end
+
+function _same_polynomial_sl3_supplied_quillen_route_adapter(left, right)::Bool
+    return left.target == right.target &&
+        left.route == right.route &&
+        left.target_matrix == right.target_matrix &&
+        _polynomial_route_factor_sequences_equal(
+            left.global_elementary_factors,
+            right.global_elementary_factors,
+        ) &&
+        left.product == right.product &&
+        left.replay_metadata.patch_size == right.replay_metadata.patch_size &&
+        left.replay_metadata.substitution_variable == right.replay_metadata.substitution_variable &&
+        left.replay_metadata.denominator_data == right.replay_metadata.denominator_data &&
+        left.replay_metadata.local_certificate_count == right.replay_metadata.local_certificate_count &&
+        left.replay_metadata.normalized_contribution_count ==
+            right.replay_metadata.normalized_contribution_count &&
+        _verify_polynomial_quillen_patch_route_adapter(left)
+end
+
+function _polynomial_sl3_supplied_quillen_route_core_verification(evidence)
+    try
+        route_ok = evidence.route == :quillen_patch
+        fields = route_ok ? _polynomial_sl3_supplied_quillen_route_fields(evidence.target) : nothing
+        supplied_evidence_ok =
+            fields !== nothing &&
+            _same_polynomial_sl3_supplied_quillen_data(
+                evidence.supplied_evidence,
+                fields.supplied_evidence,
+            )
+        adapter_ok =
+            fields !== nothing &&
+            _same_polynomial_sl3_supplied_quillen_route_adapter(
+                evidence.quillen_route_adapter,
+                fields.quillen_route_adapter,
+            )
+        replay_metadata_ok =
+            evidence.replay_metadata.source == :sl3_supplied_quillen_polynomial_route &&
+            evidence.replay_metadata.route_issue_id == "#263" &&
+            evidence.replay_metadata.driver_issue_id == "#184" &&
+            evidence.replay_metadata.patch_replay_metadata ==
+                evidence.quillen_route_adapter.quillen_patch.replay_metadata &&
+            evidence.replay_metadata.adapter_replay_metadata ==
+                evidence.quillen_route_adapter.replay_metadata
+        overall_core_ok = route_ok && supplied_evidence_ok && adapter_ok && replay_metadata_ok
+        return (;
+            route_ok,
+            supplied_evidence_ok,
+            adapter_ok,
+            replay_metadata_ok,
+            overall_core_ok,
+        )
+    catch err
+        err isa InterruptException && rethrow()
+        return (;
+            route_ok = false,
+            supplied_evidence_ok = false,
+            adapter_ok = false,
+            replay_metadata_ok = false,
+            overall_core_ok = false,
+        )
+    end
+end
+
+function _polynomial_sl3_supplied_quillen_route_verification(evidence)
+    core = _polynomial_sl3_supplied_quillen_route_core_verification(evidence)
+    stored_verification_ok = evidence.verification == core
+    return merge(core, (; stored_verification_ok, overall_ok = core.overall_core_ok && stored_verification_ok))
+end
+
+function _verify_polynomial_sl3_supplied_quillen_route_evidence(evidence)::Bool
+    try
+        return _polynomial_sl3_supplied_quillen_route_verification(evidence).overall_ok
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function _polynomial_sl3_supplied_quillen_route_evidence(A; metadata = (;))
+    fields = _polynomial_sl3_supplied_quillen_route_fields(A; metadata)
+    raw = PolynomialSL3SuppliedQuillenRouteEvidence(
+        values(merge(fields, (; verification = nothing,)))...,
+    )
+    verification = _polynomial_sl3_supplied_quillen_route_core_verification(raw)
+    evidence = PolynomialSL3SuppliedQuillenRouteEvidence(
+        values(merge(fields, (; verification,)))...,
+    )
+    _verify_polynomial_sl3_supplied_quillen_route_evidence(evidence) ||
+        error("internal SL_3 supplied-Quillen route evidence verification failed")
+    return evidence
+end
+
+function _polynomial_sl3_supplied_quillen_route_certificate(A)
+    evidence = _polynomial_sl3_supplied_quillen_route_evidence(A)
+    adapter = evidence.quillen_route_adapter
+    factors = copy(adapter.global_elementary_factors)
+    return _polynomial_route_certificate(
+        adapter.target_matrix,
+        :quillen_patch,
+        factors,
+        adapter.product,
+        evidence,
+        :supported,
+    )
+end
+
 function _polynomial_sl3_quillen_murthy_selected_variable(A)
     R = base_ring(A)
     entries = _sl3_local_target_entries(A)
@@ -3150,6 +3303,13 @@ function _polynomial_route_evidence_ok(cert)::Bool
             elseif cert.evidence isa PolynomialSL3QuillenMurthyRouteEvidence
                 return cert.evidence.target == cert.matrix &&
                     _verify_polynomial_sl3_quillen_murthy_route_evidence(cert.evidence) &&
+                    _polynomial_route_factor_sequences_equal(
+                        cert.factors,
+                        cert.evidence.quillen_route_adapter.global_elementary_factors,
+                    )
+            elseif cert.evidence isa PolynomialSL3SuppliedQuillenRouteEvidence
+                return cert.evidence.target == cert.matrix &&
+                    _verify_polynomial_sl3_supplied_quillen_route_evidence(cert.evidence) &&
                     _polynomial_route_factor_sequences_equal(
                         cert.factors,
                         cert.evidence.quillen_route_adapter.global_elementary_factors,

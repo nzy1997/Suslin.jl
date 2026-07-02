@@ -574,8 +574,15 @@ const _POLYNOMIAL_COLUMN_PEEL_UNSUPPORTED_FINAL_ROUTE_PROVENANCE = :unsupported_
 function _polynomial_column_peel_quillen_issue184_final_route_ok(final_certificate)::Bool
     try
         final_certificate.route == :quillen_patch || return false
-        final_certificate.evidence isa PolynomialSL3QuillenMurthyRouteEvidence || return false
-        _verify_polynomial_sl3_quillen_murthy_route_evidence(final_certificate.evidence) || return false
+        if final_certificate.evidence isa PolynomialSL3QuillenMurthyRouteEvidence
+            _verify_polynomial_sl3_quillen_murthy_route_evidence(final_certificate.evidence) ||
+                return false
+        elseif final_certificate.evidence isa PolynomialSL3SuppliedQuillenRouteEvidence
+            _verify_polynomial_sl3_supplied_quillen_route_evidence(final_certificate.evidence) ||
+                return false
+        else
+            return false
+        end
         return true
     catch err
         err isa InterruptException && rethrow()
@@ -735,10 +742,16 @@ function _polynomial_column_peel_try_final_route(current; final_route=nothing)
         route == :quillen_patch && nrows(current) != 3 && continue
         certificate = try
             if route == :quillen_patch
-                _polynomial_factorization_route_certificate(
-                    current;
-                    allow_recursive_column_peel=false,
-                )
+                try
+                    _polynomial_sl3_supplied_quillen_route_certificate(current)
+                catch err
+                    err isa InterruptException && rethrow()
+                    err isa ArgumentError || rethrow()
+                    _polynomial_factorization_route_certificate(
+                        current;
+                        allow_recursive_column_peel=false,
+                    )
+                end
             else
                 _polynomial_factorization_route_certificate(
                     current;
