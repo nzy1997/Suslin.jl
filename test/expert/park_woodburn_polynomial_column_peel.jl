@@ -262,6 +262,34 @@ Base.:(==)(other, ::_PWPolyBadFactorList) = true
     @test !Suslin._polynomial_column_peel_core_verification(stripped_cert).left_certificates_ok
     @test !Suslin._verify_polynomial_column_peel_certificate(stripped_cert)
 
+    certified_legacy_step = Suslin.PolynomialColumnPeelStep(
+        first_recursive_step.dimension,
+        first_recursive_step.input_matrix,
+        first_recursive_step.last_column,
+        first_recursive_step.left_factors,
+        first_recursive_step.left_certificate,
+        first_recursive_step.after_left_matrix,
+        first_recursive_step.right_factors,
+        first_recursive_step.peeled_matrix,
+        first_recursive_step.next_block,
+    )
+    @test certified_legacy_step.left_certificate == first_recursive_step.left_certificate
+    @test certified_legacy_step.ecp_evidence == first_recursive_step.left_certificate
+    @test certified_legacy_step.ecp_route_provenance == first_recursive_step.ecp_route_provenance
+    @test Suslin._polynomial_column_peel_step_verification(certified_legacy_step).overall_ok
+
+    route_R, (route_x, route_y) = Oscar.polynomial_ring(GF(2), ["route_x", "route_y"])
+    route_column = [
+        route_x + route_y^2,
+        route_x * route_y + route_x + one(route_R),
+        route_x^2 + route_x * route_y + route_y + one(route_R),
+    ]
+    route_metadata_cert = Suslin.ecp_column_reduction_certificate(route_column, route_R)
+    @test Suslin.verify_ecp_column_reduction(route_metadata_cert)
+    @test hasproperty(route_metadata_cert.stages[end], :route_metadata)
+    @test route_metadata_cert.stages[end].route_metadata.route == :general_ecp_pipeline
+    @test Suslin._polynomial_column_peel_ecp_route(route_metadata_cert) == :general_ecp_pipeline
+
     block_recursive_entry = entries["pw-poly-recursive-column-peel-sln-block-qq"]
     block_recursive_cert = Suslin._polynomial_column_peel_certificate(block_recursive_entry.matrix)
     @test block_recursive_cert.final_block == entries[block_recursive_entry.provenance.final_case_id].matrix
