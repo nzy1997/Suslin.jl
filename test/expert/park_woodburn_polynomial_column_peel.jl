@@ -25,6 +25,7 @@ function _pw_poly_replace_step(
         input_matrix = step.input_matrix,
         last_column = step.last_column,
         left_factors = step.left_factors,
+        left_certificate = step.left_certificate,
         after_left_matrix = step.after_left_matrix,
         right_factors = step.right_factors,
         peeled_matrix = step.peeled_matrix,
@@ -34,6 +35,7 @@ function _pw_poly_replace_step(
         input_matrix,
         last_column,
         left_factors,
+        left_certificate,
         after_left_matrix,
         right_factors,
         peeled_matrix,
@@ -92,6 +94,15 @@ function _pw_poly_assert_step(step)
     @test left_product * step.input_matrix == step.after_left_matrix
     @test step.after_left_matrix * right_product == step.peeled_matrix
     @test step.peeled_matrix == block_embedding(step.next_block, step.dimension, collect(1:(step.dimension - 1)))
+    @test step.left_certificate isa Suslin.ECPColumnReductionCertificate
+    @test Suslin.verify_ecp_column_reduction(step.left_certificate)
+    @test step.left_certificate.original_column == step.last_column
+    @test step.left_certificate.factors == step.left_factors
+    @test step.left_certificate.final_column == _pw_poly_peel_target_column(R, step.dimension)
+    left_stage = step.left_certificate.stages[end]
+    if hasproperty(left_stage, :route_metadata)
+        @test hasproperty(left_stage.route_metadata, :route)
+    end
 end
 
 function _pw_poly_assert_real_peel_certificate(cert, A)
@@ -170,7 +181,25 @@ Base.:(==)(other, ::_PWPolyBadFactorList) = true
     @test explicit_recursive_cert.final_certificate.route == :fast_local_sl3
     @test recursive_cert.final_block == entries[recursive_entry.provenance.final_case_id].matrix
     @test recursive_cert.final_certificate.route == :fast_local_sl3
+    @test recursive_cert.verification.left_certificates_ok
     _pw_poly_assert_real_peel_certificate(recursive_cert, recursive_entry.matrix)
+    first_recursive_step = first(recursive_cert.peel_steps)
+    legacy_step = Suslin.PolynomialColumnPeelStep(
+        first_recursive_step.dimension,
+        first_recursive_step.input_matrix,
+        first_recursive_step.last_column,
+        first_recursive_step.left_factors,
+        first_recursive_step.after_left_matrix,
+        first_recursive_step.right_factors,
+        first_recursive_step.peeled_matrix,
+        first_recursive_step.next_block,
+    )
+    @test legacy_step.left_certificate === nothing
+    stripped_steps = copy(recursive_cert.peel_steps)
+    stripped_steps[1] = legacy_step
+    stripped_cert = _pw_poly_replace_certificate(recursive_cert; peel_steps = stripped_steps)
+    @test !Suslin._polynomial_column_peel_core_verification(stripped_cert).left_certificates_ok
+    @test !Suslin._verify_polynomial_column_peel_certificate(stripped_cert)
 
     block_recursive_entry = entries["pw-poly-recursive-column-peel-sln-block-qq"]
     block_recursive_cert = Suslin._polynomial_column_peel_certificate(block_recursive_entry.matrix)

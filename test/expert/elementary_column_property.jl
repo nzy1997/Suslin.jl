@@ -44,6 +44,26 @@ function _ecp_acceptance_gf2_cases()
     ]
 end
 
+function _ecp_acceptance_length4_general_case()
+    R, (x, y) = Oscar.polynomial_ring(QQ, ["x", "y"])
+    column = [
+        x * y,
+        x * (one(R) - y),
+        (one(R) - x) * y,
+        (one(R) - x) * (one(R) - y),
+    ]
+    for (target, source, coeff) in (
+        (2, 4, -x * y - y),
+        (3, 2, -x * y - y),
+        (4, 3, x^2),
+        (2, 3, x * y + y),
+        (2, 3, -y - one(R)),
+    )
+        column[target] += coeff * column[source]
+    end
+    return R, column
+end
+
 function _ecp_acceptance_good_link_witness(column, R)
     x, y = gens(R)
     G = y * column[2] + column[3]
@@ -119,10 +139,61 @@ end
     @test staged.induction_normality.normality_rewrite.normality_certificate ==
           staged.induction_normality.normality_certificate
     @test Suslin.verify_conjugate_elementary_certificate(staged.induction_normality.normality_certificate)
-    @test public_factors_by_name["canonical-full-route"] == staged.factors
-    legacy = Suslin.ecp_column_reduction_certificate(canonical, R)
-    @test any(stage -> stage.kind == :monicity_normalization, legacy.stages)
-    @test legacy.factors != staged.factors
+    public_cert = Suslin.ecp_column_reduction_certificate(canonical, R)
+    @test Suslin.verify_ecp_column_reduction(public_cert)
+    @test public_factors_by_name["canonical-full-route"] == public_cert.factors
+    @test public_cert.stages[end].kind == :ecp_pipeline
+    @test public_cert.stages[end].route_metadata.route == :general_ecp_pipeline
+    @test public_cert.factors != staged.factors
+    canonical_diagnostic = Suslin.diagnose_unimodular_column_reduction(canonical, R)
+    @test canonical_diagnostic.status == :supported
+    @test canonical_diagnostic.attempted_stages[end] == :general_ecp_pipeline
+    canonical_general_detail = only(filter(
+        detail -> detail.stage == :general_ecp_pipeline,
+        canonical_diagnostic.stage_details,
+    ))
+    @test canonical_general_detail.outcome == :supported
+    @test canonical_general_detail.link_route_mode == public_cert.stages[end].route_metadata.link_route_mode
+
+    general_R, general_column = _ecp_acceptance_length4_general_case()
+    @test length(general_column) > 3
+    @test Suslin.is_unimodular_column(general_column, general_R)
+    @test !any(is_unit, general_column)
+    @test Suslin._reduce_supported_unimodular_column_certificate(general_column, general_R) === nothing
+    @test Suslin._reduce_via_supported_three_block_certificate(general_column, general_R) === nothing
+
+    general_diagnostic = Suslin.diagnose_unimodular_column_reduction(general_column, general_R)
+    @test general_diagnostic.status == :supported
+    @test general_diagnostic.attempted_stages[end] == :general_ecp_pipeline
+    general_detail = only(filter(
+        detail -> detail.stage == :general_ecp_pipeline,
+        general_diagnostic.stage_details,
+    ))
+    @test general_detail.outcome == :supported
+    @test general_detail.link_route_mode == :direct_elementary
+    @test general_detail.normalized_column_length == length(general_column)
+
+    general_cert = Suslin.ecp_column_reduction_certificate(general_column, general_R)
+    @test Suslin.verify_ecp_column_reduction(general_cert)
+    @test general_cert.stages[end].kind == :ecp_pipeline
+    @test general_cert.stages[end].route_metadata.route == :general_ecp_pipeline
+    @test general_cert.stages[end].route_metadata.link_route_mode == :direct_elementary
+    @test general_cert.stages[end].route_metadata.normalized_column_length == length(general_column)
+    @test _ecp_acceptance_apply(general_cert.factors, general_column, general_R) ==
+          _ecp_acceptance_target(general_R, length(general_column))
+    @test Suslin.reduce_unimodular_column(general_column, general_R) == general_cert.factors
+
+    tampered_factors = copy(general_cert.factors)
+    tampered_factors[1] = identity_matrix(general_R, length(general_column))
+    tampered_cert = Suslin.ECPColumnReductionCertificate(
+        general_cert.original_column,
+        general_cert.ring,
+        general_cert.stages,
+        tampered_factors,
+        general_cert.final_column,
+        general_cert.verification,
+    )
+    @test !Suslin.verify_ecp_column_reduction(tampered_cert)
 
     explicit_public_staged = Suslin._ecp_public_staged_reduction_certificate(
         canonical,
@@ -174,9 +245,14 @@ end
 
     permuted = cases[2][2]
     permuted_cert = Suslin.ecp_column_reduction_certificate(permuted, R)
-    monicity_stage = only([stage for stage in permuted_cert.stages if stage.kind == :monicity_normalization])
-    @test all(factor -> base_ring(factor) == R, monicity_stage.inverse_substituted_factors)
-    @test _ecp_acceptance_apply(monicity_stage.inverse_substituted_factors, permuted, R) ==
+    pipeline_stage = only([stage for stage in permuted_cert.stages if stage.kind == :ecp_pipeline])
+    @test pipeline_stage.route_metadata.route == :general_ecp_pipeline
+    @test all(
+        factor -> base_ring(factor) == R,
+        pipeline_stage.normalization.inverse_substituted_coordinate_move_factors,
+    )
+    @test all(factor -> base_ring(factor) == R, pipeline_stage.inverse_substituted_induction_factors)
+    @test _ecp_acceptance_apply(pipeline_stage.factors, permuted, R) ==
           _ecp_acceptance_target(R, length(permuted))
 
     x, y = gens(R)

@@ -92,10 +92,16 @@ function _tamper_selected_monic_index(cert)
     return _tamper_stage_field(cert, :selected_monic_index, bad_index)
 end
 
+function _vc_monicity_certificate(column, R)
+    result = Suslin._reduce_after_monicity_normalization_certificate(column, R)
+    @test result !== nothing
+    return Suslin._ecp_certificate_from_stage(column, R, result.stage)
+end
+
 function _assert_variable_change_stage(entry)
     column = _vc_column(entry)
     R = entry.ring.object
-    cert = Suslin.ecp_column_reduction_certificate(column, R)
+    cert = _vc_monicity_certificate(column, R)
     stage = _vc_stage(cert)
     ring_gens = tuple(gens(R)...)
     target = _vc_target_column(R, length(column))

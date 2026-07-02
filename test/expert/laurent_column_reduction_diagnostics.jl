@@ -197,7 +197,18 @@ end
     ]
     monic = Suslin.diagnose_unimodular_column_reduction(monic_column, R)
     @test monic.status == :supported
-    monic_detail = _diagnostic_stage_detail(monic, :monicity_normalization)
+    general_detail = _diagnostic_stage_detail(monic, :general_ecp_pipeline)
+    @test general_detail !== nothing
+    @test general_detail.outcome == :supported
+    @test general_detail.normalized_column_length == 3
+
+    staged_monic = Suslin.diagnose_unimodular_column_reduction(
+        monic_column,
+        R;
+        allow_general_ecp_pipeline = false,
+    )
+    @test staged_monic.status == :supported
+    monic_detail = _diagnostic_stage_detail(staged_monic, :monicity_normalization)
     @test monic_detail !== nothing
     @test monic_detail.outcome == :supported
     @test monic_detail.normalized_column_length == 3

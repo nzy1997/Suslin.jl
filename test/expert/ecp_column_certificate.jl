@@ -103,6 +103,12 @@ function _tamper_monicity_inverse(cert)
     )
 end
 
+function _ecp_cert_monicity_certificate(column, R)
+    result = Suslin._reduce_after_monicity_normalization_certificate(column, R)
+    @test result !== nothing
+    return Suslin._ecp_certificate_from_stage(column, R, result.stage)
+end
+
 function _tamper_embedded_indices(cert)
     stages = collect(cert.stages)
     embedded_idx = findfirst(stage -> stage.kind == :embedded_three_block, stages)
@@ -146,15 +152,23 @@ end
     @test any(stage -> stage.kind == :witness_unit, witness_cert.stages)
     _assert_ecp_certificate_replays(witness_cert)
 
-    monic_cert = Suslin.ecp_column_reduction_certificate(_ecp_cert_column(cases["ecp-variable-change-monic-gf2"]), cases["ecp-variable-change-monic-gf2"].ring.object)
-    @test any(stage -> stage.kind == :monicity_normalization, monic_cert.stages)
+    monic_column = _ecp_cert_column(cases["ecp-variable-change-monic-gf2"])
+    monic_ring = cases["ecp-variable-change-monic-gf2"].ring.object
+    monic_cert = Suslin.ecp_column_reduction_certificate(monic_column, monic_ring)
+    @test any(stage -> stage.kind == :ecp_pipeline, monic_cert.stages)
+    @test monic_cert.stages[end].route_metadata.route == :general_ecp_pipeline
     _assert_ecp_certificate_replays(monic_cert)
+    monicity_cert = _ecp_cert_monicity_certificate(monic_column, monic_ring)
+    @test any(stage -> stage.kind == :monicity_normalization, monicity_cert.stages)
 
     S, (t,) = Oscar.polynomial_ring(GF(2), ["t"])
     embedded_column = [zero(S), t^2, t^3, t^2 + t + one(S)]
     embedded_cert = Suslin.ecp_column_reduction_certificate(embedded_column, S)
     @test any(stage -> stage.kind == :embedded_three_block, embedded_cert.stages)
     _assert_ecp_certificate_replays(embedded_cert)
+    embedded_endpoint_cert = Suslin._ecp_link_endpoint_reduction_certificate(embedded_column, S)
+    @test Suslin.verify_ecp_column_reduction(embedded_endpoint_cert)
+    @test embedded_endpoint_cert.stages[end].kind == :embedded_three_block
 
     legacy_embedded_column = [one(S), t, t^2, t + one(S)]
     legacy_subfactors = Suslin._reduce_exact_small_column(legacy_embedded_column[1:3], S)
@@ -180,7 +194,7 @@ end
     @test !Suslin.verify_ecp_column_reduction(_tamper_first_factor(unit_cert))
     @test !Suslin.verify_ecp_column_reduction(_tamper_witness(witness_cert))
     @test !Suslin.verify_ecp_column_reduction(_tamper_witness_with_extra_entry(witness_cert))
-    @test !Suslin.verify_ecp_column_reduction(_tamper_monicity_inverse(monic_cert))
+    @test !Suslin.verify_ecp_column_reduction(_tamper_monicity_inverse(monicity_cert))
     @test !Suslin.verify_ecp_column_reduction(_tamper_embedded_indices(embedded_cert))
     @test !Suslin.verify_ecp_column_reduction(_tamper_laurent_shift(laurent_cert))
     @test !Suslin.verify_ecp_column_reduction((; original_column = unit_cert.original_column))
