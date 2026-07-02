@@ -101,9 +101,12 @@ function _assert_success_reduces(entry; variable_order = tuple(gens(entry.ring.o
     @test Suslin._is_monic_in_variable(stage.selected_monic_entry, R, stage.target_variable_index)
     @test _search_apply_factors(result.factors, column, R) == _search_target_column(R, length(column))
     @test _search_apply_factors(stage.factors, column, R) == _search_target_column(R, length(column))
-    cert = Suslin.ecp_column_reduction_certificate(column, R)
+    cert = _search_certificate_from_stage(column, R, stage)
     @test Suslin.verify_ecp_column_reduction(cert)
     @test any(cert_stage -> cert_stage.kind == :monicity_normalization, cert.stages)
+    public_cert = Suslin.ecp_column_reduction_certificate(column, R)
+    @test Suslin.verify_ecp_column_reduction(public_cert)
+    @test any(cert_stage -> cert_stage.kind == :ecp_pipeline, public_cert.stages)
     return result
 end
 
@@ -214,7 +217,8 @@ end
     cases = ECPColumnFixtureCatalog.cases_by_id()
     entry = cases["ecp-variable-change-monic-gf2"]
     column = _search_column(entry)
-    cert = Suslin.ecp_column_reduction_certificate(column, entry.ring.object)
+    result = Suslin._deterministic_ecp_monicity_search(column, entry.ring.object)
+    cert = _search_certificate_from_stage(column, entry.ring.object, result.stage)
     stage = _search_monicity_stage(cert)
 
     bad_certs = (

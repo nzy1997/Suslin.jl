@@ -204,8 +204,6 @@ end
 
 function reduce_unimodular_column(v::AbstractVector, R)
     column = _validated_unimodular_column(v, R)
-    staged = _ecp_public_staged_reduction_certificate(column, R)
-    staged !== nothing && return staged.factors
     return _ecp_column_reduction_certificate_validated(column, R).factors
 end
 
@@ -214,7 +212,11 @@ function ecp_column_reduction_certificate(v::AbstractVector, R)
     return _ecp_column_reduction_certificate_validated(column, R)
 end
 
-function diagnose_unimodular_column_reduction(v::AbstractVector, R)
+function diagnose_unimodular_column_reduction(
+    v::AbstractVector,
+    R;
+    allow_general_ecp_pipeline::Bool = true,
+)
     ring_profile = _column_reduction_ring_profile(R)
     column_length = length(v)
     validation = _diagnose_unimodular_column_preconditions(v, R, ring_profile, column_length)
@@ -224,6 +226,7 @@ function diagnose_unimodular_column_reduction(v::AbstractVector, R)
         R,
         ring_profile,
         column_length,
+        allow_general_ecp_pipeline = allow_general_ecp_pipeline,
     )
 end
 
@@ -262,7 +265,11 @@ function ECPInputContext(
     unimodularity_witness === nothing ||
         _check_ecp_input_context_witness_hint(unimodularity_witness, column, R)
     canonical_witness = _unimodular_witness(column, R)
-    staged_diagnostic = diagnose_unimodular_column_reduction(column, R)
+    staged_diagnostic = diagnose_unimodular_column_reduction(
+        column,
+        R;
+        allow_general_ecp_pipeline = false,
+    )
     support_classification = staged_diagnostic.status
     staged_failure_reason = _ecp_input_context_staged_failure_reason(staged_diagnostic)
 
@@ -553,12 +560,24 @@ function _diagnose_unimodular_column_preconditions(v::AbstractVector, R, ring_pr
     return (; status = :ok, column)
 end
 
-function _diagnose_unimodular_column_reduction_validated(column::AbstractVector, R, ring_profile, column_length::Int)
+function _diagnose_unimodular_column_reduction_validated(
+    column::AbstractVector,
+    R,
+    ring_profile,
+    column_length::Int;
+    allow_general_ecp_pipeline::Bool = true,
+)
     attempted = Symbol[]
     details = Any[]
     result = _is_laurent_polynomial_ring(R) ?
         _diagnose_laurent_unimodular_column_reduction(column, R, attempted, details) :
-        _diagnose_polynomial_unimodular_column_reduction(column, R, attempted, details)
+        _diagnose_polynomial_unimodular_column_reduction(
+            column,
+            R,
+            attempted,
+            details;
+            allow_general_ecp_pipeline,
+        )
 
     if result.supported
         return _column_reduction_diagnostic(
@@ -1124,13 +1143,26 @@ function _reduce_polynomial_unimodular_column_exact(column::AbstractVector, R)
 end
 
 function _reduce_polynomial_unimodular_column_exact_certificate(column::AbstractVector, R)
-    factors = _reduce_exact_small_column_certificate(column, R)
-    factors !== nothing && return factors
+    supported = _reduce_supported_unimodular_column_certificate(column, R)
+    supported !== nothing && return supported
 
     if length(column) > 3
         block_factors = _reduce_via_supported_three_block_certificate(column, R)
         block_factors !== nothing && return block_factors
+
+        general = _reduce_via_general_ecp_pipeline_certificate(column, R)
+        general !== nothing && return general
+
+        normalization = _reduce_after_monicity_normalization_certificate(column, R)
+        normalization !== nothing && return normalization
+        return nothing
     end
+
+    general = _reduce_via_general_ecp_pipeline_certificate(column, R)
+    general !== nothing && return general
+
+    small = _reduce_after_monicity_normalization_certificate(column, R)
+    small !== nothing && return small
 
     return nothing
 end
@@ -1181,6 +1213,113 @@ function _reduce_via_supported_three_block_certificate(column::AbstractVector, R
     end
 
     return nothing
+end
+
+function _ecp_general_pipeline_route_metadata(
+    link_step::ECPLinkStepCertificate,
+    normalized_column_length::Int,
+)
+    return (;
+        source = :general_ecp_pipeline,
+        route = :general_ecp_pipeline,
+        link_route_mode = link_step.route_mode,
+        normalized_column_length,
+        segment_support_families = tuple((segment.support_family for segment in link_step.segments)...),
+    )
+end
+
+function _ecp_substitute_factor_sequence(factors, substitution_map, R)
+    substitution_values = collect(_ecp_substitution_map_values(substitution_map))
+    return [
+        _substitute_matrix_entries(factor, substitution_values, R)
+        for factor in factors
+    ]
+end
+
+function _ecp_link_endpoint_reduction_certificate(column::AbstractVector, R)
+    result = _reduce_supported_unimodular_column_certificate(column, R)
+    if result === nothing && length(column) > 3
+        result = _reduce_via_supported_three_block_certificate(column, R)
+    end
+    result === nothing && (result = _reduce_after_monicity_normalization_certificate(column, R))
+    result !== nothing ||
+        throw(ArgumentError("unsupported ECP link step path column endpoint"))
+    return _ecp_certificate_from_stage(column, R, result.stage)
+end
+
+function _unsupported_general_ecp_pipeline_message(
+    column::AbstractVector,
+    R,
+    detail::AbstractString,
+)
+    return _unsupported_unimodular_column_reduction_message(
+        column,
+        R;
+        detail = "general ECP pipeline staged failure: $(detail)",
+    )
+end
+
+function _reduce_via_general_ecp_pipeline_certificate(column::AbstractVector, R)
+    _is_laurent_polynomial_ring(R) && return nothing
+
+    context = ecp_input_context(column, R)
+    selected_variable = context.selected_variable === nothing ?
+        first(context.variable_order) :
+        context.selected_variable
+    normalization = ecp_monicity_normalization(context; selected_variable)
+    if normalization isa ECPMonicityNormalizationFailure
+        throw(ArgumentError(_unsupported_general_ecp_pipeline_message(
+            column,
+            R,
+            normalization.search_failure.message,
+        )))
+    end
+
+    link_witness = ecp_link_witness(normalization)
+    if link_witness isa ECPLinkWitnessExtractionFailure
+        throw(ArgumentError(_unsupported_general_ecp_pipeline_message(
+            column,
+            R,
+            link_witness.message,
+        )))
+    end
+
+    normalized_column = collect(normalization.normalized_column)
+    link_step = ecp_link_step_certificate(normalized_column, R; link_witness)
+    induction = ecp_induction_normality_certificate(normalized_column, R; link_step)
+
+    inverse_substituted_induction_factors = _ecp_substitute_factor_sequence(
+        induction.final_factors,
+        normalization.inverse_substitution,
+        R,
+    )
+    factors = _checked_reduction_factors(
+        vcat(
+            inverse_substituted_induction_factors,
+            normalization.inverse_substituted_coordinate_move_factors,
+        ),
+        column,
+        R,
+        "general ECP pipeline reduction",
+    )
+    output_column = _apply_reduction_factors(factors, column, R)
+    stage = (;
+        kind = :ecp_pipeline,
+        input_column = _ecp_column_tuple(column),
+        route_metadata = _ecp_general_pipeline_route_metadata(
+            link_step,
+            length(normalization.normalized_column),
+        ),
+        context,
+        normalization,
+        link_witness,
+        link_step,
+        induction_normality = induction,
+        inverse_substituted_induction_factors,
+        factors,
+        output_column,
+    )
+    return (; factors, stage)
 end
 
 function _embedded_three_block_reduction(column::AbstractVector, R, indices, subfactors)
@@ -1788,14 +1927,15 @@ function _ecp_resolve_selected_monic_index(
 end
 
 function _ecp_monicity_normalization_full_reduction_certificate(column::AbstractVector, R)
-    certificate = try
-        ecp_column_reduction_certificate(column, R)
-    catch err
-        err isa InterruptException && rethrow()
-        err isa ArgumentError || rethrow()
-        return nothing
+    supported = _reduce_supported_unimodular_column_certificate(column, R)
+    supported !== nothing && return supported
+
+    if length(column) > 3
+        block = _reduce_via_supported_three_block_certificate(column, R)
+        block !== nothing && return block
     end
-    return (; stage = certificate.stages[end], factors = certificate.factors)
+
+    return _reduce_after_monicity_normalization_certificate(column, R)
 end
 
 function _ecp_monicity_normalization_summary(
@@ -2053,7 +2193,13 @@ function _reduce_laurent_unimodular_column_base_certificate(column::AbstractVect
     P = normalization.metadata.polynomial_ring
     is_unimodular_column(poly_column, P) || return nothing
 
-    poly_result = _reduce_polynomial_unimodular_column_exact_certificate(poly_column, P)
+    poly_result = try
+        _reduce_polynomial_unimodular_column_exact_certificate(poly_column, P)
+    catch err
+        err isa InterruptException && rethrow()
+        err isa ArgumentError || rethrow()
+        nothing
+    end
     poly_result === nothing && return nothing
 
     polynomial_certificate = _ecp_certificate_from_stage(poly_column, P, poly_result.stage)
@@ -2608,7 +2754,11 @@ function _ecp_input_context_replay_summary(context)
 
     replayed_staged_diagnostic = try
         ordinary_polynomial_ring_ok && column_ok && unimodular_ok ?
-            diagnose_unimodular_column_reduction(replayed_column, R) :
+            diagnose_unimodular_column_reduction(
+                replayed_column,
+                R;
+                allow_general_ecp_pipeline = false,
+            ) :
             nothing
     catch err
         err isa InterruptException && rethrow()
@@ -3120,10 +3270,90 @@ function _ecp_evaluate_at_selected_variable(values, selected_variable_index::Int
 end
 
 function _ecp_link_step_segments(witness::ECPLinkWitnessRecord, path_columns; route_mode::Symbol = :auto)
+    resolved_route_mode = _ecp_link_step_resolve_route_mode(witness, route_mode)
+    if resolved_route_mode == :direct_elementary
+        return (_ecp_link_step_direct_segment(witness, path_columns),)
+    end
     return tuple((
-        _ecp_link_step_segment(witness, idx, path_columns; route_mode)
+        _ecp_link_step_segment(witness, idx, path_columns; route_mode = resolved_route_mode)
         for idx in eachindex(witness.tail_reductions)
     )...)
+end
+
+function _ecp_link_step_direct_segment(witness::ECPLinkWitnessRecord, path_columns)
+    R = witness.ring
+    n = length(witness.original_column)
+    from_path_point = first(witness.path_points)
+    to_path_point = last(witness.path_points)
+    delta = to_path_point - from_path_point
+    from_column = first(path_columns)
+    to_column = last(path_columns)
+    segment_identities = tuple((
+        _ecp_link_step_identity(
+            witness,
+            idx,
+            path_columns[idx],
+            path_columns[idx + 1],
+            witness.path_points[idx + 1] - witness.path_points[idx],
+        )
+        for idx in eachindex(witness.tail_reductions)
+    )...)
+    link_identity = (;
+        segment_identities,
+        overall_ok = all(identity -> identity.overall_ok, segment_identities),
+    )
+    support_family = :direct_elementary_endpoint_transport
+    transport = _ecp_link_step_endpoint_transport(R, from_column, to_column, link_identity, support_family)
+
+    sl2_block = _ecp_link_step_embedded_sl2_block(transport.sl3_route_matrices, R, n, (1, 2))
+    sl2_embedding = block_embedding(sl2_block, n, (1, 2))
+    forward_factors = copy(transport.factors)
+    inverse_factors = _ecp_inverse_factor_sequence(forward_factors)
+    elementary_factors = copy(forward_factors)
+    verification = _ecp_link_step_segment_verification(
+        R,
+        from_column,
+        to_column,
+        sl2_block,
+        sl2_embedding,
+        elementary_factors,
+        forward_factors,
+        inverse_factors,
+        support_family,
+        transport.endpoint_transport_matrix,
+        transport.from_certificate,
+        transport.to_certificate,
+        link_identity,
+        transport.sl3_route_matrices,
+        transport.sl3_route_certificates,
+        transport.sl3_route_factor_groups,
+        transport.sl3_route_metadata,
+    )
+    verification.overall_ok ||
+        throw(ArgumentError("ECP link step direct segment failed exact replay verification"))
+    return (;
+        index = 1,
+        from_path_point,
+        to_path_point,
+        delta,
+        from_column,
+        to_column,
+        sl2_block,
+        sl2_embedding,
+        elementary_factors,
+        forward_factors,
+        inverse_factors,
+        support_family,
+        endpoint_transport_matrix = transport.endpoint_transport_matrix,
+        from_certificate = transport.from_certificate,
+        to_certificate = transport.to_certificate,
+        sl3_route_matrices = transport.sl3_route_matrices,
+        sl3_route_certificates = transport.sl3_route_certificates,
+        sl3_route_factor_groups = transport.sl3_route_factor_groups,
+        sl3_route_metadata = transport.sl3_route_metadata,
+        link_identity,
+        verification,
+    )
 end
 
 function _ecp_link_step_segment(witness::ECPLinkWitnessRecord, idx::Int, path_columns; route_mode::Symbol = :auto)
@@ -3263,7 +3493,7 @@ function _ecp_link_step_divided_differences(from_column, to_column, delta, R)
 end
 
 function _ecp_link_step_resolve_route_mode(witness::ECPLinkWitnessRecord, route_mode::Symbol)
-    route_mode in (:auto, :legacy_fixture, :polynomial_sl3) ||
+    route_mode in (:auto, :legacy_fixture, :polynomial_sl3, :direct_elementary) ||
         throw(ArgumentError("unsupported ECP link step route_mode $(route_mode)"))
     if route_mode == :auto
         return (
@@ -3271,7 +3501,7 @@ function _ecp_link_step_resolve_route_mode(witness::ECPLinkWitnessRecord, route_
             _ecp_link_step_matches_qq_fixture(witness)
         ) ?
             :legacy_fixture :
-            :polynomial_sl3
+            (length(witness.original_column) > 3 ? :direct_elementary : :polynomial_sl3)
     end
     return route_mode
 end
@@ -3285,6 +3515,7 @@ function _ecp_link_step_supported_family(witness::ECPLinkWitnessRecord, route_mo
         probe_ids = tuple((probe.id for probe in witness.residue_probes)...)
         throw(ArgumentError("unsupported ECP legacy fixture link step family for supplied link witness probes $(probe_ids)"))
     end
+    resolved == :direct_elementary && return :direct_elementary_endpoint_transport
     return :polynomial_sl3_route_endpoint_transport
 end
 
@@ -3356,13 +3587,13 @@ function _ecp_link_step_endpoint_transport(R, from_column, to_column, link_ident
     link_identity.overall_ok ||
         throw(ArgumentError("ECP link step requires a replayed link identity"))
     from_certificate = try
-        ecp_column_reduction_certificate(collect(from_column), R)
+        _ecp_link_endpoint_reduction_certificate(collect(from_column), R)
     catch err
         err isa InterruptException && rethrow()
         throw(ArgumentError("unsupported ECP link step source path column"))
     end
     to_certificate = try
-        ecp_column_reduction_certificate(collect(to_column), R)
+        _ecp_link_endpoint_reduction_certificate(collect(to_column), R)
     catch err
         err isa InterruptException && rethrow()
         throw(ArgumentError("unsupported ECP link step target path column"))
@@ -3370,6 +3601,14 @@ function _ecp_link_step_endpoint_transport(R, from_column, to_column, link_ident
     raw_factors = vcat(_ecp_inverse_factor_sequence(to_certificate.factors), from_certificate.factors)
 
     if support_family == :supplied_fixture_identity_sl2_endpoint_transport
+        endpoint_transport_matrix = _factor_sequence_product(raw_factors, R, length(from_column))
+        endpoint_transport_matrix * matrix(R, length(from_column), 1, collect(from_column)) ==
+            matrix(R, length(to_column), 1, collect(to_column)) ||
+            throw(ErrorException("internal error: ECP link step endpoint transport does not map path endpoints"))
+        return (; from_certificate, to_certificate, endpoint_transport_matrix, factors = raw_factors,
+            sl3_route_matrices = (), sl3_route_certificates = (), sl3_route_factor_groups = (),
+            sl3_route_metadata = ())
+    elseif support_family == :direct_elementary_endpoint_transport
         endpoint_transport_matrix = _factor_sequence_product(raw_factors, R, length(from_column))
         endpoint_transport_matrix * matrix(R, length(from_column), 1, collect(from_column)) ==
             matrix(R, length(to_column), 1, collect(to_column)) ||
@@ -3570,6 +3809,7 @@ function _ecp_link_step_segment_verification(
     sl2_embedding_ok = sl2_embedding == block_embedding(sl2_block, n, (1, 2))
     support_family_ok = support_family in (
         :supplied_fixture_identity_sl2_endpoint_transport,
+        :direct_elementary_endpoint_transport,
         :polynomial_sl3_route_endpoint_transport,
     )
     endpoint_reductions_ok = verify_ecp_column_reduction(from_certificate) &&
@@ -3602,6 +3842,12 @@ function _ecp_link_step_segment_verification(
             isempty(sl3_route_factor_groups) &&
             isempty(sl3_route_metadata) &&
             sl2_block == identity_matrix(R, 2)
+    elseif support_family == :direct_elementary_endpoint_transport
+        isempty(sl3_route_matrices) &&
+            isempty(sl3_route_certificates) &&
+            isempty(sl3_route_factor_groups) &&
+            isempty(sl3_route_metadata) &&
+            all(factor -> _ecp_is_elementary_factor(factor, R, n), forward_factors)
     else
         route_lengths_ok && route_certificates_ok && route_metadata_ok
     end
@@ -4068,6 +4314,60 @@ function _ecp_replay_stage(stage, input_column, R)
             summary.variable_change_verification.original_reduction_ok &&
             stage.output_column == summary.original_output
         return (; ok, factors = summary.inverse_substituted_factors, output_column = summary.original_output)
+    elseif stage.kind == :ecp_pipeline
+        invalid_replay = (; ok = false, factors = Any[], output_column = matrix(R, length(input_column), 1, collect(input_column)))
+        required_keys = (
+            :kind,
+            :input_column,
+            :route_metadata,
+            :context,
+            :normalization,
+            :link_witness,
+            :link_step,
+            :induction_normality,
+            :inverse_substituted_induction_factors,
+            :factors,
+            :output_column,
+        )
+        _ecp_stage_keys_ok(stage, required_keys) || return invalid_replay
+
+        context_ok = verify_ecp_input_context(stage.context) &&
+            tuple(stage.context.column...) == tuple(input_column...) &&
+            _same_base_ring(stage.context.ring, R)
+        normalization_ok = verify_ecp_monicity_normalization(stage.normalization) &&
+            stage.normalization.context == stage.context
+        link_witness_ok = verify_ecp_link_witness(stage.link_witness) &&
+            stage.link_witness == stage.link_step.link_witness
+        link_step_ok = verify_ecp_link_step_certificate(stage.link_step) &&
+            stage.link_step.original_column == stage.normalization.normalized_column &&
+            _same_base_ring(stage.link_step.ring, R)
+        induction_ok = verify_ecp_induction_normality_certificate(stage.induction_normality) &&
+            stage.induction_normality.link_step == stage.link_step
+        context_ok && normalization_ok && link_witness_ok && link_step_ok && induction_ok || return invalid_replay
+
+        inverse_substituted_induction_factors = _ecp_substitute_factor_sequence(
+            stage.induction_normality.final_factors,
+            stage.normalization.inverse_substitution,
+            R,
+        )
+        expected_factors = vcat(
+            inverse_substituted_induction_factors,
+            stage.normalization.inverse_substituted_coordinate_move_factors,
+        )
+        expected_output = _apply_reduction_factors(expected_factors, input_column, R)
+        expected_route_metadata = _ecp_general_pipeline_route_metadata(
+            stage.link_step,
+            length(stage.normalization.normalized_column),
+        )
+        ok = stage.input_column == _ecp_column_tuple(input_column) &&
+            stage.route_metadata == expected_route_metadata &&
+            _ecp_factor_sequences_equal(
+                stage.inverse_substituted_induction_factors,
+                inverse_substituted_induction_factors,
+            ) &&
+            _ecp_factor_sequences_equal(stage.factors, expected_factors) &&
+            stage.output_column == expected_output
+        return (; ok, factors = expected_factors, output_column = expected_output)
     elseif stage.kind == :embedded_three_block
         indices = collect(stage.indices)
         subcolumn = [input_column[idx] for idx in indices]
@@ -4383,7 +4683,13 @@ function _diagnose_laurent_unimodular_column_reduction(
 
     ordinary_attempted = Symbol[]
     ordinary_details = Any[]
-    result = _diagnose_polynomial_unimodular_column_reduction(poly_column, P, ordinary_attempted, ordinary_details)
+    result = _diagnose_polynomial_unimodular_column_reduction(
+        poly_column,
+        P,
+        ordinary_attempted,
+        ordinary_details;
+        allow_general_ecp_pipeline = false,
+    )
     normalized_status = result.supported ? :supported : :unsupported
     normalized_failure_code = result.supported ? nothing : :unsupported_polynomial_column_family
     push!(
@@ -4449,9 +4755,11 @@ function _diagnose_polynomial_unimodular_column_reduction(
     R,
     attempted::Vector{Symbol},
     details::Vector,
+    ;
+    allow_general_ecp_pipeline::Bool = true,
 )
-    small = _diagnose_exact_small_column_reduction(column, R, attempted, details)
-    small.supported && return small
+    supported = _diagnose_supported_unimodular_column_reduction(column, R, attempted, details)
+    supported.supported && return supported
 
     if length(column) > 3
         push!(attempted, :three_entry_block)
@@ -4470,7 +4778,118 @@ function _diagnose_polynomial_unimodular_column_reduction(
             return (; supported = true, stage = :three_entry_block)
         end
         push!(details, _column_reduction_stage_detail(:three_entry_block, R, :no_supported_three_block))
+
+        if allow_general_ecp_pipeline
+            push!(attempted, :general_ecp_pipeline)
+            general = try
+                _reduce_via_general_ecp_pipeline_certificate(column, R)
+            catch err
+                err isa InterruptException && rethrow()
+                err isa ArgumentError || rethrow()
+                push!(
+                    details,
+                    _column_reduction_stage_detail(
+                        :general_ecp_pipeline,
+                        R,
+                        :staged_failure;
+                        message = _column_reduction_error_message(err),
+                    ),
+                )
+                return (; supported = false, stage = nothing)
+            end
+            if general !== nothing
+                push!(
+                    details,
+                    _column_reduction_stage_detail(
+                        :general_ecp_pipeline,
+                        R,
+                        :supported;
+                        link_route_mode = general.stage.route_metadata.link_route_mode,
+                        normalized_column_length = general.stage.route_metadata.normalized_column_length,
+                    ),
+                )
+                return (; supported = true, stage = :general_ecp_pipeline)
+            end
+            push!(details, _column_reduction_stage_detail(:general_ecp_pipeline, R, :unsupported))
+        end
+
+        push!(attempted, :monicity_normalization)
+        normalized = try
+            _reduce_after_monicity_normalization_certificate(column, R)
+        catch err
+            err isa InterruptException && rethrow()
+            nothing
+        end
+        if normalized !== nothing
+            push!(
+                details,
+                _column_reduction_stage_detail(
+                    :monicity_normalization,
+                    R,
+                    :supported;
+                    normalized_column_length = length(column),
+                ),
+            )
+            return (; supported = true, stage = :monicity_normalization)
+        end
+        push!(details, _column_reduction_stage_detail(:monicity_normalization, R, :no_monicity_normalization))
+        return (; supported = false, stage = nothing)
     end
+
+    if allow_general_ecp_pipeline
+        push!(attempted, :general_ecp_pipeline)
+        general = try
+            _reduce_via_general_ecp_pipeline_certificate(column, R)
+        catch err
+            err isa InterruptException && rethrow()
+            err isa ArgumentError || rethrow()
+            push!(
+                details,
+                _column_reduction_stage_detail(
+                    :general_ecp_pipeline,
+                    R,
+                    :staged_failure;
+                    message = _column_reduction_error_message(err),
+                ),
+            )
+            return (; supported = false, stage = nothing)
+        end
+        if general !== nothing
+            push!(
+                details,
+                _column_reduction_stage_detail(
+                    :general_ecp_pipeline,
+                    R,
+                    :supported;
+                    link_route_mode = general.stage.route_metadata.link_route_mode,
+                    normalized_column_length = general.stage.route_metadata.normalized_column_length,
+                ),
+            )
+            return (; supported = true, stage = :general_ecp_pipeline)
+        end
+        push!(details, _column_reduction_stage_detail(:general_ecp_pipeline, R, :unsupported))
+    end
+
+    push!(attempted, :monicity_normalization)
+    normalized = try
+        _reduce_after_monicity_normalization_certificate(column, R)
+    catch err
+        err isa InterruptException && rethrow()
+        nothing
+    end
+    if normalized !== nothing
+        push!(
+            details,
+            _column_reduction_stage_detail(
+                :monicity_normalization,
+                R,
+                :supported;
+                normalized_column_length = length(column),
+            ),
+        )
+        return (; supported = true, stage = :monicity_normalization)
+    end
+    push!(details, _column_reduction_stage_detail(:monicity_normalization, R, :no_monicity_normalization))
 
     return (; supported = false, stage = nothing)
 end
@@ -4670,10 +5089,23 @@ function _unit_normalization_factors(n::Int, u, uinv, R)
     return factors
 end
 
-function _unsupported_unimodular_column_reduction_message(column::AbstractVector, R)
+function _unsupported_unimodular_column_reduction_message(
+    column::AbstractVector,
+    R;
+    detail = nothing,
+)
     profile = _is_laurent_polynomial_ring(R) ? "Laurent-normalized" : "ordinary polynomial"
     n = length(column)
-    return "unsupported exact unimodular column reduction for $(profile) column of length $(n): no supported unit, witness-unit, monicity-normalized, or 3-entry block reduction stage applies"
+    prefix = "unsupported exact unimodular column reduction for $(profile) column of length $(n): "
+    if detail !== nothing
+        return prefix * detail
+    end
+    if _is_laurent_polynomial_ring(R)
+        return prefix *
+            "no supported unit, witness-unit, monicity-normalized, or 3-entry block reduction stage applies"
+    end
+    return prefix *
+        "no supported unit, witness-unit, monicity-normalized, 3-entry block, or general ECP pipeline stage applies"
 end
 
 function _throw_unsupported_unimodular_column_reduction(column::AbstractVector, R)

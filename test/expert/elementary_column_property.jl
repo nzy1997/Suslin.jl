@@ -139,10 +139,12 @@ end
     @test staged.induction_normality.normality_rewrite.normality_certificate ==
           staged.induction_normality.normality_certificate
     @test Suslin.verify_conjugate_elementary_certificate(staged.induction_normality.normality_certificate)
-    @test public_factors_by_name["canonical-full-route"] == staged.factors
-    legacy = Suslin.ecp_column_reduction_certificate(canonical, R)
-    @test any(stage -> stage.kind == :monicity_normalization, legacy.stages)
-    @test legacy.factors != staged.factors
+    public_cert = Suslin.ecp_column_reduction_certificate(canonical, R)
+    @test Suslin.verify_ecp_column_reduction(public_cert)
+    @test public_factors_by_name["canonical-full-route"] == public_cert.factors
+    @test public_cert.stages[end].kind == :ecp_pipeline
+    @test public_cert.stages[end].route_metadata.route == :general_ecp_pipeline
+    @test public_cert.factors != staged.factors
 
     general_R, general_column = _ecp_acceptance_length4_general_case()
     @test length(general_column) > 3
@@ -223,9 +225,14 @@ end
 
     permuted = cases[2][2]
     permuted_cert = Suslin.ecp_column_reduction_certificate(permuted, R)
-    monicity_stage = only([stage for stage in permuted_cert.stages if stage.kind == :monicity_normalization])
-    @test all(factor -> base_ring(factor) == R, monicity_stage.inverse_substituted_factors)
-    @test _ecp_acceptance_apply(monicity_stage.inverse_substituted_factors, permuted, R) ==
+    pipeline_stage = only([stage for stage in permuted_cert.stages if stage.kind == :ecp_pipeline])
+    @test pipeline_stage.route_metadata.route == :general_ecp_pipeline
+    @test all(
+        factor -> base_ring(factor) == R,
+        pipeline_stage.normalization.inverse_substituted_coordinate_move_factors,
+    )
+    @test all(factor -> base_ring(factor) == R, pipeline_stage.inverse_substituted_induction_factors)
+    @test _ecp_acceptance_apply(pipeline_stage.factors, permuted, R) ==
           _ecp_acceptance_target(R, length(permuted))
 
     x, y = gens(R)
