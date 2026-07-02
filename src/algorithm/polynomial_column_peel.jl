@@ -563,6 +563,66 @@ struct PolynomialColumnPeelCertificate
     factors::Vector
     product
     verification
+    final_route_provenance::Symbol
+end
+
+const _POLYNOMIAL_COLUMN_PEEL_FAST_FINAL_ROUTE_PROVENANCE = :fast_local_sl3
+const _POLYNOMIAL_COLUMN_PEEL_BLOCK_FINAL_ROUTE_PROVENANCE = :disjoint_local_blocks
+const _POLYNOMIAL_COLUMN_PEEL_ISSUE184_FINAL_ROUTE_PROVENANCE = :issue184_evidence_backed_sl3
+const _POLYNOMIAL_COLUMN_PEEL_UNSUPPORTED_FINAL_ROUTE_PROVENANCE = :unsupported_final_route
+
+function _polynomial_column_peel_quillen_issue184_final_route_ok(final_certificate)::Bool
+    try
+        final_certificate.route == :quillen_patch || return false
+        final_certificate.evidence isa PolynomialSL3QuillenMurthyRouteEvidence || return false
+        _verify_polynomial_sl3_quillen_murthy_route_evidence(final_certificate.evidence) || return false
+        return true
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function _polynomial_column_peel_supported_final_route_ok(final_certificate)::Bool
+    final_certificate.route in (:fast_local_sl3, :disjoint_local_blocks) && return true
+    return _polynomial_column_peel_quillen_issue184_final_route_ok(final_certificate)
+end
+
+function _polynomial_column_peel_final_route_provenance(final_certificate)::Symbol
+    try
+        final_certificate.route == :fast_local_sl3 &&
+            return _POLYNOMIAL_COLUMN_PEEL_FAST_FINAL_ROUTE_PROVENANCE
+        final_certificate.route == :disjoint_local_blocks &&
+            return _POLYNOMIAL_COLUMN_PEEL_BLOCK_FINAL_ROUTE_PROVENANCE
+        _polynomial_column_peel_quillen_issue184_final_route_ok(final_certificate) &&
+            return _POLYNOMIAL_COLUMN_PEEL_ISSUE184_FINAL_ROUTE_PROVENANCE
+    catch err
+        err isa InterruptException && rethrow()
+    end
+    return _POLYNOMIAL_COLUMN_PEEL_UNSUPPORTED_FINAL_ROUTE_PROVENANCE
+end
+
+function PolynomialColumnPeelCertificate(
+    original_matrix,
+    peel_steps::Vector{PolynomialColumnPeelStep},
+    final_block,
+    final_certificate,
+    final_factors::Vector,
+    factors::Vector,
+    product,
+    verification,
+)
+    return PolynomialColumnPeelCertificate(
+        original_matrix,
+        peel_steps,
+        final_block,
+        final_certificate,
+        final_factors,
+        factors,
+        product,
+        verification,
+        _polynomial_column_peel_final_route_provenance(final_certificate),
+    )
 end
 
 function _polynomial_column_peel_certificate(A; final_route=nothing)
@@ -638,8 +698,8 @@ function _validate_polynomial_column_peel_final_route(final_route)
     final_route === nothing && return nothing
     final_route isa Symbol ||
         throw(ArgumentError("polynomial column-peel final route must be a Symbol"))
-    final_route in (:fast_local_sl3, :disjoint_local_blocks) ||
-        throw(ArgumentError("polynomial column-peel final route must be :fast_local_sl3 or :disjoint_local_blocks"))
+    final_route in (:fast_local_sl3, :disjoint_local_blocks, :quillen_patch) ||
+        throw(ArgumentError("polynomial column-peel final route must be :fast_local_sl3, :disjoint_local_blocks, or :quillen_patch"))
     return nothing
 end
 
@@ -668,16 +728,24 @@ end
 function _polynomial_column_peel_try_final_route(current; final_route=nothing)
     candidate_routes =
         final_route === nothing ?
-        (:fast_local_sl3, :disjoint_local_blocks) :
+        (:fast_local_sl3, :disjoint_local_blocks, :quillen_patch) :
         (final_route,)
 
     for route in candidate_routes
+        route == :quillen_patch && nrows(current) != 3 && continue
         certificate = try
-            _polynomial_factorization_route_certificate(
-                current;
-                route=route,
-                allow_recursive_column_peel=false,
-            )
+            if route == :quillen_patch
+                _polynomial_factorization_route_certificate(
+                    current;
+                    allow_recursive_column_peel=false,
+                )
+            else
+                _polynomial_factorization_route_certificate(
+                    current;
+                    route=route,
+                    allow_recursive_column_peel=false,
+                )
+            end
         catch err
             err isa InterruptException && rethrow()
             err isa ArgumentError || rethrow()
@@ -686,7 +754,8 @@ function _polynomial_column_peel_try_final_route(current; final_route=nothing)
 
         if certificate !== nothing &&
                 certificate.status == :supported &&
-                certificate.route in (:fast_local_sl3, :disjoint_local_blocks) &&
+                certificate.route == route &&
+                _polynomial_column_peel_supported_final_route_ok(certificate) &&
                 certificate.matrix != identity_matrix(base_ring(current), nrows(current))
             return certificate
         end
@@ -1076,6 +1145,7 @@ function _polynomial_column_peel_core_verification(cert)
         false
     end
     final_certificate_ok = _polynomial_column_peel_final_certificate_ok(cert)
+    final_route_provenance_ok = _polynomial_column_peel_final_route_provenance_ok(cert)
     factor_sequence_ok = try
         replayed_factors = _replay_polynomial_column_peel_factors(
             cert.peel_steps,
@@ -1100,7 +1170,8 @@ function _polynomial_column_peel_core_verification(cert)
         false
     end
     overall_core_ok = preconditions_ok && step_chain_ok && steps_ok && left_certificates_ok &&
-        final_certificate_ok && factor_sequence_ok && product_ok && factors_ok
+        final_certificate_ok && final_route_provenance_ok &&
+        factor_sequence_ok && product_ok && factors_ok
     return (
         overall_core_ok=overall_core_ok,
         preconditions_ok=preconditions_ok,
@@ -1108,10 +1179,23 @@ function _polynomial_column_peel_core_verification(cert)
         steps_ok=steps_ok,
         left_certificates_ok=left_certificates_ok,
         final_certificate_ok=final_certificate_ok,
+        final_route_provenance_ok=final_route_provenance_ok,
         factor_sequence_ok=factor_sequence_ok,
         product_ok=product_ok,
         factors_ok=factors_ok,
     )
+end
+
+function _polynomial_column_peel_final_route_provenance_ok(cert)::Bool
+    try
+        hasproperty(cert, :final_route_provenance) || return false
+        expected = _polynomial_column_peel_final_route_provenance(cert.final_certificate)
+        expected == _POLYNOMIAL_COLUMN_PEEL_UNSUPPORTED_FINAL_ROUTE_PROVENANCE && return false
+        return cert.final_route_provenance == expected
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
 end
 
 function _polynomial_column_peel_left_certificate_ok(step)::Bool
@@ -1163,7 +1247,7 @@ function _polynomial_column_peel_final_certificate_ok(cert)::Bool
         final_certificate = cert.final_certificate
         final_certificate isa PolynomialFactorizationRouteCertificate || return false
         final_certificate.status == :supported || return false
-        final_certificate.route in (:fast_local_sl3, :disjoint_local_blocks) || return false
+        _polynomial_column_peel_supported_final_route_ok(final_certificate) || return false
         final_certificate.matrix == cert.final_block || return false
         _verify_polynomial_factorization_route_certificate(final_certificate) || return false
         _factor_sequences_equal(cert.final_factors, final_certificate.factors) || return false
