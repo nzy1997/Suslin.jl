@@ -119,6 +119,15 @@ end
     @test legacy_cert.mainline_support_metadata.marker == :not_issue186_mainline
     @test :missing_issue184_final_sl3_route in legacy_cert.mainline_support_metadata.reason_codes
 
+    block_recursive = entries["pw-poly-recursive-column-peel-sln-block-qq"]
+    block_recursive_cert = Suslin._polynomial_column_peel_certificate(block_recursive.matrix)
+    @test Suslin._verify_polynomial_column_peel_certificate(block_recursive_cert)
+    @test block_recursive_cert.final_certificate.route == :disjoint_local_blocks
+    @test block_recursive_cert.final_route_provenance == :disjoint_local_blocks
+    @test !block_recursive_cert.mainline_support_metadata.supported
+    @test block_recursive_cert.mainline_support_metadata.marker == :not_issue186_mainline
+    @test :missing_issue184_final_sl3_route in block_recursive_cert.mainline_support_metadata.reason_codes
+
     reordered_steps = reverse(copy(sl5_cert.peel_steps))
     reordered = _sln_recursive_replace_certificate(sl5_cert; peel_steps = reordered_steps)
     @test !Suslin._verify_polynomial_column_peel_certificate(reordered)
