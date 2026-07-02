@@ -75,7 +75,13 @@ end
     @test Suslin._verify_sln_recursive_driver_input_context(staged_ctx)
 
     unsupported = negative["sln-driver-negative-unsupported-coefficient-ring"]
-    unsupported_ctx = _sln_context_from_entry(unsupported)
+    unsupported_ctx = Suslin._sln_recursive_driver_input_context(
+        identity_matrix(unsupported.ring.object, 4);
+        variable_order = unsupported.ring.generators,
+        selected_variable = unsupported.ring.generators[1],
+        route_provenance_metadata = unsupported.route_provenance,
+        catalog_id = unsupported.id,
+    )
     @test unsupported_ctx.support_classification == :staged
     @test unsupported_ctx.staged_reason_code == :unsupported_coefficient_ring
     @test unsupported_ctx.exact_field_status == :unsupported
@@ -118,6 +124,6 @@ end
     end
 
     @test_throws ArgumentError Suslin._sln_recursive_driver_input_context(
-        identity_matrix(mainline.base_ring, 2),
+        identity_matrix(mainline.ring.object, 2),
     )
 end
