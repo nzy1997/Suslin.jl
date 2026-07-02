@@ -190,7 +190,7 @@ function _sln_recursive_driver_ecp_status(metadata, column, R, n::Int)
         return :recorded
     end
 
-    return :recorded
+    return :missing
 end
 
 function _sln_recursive_driver_final_route_matrix_ok(matrix_value, R)::Bool
@@ -239,6 +239,9 @@ function _sln_recursive_driver_route_provenance(route_provenance_metadata, catal
     provenance = route_provenance_metadata isa NamedTuple ?
         route_provenance_metadata :
         (; value = route_provenance_metadata)
+    if provenance == (; catalog_id = catalog_id)
+        return provenance, :missing
+    end
     return provenance, :recorded
 end
 

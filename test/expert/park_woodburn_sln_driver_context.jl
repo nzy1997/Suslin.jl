@@ -52,6 +52,29 @@ end
     @test mainline_ctx.exact_field_status == :supported
     @test Suslin._verify_sln_recursive_driver_input_context(mainline_ctx)
 
+    catalog_only_provenance_ctx = Suslin._sln_recursive_driver_input_context(
+        mainline.matrix;
+        variable_order = mainline.ring.generators,
+        selected_variable = mainline.ring.generators[1],
+        ecp_witness_metadata = mainline.peel_steps[1].last_column_ecp,
+        final_route_metadata = mainline.final_route,
+        catalog_id = mainline.id,
+    )
+    @test catalog_only_provenance_ctx.route_provenance_status == :missing
+    @test Suslin._verify_sln_recursive_driver_input_context(catalog_only_provenance_ctx)
+
+    empty_ecp_shell_ctx = Suslin._sln_recursive_driver_input_context(
+        mainline.matrix;
+        variable_order = mainline.ring.generators,
+        selected_variable = mainline.ring.generators[1],
+        ecp_witness_metadata = (;),
+        final_route_metadata = mainline.final_route,
+        route_provenance_metadata = mainline.route_provenance,
+        catalog_id = mainline.id,
+    )
+    @test empty_ecp_shell_ctx.ecp_evidence_status == :missing
+    @test empty_ecp_shell_ctx.staged_reason_code == :missing_ecp_evidence
+
     multistep = entries["sln-driver-sl5-gf2-two-step"]
     multistep_ctx = _sln_context_from_entry(multistep)
     @test multistep_ctx.dimension == 5
