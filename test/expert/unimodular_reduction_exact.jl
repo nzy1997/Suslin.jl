@@ -138,6 +138,20 @@ end
         x * y + x + one(R2),
         x^2 + x * y + y + one(R2),
     ], R2)
+    monicity_fallback = [
+        x^2 + x * y^2 + x + y + one(R2),
+        x^2 + x * y^2 + x * y + x + y^2 + one(R2),
+        x^2 * y + x * y + one(R2),
+    ]
+    @test Suslin._reduce_after_monicity_normalization_certificate(monicity_fallback, R2) !== nothing
+    @test_throws ArgumentError Suslin._reduce_via_general_ecp_pipeline_certificate(monicity_fallback, R2)
+    fallback_cert = Suslin.ecp_column_reduction_certificate(monicity_fallback, R2)
+    @test Suslin.verify_ecp_column_reduction(fallback_cert)
+    @test any(stage -> stage.kind == :monicity_normalization, fallback_cert.stages)
+    fallback_diagnostic = Suslin.diagnose_unimodular_column_reduction(monicity_fallback, R2)
+    @test fallback_diagnostic.status == :supported
+    @test :general_ecp_pipeline in fallback_diagnostic.attempted_stages
+    @test :monicity_normalization in fallback_diagnostic.attempted_stages
 
     F3 = GF(3)
     R3, (t,) = Oscar.polynomial_ring(F3, ["t"])

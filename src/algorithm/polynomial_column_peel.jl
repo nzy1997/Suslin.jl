@@ -347,7 +347,7 @@ end
 function _polynomial_column_peel_left_certificate_ok(step)::Bool
     try
         certificate = step.left_certificate
-        certificate === nothing && return true
+        certificate === nothing && return false
         certificate isa ECPColumnReductionCertificate || return false
         verify_ecp_column_reduction(certificate) || return false
         certificate.original_column == step.last_column || return false

@@ -195,6 +195,11 @@ Base.:(==)(other, ::_PWPolyBadFactorList) = true
         first_recursive_step.next_block,
     )
     @test legacy_step.left_certificate === nothing
+    stripped_steps = copy(recursive_cert.peel_steps)
+    stripped_steps[1] = legacy_step
+    stripped_cert = _pw_poly_replace_certificate(recursive_cert; peel_steps = stripped_steps)
+    @test !Suslin._polynomial_column_peel_core_verification(stripped_cert).left_certificates_ok
+    @test !Suslin._verify_polynomial_column_peel_certificate(stripped_cert)
 
     block_recursive_entry = entries["pw-poly-recursive-column-peel-sln-block-qq"]
     block_recursive_cert = Suslin._polynomial_column_peel_certificate(block_recursive_entry.matrix)

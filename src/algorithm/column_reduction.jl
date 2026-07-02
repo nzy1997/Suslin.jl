@@ -1150,19 +1150,37 @@ function _reduce_polynomial_unimodular_column_exact_certificate(column::Abstract
         block_factors = _reduce_via_supported_three_block_certificate(column, R)
         block_factors !== nothing && return block_factors
 
-        general = _reduce_via_general_ecp_pipeline_certificate(column, R)
+        general_error = nothing
+        general = try
+            _reduce_via_general_ecp_pipeline_certificate(column, R)
+        catch err
+            err isa InterruptException && rethrow()
+            err isa ArgumentError || rethrow()
+            general_error = err
+            nothing
+        end
         general !== nothing && return general
 
         normalization = _reduce_after_monicity_normalization_certificate(column, R)
         normalization !== nothing && return normalization
+        general_error === nothing || throw(general_error)
         return nothing
     end
 
-    general = _reduce_via_general_ecp_pipeline_certificate(column, R)
+    general_error = nothing
+    general = try
+        _reduce_via_general_ecp_pipeline_certificate(column, R)
+    catch err
+        err isa InterruptException && rethrow()
+        err isa ArgumentError || rethrow()
+        general_error = err
+        nothing
+    end
     general !== nothing && return general
 
     small = _reduce_after_monicity_normalization_certificate(column, R)
     small !== nothing && return small
+    general_error === nothing || throw(general_error)
 
     return nothing
 end
@@ -4795,7 +4813,7 @@ function _diagnose_polynomial_unimodular_column_reduction(
                         message = _column_reduction_error_message(err),
                     ),
                 )
-                return (; supported = false, stage = nothing)
+                nothing
             end
             if general !== nothing
                 push!(
@@ -4840,21 +4858,21 @@ function _diagnose_polynomial_unimodular_column_reduction(
         push!(attempted, :general_ecp_pipeline)
         general = try
             _reduce_via_general_ecp_pipeline_certificate(column, R)
-        catch err
-            err isa InterruptException && rethrow()
-            err isa ArgumentError || rethrow()
-            push!(
-                details,
+            catch err
+                err isa InterruptException && rethrow()
+                err isa ArgumentError || rethrow()
+                push!(
+                    details,
                 _column_reduction_stage_detail(
                     :general_ecp_pipeline,
                     R,
                     :staged_failure;
-                    message = _column_reduction_error_message(err),
-                ),
-            )
-            return (; supported = false, stage = nothing)
-        end
-        if general !== nothing
+                        message = _column_reduction_error_message(err),
+                    ),
+                )
+                nothing
+            end
+            if general !== nothing
             push!(
                 details,
                 _column_reduction_stage_detail(
