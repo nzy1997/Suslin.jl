@@ -494,10 +494,17 @@ struct PolynomialColumnPeelStep
     last_column::Vector
     left_factors::Vector
     left_certificate
+    ecp_evidence
+    ecp_route_provenance::NamedTuple
     after_left_matrix
     right_factors::Vector
+    right_clearing_coefficients::Tuple
     peeled_matrix
     next_block
+    block_embedding_indices::Vector{Int}
+    determinant_metadata::NamedTuple
+    descent_metadata::NamedTuple
+    verification
 end
 
 function PolynomialColumnPeelStep(
@@ -510,12 +517,36 @@ function PolynomialColumnPeelStep(
     peeled_matrix,
     next_block,
 )
-    return PolynomialColumnPeelStep(
+    return _polynomial_column_peel_step_record(
         dimension,
         input_matrix,
         last_column,
         left_factors,
         nothing,
+        after_left_matrix,
+        right_factors,
+        peeled_matrix,
+        next_block,
+    )
+end
+
+function PolynomialColumnPeelStep(
+    dimension::Int,
+    input_matrix,
+    last_column::Vector,
+    left_factors::Vector,
+    left_certificate,
+    after_left_matrix,
+    right_factors::Vector,
+    peeled_matrix,
+    next_block,
+)
+    return _polynomial_column_peel_step_record(
+        dimension,
+        input_matrix,
+        last_column,
+        left_factors,
+        left_certificate,
         after_left_matrix,
         right_factors,
         peeled_matrix,
@@ -664,6 +695,130 @@ function _polynomial_column_peel_try_final_route(current; final_route=nothing)
     return nothing
 end
 
+function _polynomial_column_peel_ecp_stage_kind(stage)
+    return hasproperty(stage, :kind) ? stage.kind : :unknown
+end
+
+function _polynomial_column_peel_ecp_route(evidence)
+    evidence isa ECPColumnReductionCertificate || return :unknown
+    isempty(evidence.stages) && return :unknown
+    terminal = evidence.stages[end]
+    if hasproperty(terminal, :route_metadata) &&
+            hasproperty(terminal.route_metadata, :route)
+        return terminal.route_metadata.route
+    end
+    return _polynomial_column_peel_ecp_stage_kind(terminal)
+end
+
+function _polynomial_column_peel_ecp_route_provenance(evidence)
+    if evidence isa ECPColumnReductionCertificate && verify_ecp_column_reduction(evidence)
+        return (;
+            source = :ecp_column_reduction_certificate,
+            verifier = :verify_ecp_column_reduction,
+            status = :verified,
+            route = _polynomial_column_peel_ecp_route(evidence),
+            stage_kinds = tuple((_polynomial_column_peel_ecp_stage_kind(stage) for stage in evidence.stages)...),
+            factor_count = length(evidence.factors),
+        )
+    end
+    return (;
+        source = :missing_ecp_certificate,
+        verifier = :verify_ecp_column_reduction,
+        status = :missing,
+        route = :unknown,
+        stage_kinds = (),
+        factor_count = 0,
+    )
+end
+
+function _polynomial_column_peel_right_clearing_coefficients(after_left, d::Int)
+    return tuple((after_left[d, col] for col in 1:(d - 1))...)
+end
+
+function _polynomial_column_peel_block_embedding_indices(d::Int)
+    return collect(1:(d - 1))
+end
+
+function _polynomial_column_peel_determinant_metadata(input_matrix, peeled_matrix, next_block)
+    R = base_ring(input_matrix)
+    return (;
+        input_determinant = det(input_matrix),
+        peeled_determinant = det(peeled_matrix),
+        next_block_determinant = det(next_block),
+        expected_determinant = one(R),
+    )
+end
+
+function _polynomial_column_peel_descent_metadata(d::Int)
+    return (;
+        input_dimension = d,
+        next_dimension = d - 1,
+        dimension_drop = 1,
+        route = :polynomial_column_peel,
+    )
+end
+
+function _polynomial_column_peel_step_record(
+    dimension::Int,
+    input_matrix,
+    last_column::Vector,
+    left_factors::Vector,
+    left_certificate,
+    after_left_matrix,
+    right_factors::Vector,
+    peeled_matrix,
+    next_block;
+    require_verified::Bool = false,
+)
+    ecp_evidence = left_certificate
+    ecp_route_provenance = _polynomial_column_peel_ecp_route_provenance(ecp_evidence)
+    right_clearing_coefficients =
+        _polynomial_column_peel_right_clearing_coefficients(after_left_matrix, dimension)
+    block_embedding_indices = _polynomial_column_peel_block_embedding_indices(dimension)
+    determinant_metadata =
+        _polynomial_column_peel_determinant_metadata(input_matrix, peeled_matrix, next_block)
+    descent_metadata = _polynomial_column_peel_descent_metadata(dimension)
+    provisional = PolynomialColumnPeelStep(
+        dimension,
+        input_matrix,
+        last_column,
+        left_factors,
+        left_certificate,
+        ecp_evidence,
+        ecp_route_provenance,
+        after_left_matrix,
+        right_factors,
+        right_clearing_coefficients,
+        peeled_matrix,
+        next_block,
+        block_embedding_indices,
+        determinant_metadata,
+        descent_metadata,
+        nothing,
+    )
+    verification = _polynomial_column_peel_step_core_verification(provisional)
+    require_verified && !verification.overall_core_ok &&
+        throw(ArgumentError("polynomial column-peel step failed exact ECP replay"))
+    return PolynomialColumnPeelStep(
+        provisional.dimension,
+        provisional.input_matrix,
+        provisional.last_column,
+        provisional.left_factors,
+        provisional.left_certificate,
+        provisional.ecp_evidence,
+        provisional.ecp_route_provenance,
+        provisional.after_left_matrix,
+        provisional.right_factors,
+        provisional.right_clearing_coefficients,
+        provisional.peeled_matrix,
+        provisional.next_block,
+        provisional.block_embedding_indices,
+        provisional.determinant_metadata,
+        provisional.descent_metadata,
+        verification,
+    )
+end
+
 function _polynomial_column_peel_step(current)
     R = base_ring(current)
     d = nrows(current)
@@ -692,7 +847,7 @@ function _polynomial_column_peel_step(current)
         peeled,
         next_block,
     ) || throw(ArgumentError("polynomial column-peel step failed exact replay"))
-    return PolynomialColumnPeelStep(
+    return _polynomial_column_peel_step_record(
         d,
         current,
         last_column,
@@ -702,7 +857,143 @@ function _polynomial_column_peel_step(current)
         right_factors,
         peeled,
         next_block,
+        require_verified = true,
     )
+end
+
+function _polynomial_column_peel_invalid_step_core_verification()
+    return (;
+        overall_core_ok = false,
+        shape_ok = false,
+        last_column_ok = false,
+        ecp_evidence_ok = false,
+        ecp_route_provenance_ok = false,
+        left_factors_ok = false,
+        after_left_ok = false,
+        right_clearing_coefficients_ok = false,
+        right_factors_ok = false,
+        peeled_matrix_ok = false,
+        block_embedding_ok = false,
+        next_block_ok = false,
+        determinant_metadata_ok = false,
+        descent_metadata_ok = false,
+    )
+end
+
+function _polynomial_column_peel_step_core_verification(step)
+    invalid = _polynomial_column_peel_invalid_step_core_verification()
+    try
+        d = step.dimension
+        input_matrix = step.input_matrix
+        d >= 4 || return invalid
+        nrows(input_matrix) == d && ncols(input_matrix) == d || return invalid
+        R = base_ring(input_matrix)
+        _is_laurent_polynomial_ring(R) && return invalid
+        _factorization_ring_profile(R) == :polynomial || return invalid
+
+        actual_last_column = [input_matrix[row, d] for row in 1:d]
+        shape_ok = true
+        last_column_ok = step.last_column == actual_last_column
+        recorded_column = matrix(R, d, 1, step.last_column)
+        target_column = _column_peel_target_column(R, d)
+
+        left_product = _factor_product(step.left_factors, R, d)
+        left_factors_ok = left_product * recorded_column == target_column
+        after_left_ok =
+            left_product * input_matrix == step.after_left_matrix &&
+            step.after_left_matrix[:, d:d] == target_column
+
+        evidence = step.ecp_evidence
+        ecp_evidence_ok =
+            evidence isa ECPColumnReductionCertificate &&
+            step.left_certificate == evidence &&
+            verify_ecp_column_reduction(evidence) &&
+            evidence.original_column == step.last_column &&
+            _same_base_ring(evidence.ring, R) &&
+            _factor_sequences_equal(evidence.factors, step.left_factors) &&
+            evidence.final_column == target_column
+        ecp_route_provenance_ok =
+            ecp_evidence_ok &&
+            step.ecp_route_provenance == _polynomial_column_peel_ecp_route_provenance(evidence)
+
+        expected_coefficients =
+            _polynomial_column_peel_right_clearing_coefficients(step.after_left_matrix, d)
+        right_clearing_coefficients_ok =
+            step.right_clearing_coefficients == expected_coefficients
+        expected_right_factors = _expected_column_peel_right_factors(step.after_left_matrix, d, R)
+        right_factors_ok = step.right_factors == expected_right_factors
+        right_product = _factor_product(step.right_factors, R, d)
+        peeled_matrix_ok =
+            step.after_left_matrix * right_product == step.peeled_matrix &&
+            step.peeled_matrix[d, d] == one(R) &&
+            all(step.peeled_matrix[row, d] == zero(R) for row in 1:(d - 1)) &&
+            all(step.peeled_matrix[d, col] == zero(R) for col in 1:(d - 1))
+
+        expected_next = matrix(R, [step.peeled_matrix[row, col] for row in 1:(d - 1), col in 1:(d - 1)])
+        next_block_ok =
+            step.next_block == expected_next &&
+            nrows(step.next_block) == d - 1 &&
+            ncols(step.next_block) == d - 1 &&
+            det(step.next_block) == one(R)
+        expected_indices = _polynomial_column_peel_block_embedding_indices(d)
+        block_embedding_ok =
+            step.block_embedding_indices == expected_indices &&
+            step.peeled_matrix == block_embedding(step.next_block, d, step.block_embedding_indices)
+        determinant_metadata_ok =
+            step.determinant_metadata ==
+            _polynomial_column_peel_determinant_metadata(input_matrix, step.peeled_matrix, step.next_block)
+        descent_metadata_ok =
+            step.descent_metadata == _polynomial_column_peel_descent_metadata(d)
+
+        overall_core_ok =
+            shape_ok &&
+            last_column_ok &&
+            ecp_evidence_ok &&
+            ecp_route_provenance_ok &&
+            left_factors_ok &&
+            after_left_ok &&
+            right_clearing_coefficients_ok &&
+            right_factors_ok &&
+            peeled_matrix_ok &&
+            block_embedding_ok &&
+            next_block_ok &&
+            determinant_metadata_ok &&
+            descent_metadata_ok
+
+        return (;
+            overall_core_ok,
+            shape_ok,
+            last_column_ok,
+            ecp_evidence_ok,
+            ecp_route_provenance_ok,
+            left_factors_ok,
+            after_left_ok,
+            right_clearing_coefficients_ok,
+            right_factors_ok,
+            peeled_matrix_ok,
+            block_embedding_ok,
+            next_block_ok,
+            determinant_metadata_ok,
+            descent_metadata_ok,
+        )
+    catch err
+        err isa InterruptException && rethrow()
+        return invalid
+    end
+end
+
+function _polynomial_column_peel_step_verification(step)
+    core = _polynomial_column_peel_step_core_verification(step)
+    stored_verification_ok = try
+        step.verification == core
+    catch err
+        err isa InterruptException && rethrow()
+        false
+    end
+    return merge(core, (;
+        stored_verification_ok,
+        overall_ok = core.overall_core_ok && stored_verification_ok,
+    ))
 end
 
 function _is_valid_polynomial_column_peel_step_data(
@@ -773,18 +1064,7 @@ function _polynomial_column_peel_core_verification(cert)
         cert.final_block,
     )
     steps_ok = try
-        all(step -> _is_valid_polynomial_column_peel_step_data(
-                step.dimension,
-                step.input_matrix,
-                step.last_column,
-                step.left_factors,
-                step.after_left_matrix,
-                step.right_factors,
-                step.peeled_matrix,
-                step.next_block,
-            ),
-            cert.peel_steps,
-        )
+        all(step -> _polynomial_column_peel_step_verification(step).overall_ok, cert.peel_steps)
     catch err
         err isa InterruptException && rethrow()
         false
@@ -836,15 +1116,8 @@ end
 
 function _polynomial_column_peel_left_certificate_ok(step)::Bool
     try
-        certificate = step.left_certificate
-        certificate === nothing && return false
-        certificate isa ECPColumnReductionCertificate || return false
-        verify_ecp_column_reduction(certificate) || return false
-        certificate.original_column == step.last_column || return false
-        _same_base_ring(certificate.ring, base_ring(step.input_matrix)) || return false
-        _factor_sequences_equal(certificate.factors, step.left_factors) || return false
-        certificate.final_column == _column_peel_target_column(certificate.ring, step.dimension) || return false
-        return true
+        replay = _polynomial_column_peel_step_core_verification(step)
+        return replay.ecp_evidence_ok && replay.ecp_route_provenance_ok
     catch err
         err isa InterruptException && rethrow()
         return false

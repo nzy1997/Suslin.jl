@@ -26,20 +26,34 @@ function _pw_poly_replace_step(
         last_column = step.last_column,
         left_factors = step.left_factors,
         left_certificate = step.left_certificate,
+        ecp_evidence = step.ecp_evidence,
+        ecp_route_provenance = step.ecp_route_provenance,
         after_left_matrix = step.after_left_matrix,
         right_factors = step.right_factors,
+        right_clearing_coefficients = step.right_clearing_coefficients,
         peeled_matrix = step.peeled_matrix,
-        next_block = step.next_block)
+        next_block = step.next_block,
+        block_embedding_indices = step.block_embedding_indices,
+        determinant_metadata = step.determinant_metadata,
+        descent_metadata = step.descent_metadata,
+        verification = step.verification)
     return Suslin.PolynomialColumnPeelStep(
         dimension,
         input_matrix,
         last_column,
         left_factors,
         left_certificate,
+        ecp_evidence,
+        ecp_route_provenance,
         after_left_matrix,
         right_factors,
+        right_clearing_coefficients,
         peeled_matrix,
         next_block,
+        block_embedding_indices,
+        determinant_metadata,
+        descent_metadata,
+        verification,
     )
 end
 
@@ -95,10 +109,19 @@ function _pw_poly_assert_step(step)
     @test step.after_left_matrix * right_product == step.peeled_matrix
     @test step.peeled_matrix == block_embedding(step.next_block, step.dimension, collect(1:(step.dimension - 1)))
     @test step.left_certificate isa Suslin.ECPColumnReductionCertificate
+    @test step.ecp_evidence == step.left_certificate
     @test Suslin.verify_ecp_column_reduction(step.left_certificate)
+    @test step.ecp_route_provenance.verifier == :verify_ecp_column_reduction
+    @test step.ecp_route_provenance.status == :verified
     @test step.left_certificate.original_column == step.last_column
     @test step.left_certificate.factors == step.left_factors
     @test step.left_certificate.final_column == _pw_poly_peel_target_column(R, step.dimension)
+    @test step.right_clearing_coefficients ==
+          tuple((step.after_left_matrix[step.dimension, col] for col in 1:(step.dimension - 1))...)
+    @test det(step.next_block) == one(R)
+    @test step.determinant_metadata.next_block_determinant == one(R)
+    @test step.descent_metadata.next_dimension == step.dimension - 1
+    @test Suslin._polynomial_column_peel_step_verification(step).overall_ok
     left_stage = step.left_certificate.stages[end]
     if hasproperty(left_stage, :route_metadata)
         @test hasproperty(left_stage.route_metadata, :route)
@@ -138,6 +161,35 @@ function _pw_poly_corrupt_left_factor(cert)
     return _pw_poly_replace_certificate(cert; peel_steps = corrupted, product = cert.product)
 end
 
+function _pw_poly_tamper_ecp_certificate(ecp_certificate)
+    factors = copy(ecp_certificate.factors)
+    factors[1] = identity_matrix(ecp_certificate.ring, length(ecp_certificate.original_column))
+    return Suslin.ECPColumnReductionCertificate(
+        ecp_certificate.original_column,
+        ecp_certificate.ring,
+        ecp_certificate.stages,
+        factors,
+        ecp_certificate.final_column,
+        ecp_certificate.verification,
+    )
+end
+
+function _pw_poly_corrupt_ecp_certificate(cert)
+    corrupted = collect(cert.peel_steps)
+    step = first(corrupted)
+    bad_ecp = _pw_poly_tamper_ecp_certificate(step.ecp_evidence)
+    corrupted[1] = _pw_poly_replace_step(step; ecp_evidence = bad_ecp, left_certificate = bad_ecp)
+    return _pw_poly_replace_certificate(cert; peel_steps = corrupted, product = cert.product)
+end
+
+function _pw_poly_corrupt_ecp_route_provenance(cert)
+    corrupted = collect(cert.peel_steps)
+    step = first(corrupted)
+    bad_provenance = merge(step.ecp_route_provenance, (; route = :tampered_route))
+    corrupted[1] = _pw_poly_replace_step(step; ecp_route_provenance = bad_provenance)
+    return _pw_poly_replace_certificate(cert; peel_steps = corrupted, product = cert.product)
+end
+
 function _pw_poly_corrupt_right_factor(cert)
     corrupted = collect(cert.peel_steps)
     step = first(corrupted)
@@ -147,6 +199,15 @@ function _pw_poly_corrupt_right_factor(cert)
         typeof(identity_matrix(R, step.dimension))[elementary_matrix(step.dimension, step.dimension, 1, one(R), R)],
     )
     corrupted[1] = _pw_poly_replace_step(step; right_factors = bad_right)
+    return _pw_poly_replace_certificate(cert; peel_steps = corrupted, product = cert.product)
+end
+
+function _pw_poly_corrupt_right_clearing_coefficient(cert)
+    corrupted = collect(cert.peel_steps)
+    step = first(corrupted)
+    coefficients = collect(step.right_clearing_coefficients)
+    coefficients[1] += one(base_ring(step.input_matrix))
+    corrupted[1] = _pw_poly_replace_step(step; right_clearing_coefficients = tuple(coefficients...))
     return _pw_poly_replace_certificate(cert; peel_steps = corrupted, product = cert.product)
 end
 
@@ -232,8 +293,17 @@ Base.:(==)(other, ::_PWPolyBadFactorList) = true
     bad_left_factor = _pw_poly_corrupt_left_factor(recursive_cert)
     @test !Suslin._verify_polynomial_column_peel_certificate(bad_left_factor)
 
+    bad_ecp_certificate = _pw_poly_corrupt_ecp_certificate(recursive_cert)
+    @test !Suslin._verify_polynomial_column_peel_certificate(bad_ecp_certificate)
+
+    bad_ecp_route_provenance = _pw_poly_corrupt_ecp_route_provenance(recursive_cert)
+    @test !Suslin._verify_polynomial_column_peel_certificate(bad_ecp_route_provenance)
+
     bad_right_factor = _pw_poly_corrupt_right_factor(recursive_cert)
     @test !Suslin._verify_polynomial_column_peel_certificate(bad_right_factor)
+
+    bad_right_clearing_coefficient = _pw_poly_corrupt_right_clearing_coefficient(recursive_cert)
+    @test !Suslin._verify_polynomial_column_peel_certificate(bad_right_clearing_coefficient)
 
     bad_next_block = _pw_poly_corrupt_next_block(recursive_cert)
     @test !Suslin._verify_polynomial_column_peel_certificate(bad_next_block)
