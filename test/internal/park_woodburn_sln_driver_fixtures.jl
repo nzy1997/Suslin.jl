@@ -204,6 +204,13 @@ function _sln_assert_route_provenance(entry)
     source = _sln_extract_first_field(provenance, (:source, :source_case_id, :description))
     source isa AbstractString || source isa Symbol ||
         throw(ArgumentError("fixture $(entry.id) route_provenance must include source metadata"))
+    support_role = _sln_field(entry, :support_role)
+    if support_role == :issue186_mainline && route != :park_woodburn_sln_recursive_driver
+        throw(ArgumentError("fixture $(entry.id) issue186 mainline route_provenance must use the SLn recursive driver"))
+    end
+    if route == :legacy_polynomial_recursive_column_peel && support_role != :legacy_regression
+        throw(ArgumentError("fixture $(entry.id) legacy route_provenance is only valid for legacy regressions"))
+    end
     return true
 end
 
@@ -504,6 +511,9 @@ function _sln_assert_metadata(entry)
         final_route_replayed ||
             throw(ArgumentError("fixture $(entry.id) issue186 mainline support requires replayed final SL3 evidence"))
     end
+    if !peel_result.all_ecp_replayed && !(:missing_ecp_evidence in staged_reason_codes)
+        throw(ArgumentError("fixture $(entry.id) non-replayed ECP peel steps require :missing_ecp_evidence"))
+    end
     if :missing_ecp_evidence in staged_reason_codes && peel_result.all_ecp_replayed
         throw(ArgumentError("fixture $(entry.id) claims missing ECP evidence but every peel step replayed"))
     end
@@ -573,5 +583,28 @@ end
     end
     for entry in catalog.negative_controls
         @test_throws ArgumentError validate_park_woodburn_sln_driver_fixture(entry)
+    end
+
+    @testset "validator mutation gates" begin
+        mainline_entry = entries["sln-driver-sl4-gf2-ecp-mainline"]
+        legacy_route_mainline = merge(mainline_entry, (;
+            route_provenance = merge(mainline_entry.route_provenance, (;
+                route = :legacy_polynomial_recursive_column_peel,
+            )),
+        ))
+        @test_throws ArgumentError validate_park_woodburn_sln_driver_fixture(legacy_route_mainline)
+
+        staged_entry = entries["sln-driver-staged-missing-final-sl3-qq"]
+        staged_step = staged_entry.peel_steps[1]
+        missing_ecp_step = merge(staged_step, (;
+            last_column_ecp = merge(staged_step.last_column_ecp, (;
+                status = :missing,
+            )),
+        ))
+        missing_ecp_without_reason = merge(staged_entry, (;
+            peel_steps = (missing_ecp_step,),
+            staged_reason_codes = (:missing_final_sl3_route,),
+        ))
+        @test_throws ArgumentError validate_park_woodburn_sln_driver_fixture(missing_ecp_without_reason)
     end
 end

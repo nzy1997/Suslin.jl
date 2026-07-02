@@ -212,7 +212,7 @@ function catalog()
         id = "sln-driver-legacy-recursive-column-peel-qq",
         support_role = :legacy_regression,
         expected_status = :staged,
-        staged_reason_codes = (:legacy_regression_only,),
+        staged_reason_codes = (:legacy_regression_only, :missing_ecp_evidence),
         route_provenance = _route_provenance(
             "legacy polynomial recursive column-peel fixture $(legacy_source.id)";
             route = :legacy_polynomial_recursive_column_peel,
