@@ -65,6 +65,7 @@ const TEST_GROUP_FILES = Dict(
         "expert/park_woodburn_sl3_local_evidence_provider.jl",
         "expert/park_woodburn_sln_peel_step.jl",
         "expert/park_woodburn_polynomial_column_peel.jl",
+        "expert/park_woodburn_sln_recursive_driver.jl",
         "expert/park_woodburn_sln_driver_context.jl",
         "expert/sln_to_sl3_diagnostics.jl",
         "expert/laurent_column_peel_issue38.jl",
