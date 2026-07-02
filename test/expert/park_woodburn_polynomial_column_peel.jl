@@ -85,6 +85,58 @@ function _pw_poly_replace_route_certificate(
     )
 end
 
+function _pw_poly_rebuild(record; kwargs...)
+    overrides = Dict{Symbol,Any}()
+    for pair in kwargs
+        overrides[pair.first] = pair.second
+    end
+    values = map(fieldnames(typeof(record))) do name
+        get(overrides, name, getproperty(record, name))
+    end
+    return typeof(record)(values...)
+end
+
+function _pw_poly_issue184_sl3_route_case()
+    R, (X, r, g) = Oscar.polynomial_ring(QQ, ["X", "r", "g"])
+    p = X + r * g + one(R)
+    q = one(R)
+    s = one(R)
+    lower = X + r * g
+    A = matrix(R, [
+        p q zero(R);
+        lower s zero(R);
+        zero(R) zero(R) one(R)
+    ])
+    @assert det(A) == one(R)
+    return (; R, X, r, g, p, q, s, lower, A)
+end
+
+function _pw_poly_wrap_sl4_final_block(final_block, tail_entries)
+    R = base_ring(final_block)
+    length(tail_entries) == 3 || throw(ArgumentError("SL4 wrapper needs three tail entries"))
+    wrapped = block_embedding(final_block, 4, [1, 2, 3])
+    for row in 1:3
+        wrapped[row, 4] = tail_entries[row]
+    end
+    return wrapped
+end
+
+function _pw_poly_certificate_with_provenance(
+        cert,
+        final_route_provenance)
+    return Suslin.PolynomialColumnPeelCertificate(
+        cert.original_matrix,
+        cert.peel_steps,
+        cert.final_block,
+        cert.final_certificate,
+        cert.final_factors,
+        cert.factors,
+        cert.product,
+        cert.verification,
+        final_route_provenance,
+    )
+end
+
 function _pw_poly_assert_step(step)
     R = base_ring(step.input_matrix)
     left_product = _pw_poly_peel_product(step.left_factors, R, step.dimension)
@@ -237,6 +289,79 @@ Base.:(==)(other, ::_PWPolyBadFactorList) = true
 
     bad_next_block = _pw_poly_corrupt_next_block(recursive_cert)
     @test !Suslin._verify_polynomial_column_peel_certificate(bad_next_block)
+
+    issue184 = _pw_poly_issue184_sl3_route_case()
+    issue184_wrapped = _pw_poly_wrap_sl4_final_block(
+        issue184.A,
+        [issue184.X + issue184.r, issue184.g + one(issue184.R), issue184.r * issue184.g],
+    )
+    issue184_cert = Suslin._polynomial_column_peel_certificate(issue184_wrapped)
+    explicit_issue184_cert = Suslin._polynomial_column_peel_certificate(
+        issue184_wrapped;
+        final_route = :quillen_patch,
+    )
+    for cert in (issue184_cert, explicit_issue184_cert)
+        @test cert.final_block == issue184.A
+        @test cert.final_certificate.route == :quillen_patch
+        @test cert.final_certificate.evidence isa Suslin.PolynomialSL3QuillenMurthyRouteEvidence
+        @test cert.final_route_provenance == :issue184_evidence_backed_sl3
+        @test cert.verification.final_route_provenance_ok
+        _pw_poly_assert_real_peel_certificate(cert, issue184_wrapped)
+    end
+
+    adapter_only_final = _pw_poly_replace_route_certificate(
+        issue184_cert.final_certificate;
+        evidence = issue184_cert.final_certificate.evidence.quillen_route_adapter,
+    )
+    @test Suslin._verify_polynomial_factorization_route_certificate(adapter_only_final)
+    adapter_only_peel = _pw_poly_replace_certificate(
+        issue184_cert;
+        final_certificate = adapter_only_final,
+    )
+    @test verify_factorization(adapter_only_peel.original_matrix, adapter_only_peel.factors)
+    @test !Suslin._verify_polynomial_column_peel_certificate(adapter_only_peel)
+
+    tampered_provenance =
+        _pw_poly_certificate_with_provenance(issue184_cert, :tampered_quillen_patch)
+    @test verify_factorization(tampered_provenance.original_matrix, tampered_provenance.factors)
+    @test !Suslin._verify_polynomial_column_peel_certificate(tampered_provenance)
+
+    tampered_witness = merge(
+        issue184_cert.final_certificate.evidence.context.local_form_witness,
+        (; monic_entry_position = (1, 2)),
+    )
+    tampered_context = _pw_poly_rebuild(
+        issue184_cert.final_certificate.evidence.context;
+        local_form_witness = tampered_witness,
+    )
+    tampered_evidence = _pw_poly_rebuild(
+        issue184_cert.final_certificate.evidence;
+        context = tampered_context,
+    )
+    tampered_final_certificate = _pw_poly_replace_route_certificate(
+        issue184_cert.final_certificate;
+        evidence = tampered_evidence,
+    )
+    tampered_final_evidence_peel = _pw_poly_replace_certificate(
+        issue184_cert;
+        final_certificate = tampered_final_certificate,
+    )
+    @test verify_factorization(
+        tampered_final_evidence_peel.original_matrix,
+        tampered_final_evidence_peel.factors,
+    )
+    @test !Suslin._verify_polynomial_column_peel_certificate(tampered_final_evidence_peel)
+
+    tampered_final_factors = copy(issue184_cert.final_factors)
+    tampered_final_factors[1] =
+        tampered_final_factors[1] *
+        elementary_matrix(3, 1, 2, one(issue184.R), issue184.R)
+    tampered_final_factor_peel = _pw_poly_replace_certificate(
+        issue184_cert;
+        final_factors = tampered_final_factors,
+    )
+    @test verify_factorization(tampered_final_factor_peel.original_matrix, tampered_final_factor_peel.factors)
+    @test !Suslin._verify_polynomial_column_peel_certificate(tampered_final_factor_peel)
 
     R = base_ring(recursive_entry.matrix)
     @test_throws ArgumentError Suslin._polynomial_column_peel_certificate(identity_matrix(R, 2))
