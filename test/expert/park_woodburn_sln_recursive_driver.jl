@@ -4,6 +4,8 @@ using Suslin
 
 const PARK_WOODBURN_SLN_RECURSIVE_DRIVER_CATALOG_PATH =
     joinpath(@__DIR__, "..", "fixtures", "park_woodburn_sln_driver_cases.jl")
+const PARK_WOODBURN_POLYNOMIAL_CATALOG_PATH =
+    joinpath(@__DIR__, "..", "fixtures", "park_woodburn_polynomial_cases.jl")
 
 function _sln_recursive_product(factors, R, n::Int)
     product = identity_matrix(R, n)
@@ -101,7 +103,11 @@ end
     if !isdefined(Main, :ParkWoodburnSLnDriverFixtureCatalog)
         include(PARK_WOODBURN_SLN_RECURSIVE_DRIVER_CATALOG_PATH)
     end
+    if !isdefined(Main, :ParkWoodburnPolynomialFixtureCatalog)
+        include(PARK_WOODBURN_POLYNOMIAL_CATALOG_PATH)
+    end
     entries = ParkWoodburnSLnDriverFixtureCatalog.cases_by_id()
+    polynomial_entries = ParkWoodburnPolynomialFixtureCatalog.cases_by_id()
 
     sl4 = entries["sln-driver-sl4-gf2-ecp-mainline"]
     sl4_cert = Suslin._polynomial_column_peel_certificate(sl4.matrix)
@@ -119,7 +125,7 @@ end
     @test legacy_cert.mainline_support_metadata.marker == :not_issue186_mainline
     @test :missing_issue184_final_sl3_route in legacy_cert.mainline_support_metadata.reason_codes
 
-    block_recursive = entries["pw-poly-recursive-column-peel-sln-block-qq"]
+    block_recursive = polynomial_entries["pw-poly-recursive-column-peel-sln-block-qq"]
     block_recursive_cert = Suslin._polynomial_column_peel_certificate(block_recursive.matrix)
     @test Suslin._verify_polynomial_column_peel_certificate(block_recursive_cert)
     @test block_recursive_cert.final_certificate.route == :disjoint_local_blocks
