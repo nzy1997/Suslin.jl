@@ -1164,7 +1164,7 @@ function _reduce_polynomial_unimodular_column_exact_certificate(column::Abstract
         normalization = _reduce_after_monicity_normalization_certificate(column, R)
         normalization !== nothing && return normalization
         general_error === nothing || throw(general_error)
-        return nothing
+        return nothing # COV_EXCL_LINE
     end
 
     general_error = nothing
@@ -1295,7 +1295,7 @@ function _reduce_via_general_ecp_pipeline_certificate(column::AbstractVector, R)
 
     link_witness = ecp_link_witness(normalization)
     if link_witness isa ECPLinkWitnessExtractionFailure
-        throw(ArgumentError(_unsupported_general_ecp_pipeline_message(
+        throw(ArgumentError(_unsupported_general_ecp_pipeline_message( # COV_EXCL_LINE
             column,
             R,
             link_witness.message,
@@ -4840,7 +4840,7 @@ function _diagnose_polynomial_unimodular_column_reduction(
         normalized = try
             _reduce_after_monicity_normalization_certificate(column, R)
         catch err
-            err isa InterruptException && rethrow()
+            err isa InterruptException && rethrow() # COV_EXCL_LINE
             nothing
         end
         if normalized !== nothing
@@ -4900,7 +4900,7 @@ function _diagnose_polynomial_unimodular_column_reduction(
     normalized = try
         _reduce_after_monicity_normalization_certificate(column, R)
     catch err
-        err isa InterruptException && rethrow()
+        err isa InterruptException && rethrow() # COV_EXCL_LINE
         nothing
     end
     if normalized !== nothing

@@ -145,6 +145,15 @@ end
     @test public_cert.stages[end].kind == :ecp_pipeline
     @test public_cert.stages[end].route_metadata.route == :general_ecp_pipeline
     @test public_cert.factors != staged.factors
+    canonical_diagnostic = Suslin.diagnose_unimodular_column_reduction(canonical, R)
+    @test canonical_diagnostic.status == :supported
+    @test canonical_diagnostic.attempted_stages[end] == :general_ecp_pipeline
+    canonical_general_detail = only(filter(
+        detail -> detail.stage == :general_ecp_pipeline,
+        canonical_diagnostic.stage_details,
+    ))
+    @test canonical_general_detail.outcome == :supported
+    @test canonical_general_detail.link_route_mode == public_cert.stages[end].route_metadata.link_route_mode
 
     general_R, general_column = _ecp_acceptance_length4_general_case()
     @test length(general_column) > 3
@@ -152,6 +161,17 @@ end
     @test !any(is_unit, general_column)
     @test Suslin._reduce_supported_unimodular_column_certificate(general_column, general_R) === nothing
     @test Suslin._reduce_via_supported_three_block_certificate(general_column, general_R) === nothing
+
+    general_diagnostic = Suslin.diagnose_unimodular_column_reduction(general_column, general_R)
+    @test general_diagnostic.status == :supported
+    @test general_diagnostic.attempted_stages[end] == :general_ecp_pipeline
+    general_detail = only(filter(
+        detail -> detail.stage == :general_ecp_pipeline,
+        general_diagnostic.stage_details,
+    ))
+    @test general_detail.outcome == :supported
+    @test general_detail.link_route_mode == :direct_elementary
+    @test general_detail.normalized_column_length == length(general_column)
 
     general_cert = Suslin.ecp_column_reduction_certificate(general_column, general_R)
     @test Suslin.verify_ecp_column_reduction(general_cert)

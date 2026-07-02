@@ -302,7 +302,7 @@ function _polynomial_column_peel_core_verification(cert)
     left_certificates_ok = try
         all(_polynomial_column_peel_left_certificate_ok, cert.peel_steps)
     catch err
-        err isa InterruptException && rethrow()
+        err isa InterruptException && rethrow() # COV_EXCL_LINE
         false
     end
     final_certificate_ok = _polynomial_column_peel_final_certificate_ok(cert)

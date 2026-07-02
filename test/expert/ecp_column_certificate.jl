@@ -166,6 +166,9 @@ end
     embedded_cert = Suslin.ecp_column_reduction_certificate(embedded_column, S)
     @test any(stage -> stage.kind == :embedded_three_block, embedded_cert.stages)
     _assert_ecp_certificate_replays(embedded_cert)
+    embedded_endpoint_cert = Suslin._ecp_link_endpoint_reduction_certificate(embedded_column, S)
+    @test Suslin.verify_ecp_column_reduction(embedded_endpoint_cert)
+    @test embedded_endpoint_cert.stages[end].kind == :embedded_three_block
 
     legacy_embedded_column = [one(S), t, t^2, t + one(S)]
     legacy_subfactors = Suslin._reduce_exact_small_column(legacy_embedded_column[1:3], S)
