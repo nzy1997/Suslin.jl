@@ -16,6 +16,40 @@ function _captured_error(f)
     end
 end
 
+function _assert_public_issue186_recursive_route(A, expected_step_count::Int)
+    factors = elementary_factorization(A)
+    @test verify_factorization(A, factors)
+    cert = Suslin._polynomial_factorization_route_certificate(A)
+    @test cert.route == :polynomial_column_peel
+    @test cert.status == :supported
+    @test factors == cert.factors
+    @test Suslin._verify_polynomial_factorization_route_certificate(cert)
+    @test cert.evidence isa Suslin.PolynomialColumnPeelCertificate
+    @test length(cert.evidence.peel_steps) == expected_step_count
+    @test cert.evidence.descent_metadata.descent_dimensions ==
+          tuple((nrows(A):-1:3)...)
+    @test cert.evidence.mainline_support_metadata.issue_id == "#186"
+    @test cert.evidence.mainline_support_metadata.marker == :issue186_mainline
+    @test cert.evidence.mainline_support_metadata.supported
+    @test cert.evidence.mainline_support_metadata.peel_steps_ecp_verified
+    @test cert.evidence.mainline_support_metadata.final_route_issue184_ok
+    @test cert.evidence.final_route_provenance ==
+          :issue184_evidence_backed_sl3
+    @test all(step -> Suslin.verify_ecp_column_reduction(step.ecp_evidence),
+        cert.evidence.peel_steps)
+    @test cert.evidence.final_certificate.route == :quillen_patch
+    @test !(cert.evidence.final_certificate.evidence isa
+        Suslin.SL3LocalRealizationCertificate)
+
+    corrupted = copy(factors)
+    corrupted[1] =
+        corrupted[1] *
+        elementary_matrix(nrows(A), 1, 2, one(base_ring(A)), base_ring(A))
+    @test !verify_factorization(A, corrupted)
+
+    return cert
+end
+
 @testset "public factorization driver shell" begin
     R, (X,) = Oscar.polynomial_ring(QQ, ["X"])
 
@@ -165,18 +199,12 @@ end
     entries = ParkWoodburnPolynomialFixtureCatalog.cases_by_id()
     sln_entries = ParkWoodburnSLnDriverFixtureCatalog.cases_by_id()
     recursive_supported = sln_entries["sln-driver-sl4-gf2-ecp-mainline"].matrix
-    recursive_factors = elementary_factorization(recursive_supported)
-    @test verify_factorization(recursive_supported, recursive_factors)
-    recursive_cert = Suslin._polynomial_factorization_route_certificate(recursive_supported)
-    @test recursive_cert.route == :polynomial_column_peel
-    @test recursive_factors == recursive_cert.factors
-    @test recursive_cert.evidence isa Suslin.PolynomialColumnPeelCertificate
-    @test recursive_cert.evidence.mainline_support_metadata.marker == :issue186_mainline
-    @test recursive_cert.evidence.mainline_support_metadata.supported
-    @test recursive_cert.evidence.mainline_support_metadata.issue_id == "#186"
-    @test recursive_cert.evidence.final_route_provenance ==
-          :issue184_evidence_backed_sl3
+    recursive_cert = _assert_public_issue186_recursive_route(recursive_supported, 1)
     @test Suslin._verify_polynomial_column_peel_certificate(recursive_cert.evidence)
+
+    recursive_two_step = sln_entries["sln-driver-sl5-gf2-two-step"].matrix
+    recursive_two_step_cert = _assert_public_issue186_recursive_route(recursive_two_step, 2)
+    @test Suslin._verify_polynomial_column_peel_certificate(recursive_two_step_cert.evidence)
 
     quillen_supported = entries["quillen-patched-substitution-witness-qq"].matrix
     quillen_factors = nothing
