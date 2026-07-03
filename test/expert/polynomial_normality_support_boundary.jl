@@ -9,7 +9,17 @@ end
 function _normality_boundary_required_phrases()
     return [
         "ordinary-polynomial normality/conjugation certificates",
+        "Cohn-type realization certificates",
+        "rank-one normality certificates",
+        "conjugated-elementary normality certificates",
+        "staged ECP induction/normality adapter replays a nested conjugated-elementary certificate",
+        "Murthy local `SL_3` solver (#182) is supported for the proven ordinary/local-witness contract",
+        "ordinary factor vectors are exposed only when the certificate can materialize them over the base ring",
         "ordinary-polynomial ECP unimodular-column reducer (#185) is accepted",
+        "Polynomial column peel records the verified ECP certificate used for each last-column peel step",
+        "Quillen automatic patching (#183), general `SL_3` (#184), recursive `SL_n` (#186)",
+        "full public Park-Woodburn acceptance (#187), coefficient-ring support beyond exact field-backed ordinary polynomial rings",
+        "Laurent/ToricBuilder mainline acceptance, and Steinberg factor-count optimization remain staged boundaries",
         "recursive ordinary-polynomial `SL_n` driver (#186) is supported for exact field-backed ordinary-polynomial `SL_n`, `n > 3`, inputs",
         "whose recursive peel steps verify #185 ECP evidence",
         "whose final `SL_3` block verifies #184 route evidence",
@@ -18,8 +28,6 @@ function _normality_boundary_required_phrases()
         "`:missing_ecp_evidence`",
         "`:missing_final_sl3_route`",
         "legacy fast-local/disjoint-block examples may still verify factors but do not count as #186 mainline support by themselves",
-        "full public Park-Woodburn acceptance (#187), coefficient-ring support beyond exact field-backed ordinary polynomial rings",
-        "Laurent/ToricBuilder mainline acceptance, and Steinberg factor-count optimization remain staged boundaries",
     ]
 end
 

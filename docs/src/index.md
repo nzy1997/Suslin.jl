@@ -56,7 +56,8 @@ verify_factorization(A, factors)
   ECP certificate verifiers. The route covers the checked input context (#243),
   monicity normalization (#244), link witness extraction (#245), link-step
   replay (#246), induction/normality composition (#247), and public reducer
-  dispatch (#248).
+  dispatch (#248). Polynomial column peel records the verified ECP certificate
+  used for each last-column peel step.
 - The recursive ordinary-polynomial `SL_n` driver (#186) is supported for exact
   field-backed ordinary-polynomial `SL_n`, `n > 3`, inputs whose recursive peel
   steps verify #185 ECP evidence, whose final `SL_3` block verifies #184 route
@@ -69,11 +70,12 @@ verify_factorization(A, factors)
 - Staged ordinary-polynomial `SL_3` inputs include determinant-one matrices with
   no supported local-form, variable-change, normality/conjugation, Murthy, or
   Quillen evidence path. Outside the evidence-backed #184 and #186 slices
-  above, Quillen automatic patching (#183), general `SL_3` (#184), full public
-  Park-Woodburn acceptance (#187), coefficient-ring support beyond exact
-  field-backed ordinary polynomial rings, arbitrary Laurent `GL_n` determinant
-  correction, Laurent/ToricBuilder mainline acceptance, and Steinberg
-  factor-count optimization remain staged boundaries.
+  above, Quillen automatic patching (#183), general `SL_3` (#184), recursive
+  `SL_n` (#186), full public Park-Woodburn acceptance (#187),
+  coefficient-ring support beyond exact field-backed ordinary polynomial rings,
+  arbitrary Laurent `GL_n` determinant correction, Laurent/ToricBuilder
+  mainline acceptance, and Steinberg factor-count optimization remain staged
+  boundaries.
 
 See [ToricBuilder Integration Contract](@ref) for the first recorded
 consumer-boundary fixture contract.
