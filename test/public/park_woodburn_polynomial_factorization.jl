@@ -4,6 +4,8 @@ using Oscar
 
 const PARK_WOODBURN_ACCEPTANCE_CATALOG_PATH =
     joinpath(@__DIR__, "..", "fixtures", "park_woodburn_polynomial_cases.jl")
+const PARK_WOODBURN_SLN_DRIVER_CATALOG_PATH =
+    joinpath(@__DIR__, "..", "fixtures", "park_woodburn_sln_driver_cases.jl")
 
 function _pw_acceptance_result_or_error(A)
     factors = nothing
@@ -19,9 +21,13 @@ end
     if !isdefined(Main, :ParkWoodburnPolynomialFixtureCatalog)
         include(PARK_WOODBURN_ACCEPTANCE_CATALOG_PATH)
     end
+    if !isdefined(Main, :ParkWoodburnSLnDriverFixtureCatalog)
+        include(PARK_WOODBURN_SLN_DRIVER_CATALOG_PATH)
+    end
 
     catalog = ParkWoodburnPolynomialFixtureCatalog.catalog()
     entries = ParkWoodburnPolynomialFixtureCatalog.cases_by_id()
+    sln_entries = ParkWoodburnSLnDriverFixtureCatalog.cases_by_id()
 
     fast_local = entries["pw-poly-univariate-sl3-fast-local-qq"].matrix
     fast_factors, fast_err = _pw_acceptance_result_or_error(fast_local)
@@ -32,7 +38,7 @@ end
     @test fast_cert.route == :fast_local_sl3
     @test fast_factors == fast_cert.factors
 
-    recursive = entries["pw-poly-recursive-column-peel-sln-block-qq"].matrix
+    recursive = sln_entries["sln-driver-sl4-gf2-ecp-mainline"].matrix
     recursive_factors, recursive_err = _pw_acceptance_result_or_error(recursive)
     @test recursive_err === nothing
     @test recursive_factors !== nothing
@@ -41,7 +47,11 @@ end
     @test recursive_cert.route == :polynomial_column_peel
     @test recursive_factors == recursive_cert.factors
     @test recursive_cert.evidence isa Suslin.PolynomialColumnPeelCertificate
-    @test recursive_cert.evidence.final_certificate.route == :disjoint_local_blocks
+    @test recursive_cert.evidence.mainline_support_metadata.marker == :issue186_mainline
+    @test recursive_cert.evidence.mainline_support_metadata.supported
+    @test recursive_cert.evidence.mainline_support_metadata.issue_id == "#186"
+    @test recursive_cert.evidence.final_route_provenance ==
+          :issue184_evidence_backed_sl3
     @test Suslin._verify_polynomial_column_peel_certificate(recursive_cert.evidence)
     @test Suslin._verify_polynomial_factorization_route_certificate(recursive_cert)
 

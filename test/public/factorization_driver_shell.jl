@@ -4,6 +4,8 @@ using Oscar
 
 const PARK_WOODBURN_DRIVER_CATALOG_PATH =
     joinpath(@__DIR__, "..", "fixtures", "park_woodburn_polynomial_cases.jl")
+const PARK_WOODBURN_SLN_DRIVER_CATALOG_PATH =
+    joinpath(@__DIR__, "..", "fixtures", "park_woodburn_sln_driver_cases.jl")
 
 function _captured_error(f)
     try
@@ -157,14 +159,23 @@ end
     if !isdefined(Main, :ParkWoodburnPolynomialFixtureCatalog)
         include(PARK_WOODBURN_DRIVER_CATALOG_PATH)
     end
+    if !isdefined(Main, :ParkWoodburnSLnDriverFixtureCatalog)
+        include(PARK_WOODBURN_SLN_DRIVER_CATALOG_PATH)
+    end
     entries = ParkWoodburnPolynomialFixtureCatalog.cases_by_id()
-    recursive_supported = entries["pw-poly-recursive-column-peel-sl3-qq"].matrix
+    sln_entries = ParkWoodburnSLnDriverFixtureCatalog.cases_by_id()
+    recursive_supported = sln_entries["sln-driver-sl4-gf2-ecp-mainline"].matrix
     recursive_factors = elementary_factorization(recursive_supported)
     @test verify_factorization(recursive_supported, recursive_factors)
     recursive_cert = Suslin._polynomial_factorization_route_certificate(recursive_supported)
     @test recursive_cert.route == :polynomial_column_peel
     @test recursive_factors == recursive_cert.factors
     @test recursive_cert.evidence isa Suslin.PolynomialColumnPeelCertificate
+    @test recursive_cert.evidence.mainline_support_metadata.marker == :issue186_mainline
+    @test recursive_cert.evidence.mainline_support_metadata.supported
+    @test recursive_cert.evidence.mainline_support_metadata.issue_id == "#186"
+    @test recursive_cert.evidence.final_route_provenance ==
+          :issue184_evidence_backed_sl3
     @test Suslin._verify_polynomial_column_peel_certificate(recursive_cert.evidence)
 
     quillen_supported = entries["quillen-patched-substitution-witness-qq"].matrix
