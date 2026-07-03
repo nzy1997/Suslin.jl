@@ -162,6 +162,61 @@ end
     _sln_recursive_assert_mainline_certificate(sl5_cert, sl5)
     @test length(sl5_cert.peel_steps) >= 2
 
+    R_identity, (x_identity, y_identity) = polynomial_ring(QQ, ["x_identity", "y_identity"])
+    identity_final_matrix = identity_matrix(R_identity, 4)
+    identity_final_matrix[1, 4] = x_identity
+    identity_final_cert = Suslin._polynomial_column_peel_certificate(identity_final_matrix)
+    @test Suslin._verify_polynomial_column_peel_certificate(identity_final_cert)
+    @test length(identity_final_cert.peel_steps) == 1
+    @test identity_final_cert.final_block == identity_matrix(R_identity, 3)
+    @test identity_final_cert.final_certificate.route == :quillen_patch
+    @test identity_final_cert.final_certificate.evidence isa
+          Suslin.PolynomialSL3IdentityQuillenRouteEvidence
+    @test Suslin._verify_polynomial_sl3_identity_quillen_route_evidence(
+        identity_final_cert.final_certificate.evidence,
+    )
+    @test isempty(identity_final_cert.final_factors)
+    @test identity_final_cert.final_route_provenance == :issue184_evidence_backed_sl3
+    @test identity_final_cert.descent_metadata.strict_dimension_descent
+    @test identity_final_cert.descent_metadata.final_block_is_sl3
+    @test identity_final_cert.mainline_support_metadata.supported
+    @test identity_final_cert.mainline_support_metadata.marker == :issue186_mainline
+    @test identity_final_cert.product == identity_final_matrix
+    @test verify_factorization(identity_final_matrix, identity_final_cert.factors)
+
+    identity_final_sl5 = identity_matrix(R_identity, 5)
+    identity_final_sl5[1, 5] = y_identity
+    identity_final_sl5_cert = Suslin._polynomial_column_peel_certificate(identity_final_sl5)
+    @test Suslin._verify_polynomial_column_peel_certificate(identity_final_sl5_cert)
+    @test length(identity_final_sl5_cert.peel_steps) == 2
+    @test tuple((step.dimension for step in identity_final_sl5_cert.peel_steps)..., nrows(identity_final_sl5_cert.final_block)) ==
+          (5, 4, 3)
+    @test identity_final_sl5_cert.final_block == identity_matrix(R_identity, 3)
+    @test identity_final_sl5_cert.final_certificate.evidence isa
+          Suslin.PolynomialSL3IdentityQuillenRouteEvidence
+    @test identity_final_sl5_cert.mainline_support_metadata.supported
+    @test verify_factorization(identity_final_sl5, identity_final_sl5_cert.factors)
+
+    tampered_identity_evidence = _sln_recursive_rebuild(
+        identity_final_cert.final_certificate.evidence;
+        replay_metadata = merge(
+            identity_final_cert.final_certificate.evidence.replay_metadata,
+            (; tampered = true),
+        ),
+    )
+    @test !Suslin._verify_polynomial_sl3_identity_quillen_route_evidence(
+        tampered_identity_evidence,
+    )
+    tampered_identity_route = _sln_recursive_replace_route_certificate(
+        identity_final_cert.final_certificate;
+        evidence = tampered_identity_evidence,
+    )
+    tampered_identity_cert = _sln_recursive_replace_certificate(
+        identity_final_cert;
+        final_certificate = tampered_identity_route,
+    )
+    @test !Suslin._verify_polynomial_column_peel_certificate(tampered_identity_cert)
+
     legacy = entries["sln-driver-legacy-recursive-column-peel-qq"]
     legacy_cert = Suslin._polynomial_column_peel_certificate(legacy.matrix)
     @test Suslin._verify_polynomial_column_peel_certificate(legacy_cert)

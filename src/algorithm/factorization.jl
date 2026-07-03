@@ -110,6 +110,15 @@ struct PolynomialSL3SuppliedQuillenRouteEvidence
     verification
 end
 
+struct PolynomialSL3IdentityQuillenRouteEvidence
+    target
+    route::Symbol
+    factors::Vector
+    product
+    replay_metadata::NamedTuple
+    verification
+end
+
 struct PolynomialSL3QuillenMurthyRouteConsumption
     original_input
     ring
@@ -1886,6 +1895,9 @@ function _polynomial_recursive_column_peel_route_certificate(
     _is_polynomial_column_peel_route(route_tag) ||
         throw(ArgumentError("unsupported polynomial column-peel route tag $(route_tag)"))
     evidence = _polynomial_column_peel_certificate(A)
+    if evidence.final_certificate.evidence isa PolynomialSL3IdentityQuillenRouteEvidence
+        throw(ArgumentError("polynomial column-peel route with a trivial identity SL_3 final block is certificate-only and not part of public elementary factorization dispatch"))
+    end
     factors = copy(evidence.factors)
     product = _polynomial_route_factor_product(factors, base_ring(A), nrows(A))
     return _polynomial_route_certificate(A, route_tag, factors, product, evidence, :supported)
@@ -2368,6 +2380,143 @@ function _polynomial_sl3_supplied_quillen_route_certificate(A)
         :quillen_patch,
         factors,
         adapter.product,
+        evidence,
+        :supported,
+    )
+end
+
+function _polynomial_sl3_identity_quillen_route_metadata(A)
+    return (;
+        source = :identity_sl3_quillen_route,
+        route = :quillen_patch,
+        issue_refs = ("#184", "#263"),
+        size = nrows(A),
+        factor_count = 0,
+        proof = :empty_elementary_factorization,
+    )
+end
+
+function _polynomial_sl3_identity_quillen_route_core_verification(evidence)
+    try
+        target = evidence.target
+        route_ok = evidence.route == :quillen_patch
+        square_ok = nrows(target) == 3 && ncols(target) == 3
+        R = base_ring(target)
+        ring_profile_ok = _factorization_ring_profile(R) == :polynomial
+        coefficient_ring_ok = _polynomial_exact_field_backed_ring(R)
+        identity_target_ok = target == identity_matrix(R, 3)
+        factors_vector_ok = evidence.factors isa AbstractVector
+        factors_empty_ok = factors_vector_ok && isempty(evidence.factors)
+        replayed_product =
+            factors_vector_ok ? _polynomial_route_factor_product(evidence.factors, R, 3) : nothing
+        product_replay_ok = replayed_product !== nothing && replayed_product == identity_matrix(R, 3)
+        product_ok = evidence.product == identity_matrix(R, 3)
+        replay_metadata_ok =
+            evidence.replay_metadata == _polynomial_sl3_identity_quillen_route_metadata(target)
+        factorization_ok = factors_vector_ok && verify_factorization(target, evidence.factors)
+        overall_core_ok =
+            route_ok &&
+            square_ok &&
+            ring_profile_ok &&
+            coefficient_ring_ok &&
+            identity_target_ok &&
+            factors_empty_ok &&
+            product_replay_ok &&
+            product_ok &&
+            replay_metadata_ok &&
+            factorization_ok
+        return (;
+            route_ok,
+            square_ok,
+            ring_profile_ok,
+            coefficient_ring_ok,
+            identity_target_ok,
+            factors_vector_ok,
+            factors_empty_ok,
+            product_replay_ok,
+            product_ok,
+            replay_metadata_ok,
+            factorization_ok,
+            overall_core_ok,
+        )
+    catch err
+        err isa InterruptException && rethrow()
+        return (;
+            route_ok = false,
+            square_ok = false,
+            ring_profile_ok = false,
+            coefficient_ring_ok = false,
+            identity_target_ok = false,
+            factors_vector_ok = false,
+            factors_empty_ok = false,
+            product_replay_ok = false,
+            product_ok = false,
+            replay_metadata_ok = false,
+            factorization_ok = false,
+            overall_core_ok = false,
+        )
+    end
+end
+
+function _polynomial_sl3_identity_quillen_route_verification(evidence)
+    core = _polynomial_sl3_identity_quillen_route_core_verification(evidence)
+    stored_verification_ok = evidence.verification == core
+    return merge(core, (; stored_verification_ok, overall_ok = core.overall_core_ok && stored_verification_ok))
+end
+
+function _verify_polynomial_sl3_identity_quillen_route_evidence(evidence)::Bool
+    try
+        return _polynomial_sl3_identity_quillen_route_verification(evidence).overall_ok
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function _polynomial_sl3_identity_quillen_route_evidence(A)
+    nrows(A) == 3 && ncols(A) == 3 ||
+        throw(ArgumentError("SL_3 identity Quillen route requires a 3 x 3 input"))
+    R = base_ring(A)
+    _factorization_ring_profile(R) == :polynomial ||
+        throw(ArgumentError("SL_3 identity Quillen route requires an ordinary polynomial ring"))
+    _polynomial_exact_field_backed_ring(R) ||
+        throw(ArgumentError("SL_3 identity Quillen route requires an exact field-backed coefficient ring"))
+    A == identity_matrix(R, 3) ||
+        throw(ArgumentError("SL_3 identity Quillen route requires the identity matrix"))
+
+    product = identity_matrix(R, 3)
+    factors = typeof(product)[]
+    replay_metadata = _polynomial_sl3_identity_quillen_route_metadata(A)
+    raw = PolynomialSL3IdentityQuillenRouteEvidence(
+        A,
+        :quillen_patch,
+        factors,
+        product,
+        replay_metadata,
+        nothing,
+    )
+    verification = _polynomial_sl3_identity_quillen_route_core_verification(raw)
+    evidence = PolynomialSL3IdentityQuillenRouteEvidence(
+        A,
+        :quillen_patch,
+        factors,
+        product,
+        replay_metadata,
+        verification,
+    )
+    _verify_polynomial_sl3_identity_quillen_route_evidence(evidence) ||
+        error("internal SL_3 identity Quillen route evidence verification failed")
+    return evidence
+end
+
+function _polynomial_sl3_identity_quillen_route_certificate(A)
+    evidence = _polynomial_sl3_identity_quillen_route_evidence(A)
+    factors = copy(evidence.factors)
+    return _polynomial_route_certificate(
+        evidence.target,
+        :quillen_patch,
+        factors,
+        evidence.product,
         evidence,
         :supported,
     )
@@ -3632,6 +3781,13 @@ function _polynomial_route_evidence_ok(cert)::Bool
                     _polynomial_route_factor_sequences_equal(
                         cert.factors,
                         cert.evidence.quillen_route_adapter.global_elementary_factors,
+                    )
+            elseif cert.evidence isa PolynomialSL3IdentityQuillenRouteEvidence
+                return cert.evidence.target == cert.matrix &&
+                    _verify_polynomial_sl3_identity_quillen_route_evidence(cert.evidence) &&
+                    _polynomial_route_factor_sequences_equal(
+                        cert.factors,
+                        cert.evidence.factors,
                     )
             end
             return false
