@@ -6,6 +6,8 @@ const PARK_WOODBURN_DRIVER_CATALOG_PATH =
     joinpath(@__DIR__, "..", "fixtures", "park_woodburn_polynomial_cases.jl")
 const PARK_WOODBURN_SLN_DRIVER_CATALOG_PATH =
     joinpath(@__DIR__, "..", "fixtures", "park_woodburn_sln_driver_cases.jl")
+const PARK_WOODBURN_MAINLINE_ACCEPTANCE_CATALOG_PATH =
+    joinpath(@__DIR__, "..", "fixtures", "park_woodburn_mainline_acceptance_cases.jl")
 
 function _captured_error(f)
     try
@@ -196,8 +198,12 @@ end
     if !isdefined(Main, :ParkWoodburnSLnDriverFixtureCatalog)
         include(PARK_WOODBURN_SLN_DRIVER_CATALOG_PATH)
     end
+    if !isdefined(Main, :ParkWoodburnMainlineAcceptanceFixtureCatalog)
+        include(PARK_WOODBURN_MAINLINE_ACCEPTANCE_CATALOG_PATH)
+    end
     entries = ParkWoodburnPolynomialFixtureCatalog.cases_by_id()
     sln_entries = ParkWoodburnSLnDriverFixtureCatalog.cases_by_id()
+    mainline_entries = ParkWoodburnMainlineAcceptanceFixtureCatalog.cases_by_id()
     recursive_supported = sln_entries["sln-driver-sl4-gf2-ecp-mainline"].matrix
     recursive_cert = _assert_public_issue186_recursive_route(recursive_supported, 1)
     @test Suslin._verify_polynomial_column_peel_certificate(recursive_cert.evidence)
@@ -332,6 +338,11 @@ end
         "missing verified #184/#263 final SL_3 route evidence",
         sprint(showerror, legacy_recursive_err),
     )
+    recursive_catalog = mainline_entries["pw-mainline-sln-recursive-issue185-186-gf2"]
+    recursive_catalog_cert = _assert_public_issue186_recursive_route(recursive_catalog.matrix, 1)
+    @test recursive_catalog.public_route.issue_id == "#187"
+    @test recursive_catalog.public_route.route_marker == :issue186_recursive_mainline
+    @test recursive_catalog_cert.evidence.mainline_support_metadata.issue_id == "#186"
     legacy_recursive_staged =
         Suslin._polynomial_factorization_route_certificate(legacy_recursive)
     @test legacy_recursive_staged.route == :staged_failure
