@@ -1378,6 +1378,7 @@ function _polynomial_column_peel_public_reason_code(cert)::Symbol
     try
         cert isa PolynomialColumnPeelCertificate || return :missing_final_sl3_route
         hasproperty(cert, :mainline_support_metadata) || return :missing_final_sl3_route
+        hasproperty(cert.mainline_support_metadata, :reason_codes) || return :missing_final_sl3_route
         reasons = cert.mainline_support_metadata.reason_codes
         :missing_ecp_peel_evidence in reasons && return :missing_ecp_evidence
         :missing_issue184_final_sl3_route in reasons && return :missing_final_sl3_route
@@ -1393,6 +1394,9 @@ function _polynomial_column_peel_public_reason_code(err::ArgumentError)::Symbol
     occursin("ECP", message) && return :missing_ecp_evidence
     occursin("left factors", message) && return :missing_ecp_evidence
     occursin("last column", message) && return :missing_ecp_evidence
+    occursin("determinant/unit precondition", message) && return :determinant_not_one
+    occursin("exact field-backed coefficient ring", message) &&
+        return :unsupported_coefficient_ring
     return :missing_final_sl3_route
 end
 
@@ -1401,6 +1405,10 @@ function _polynomial_column_peel_public_staged_message(reason_code::Symbol)
         return "SL_n recursive column-peel route is staged: missing verified #185/#262 ECP peel evidence"
     elseif reason_code == :missing_final_sl3_route
         return "SL_n recursive column-peel route is staged: missing verified #184/#263 final SL_3 route evidence"
+    elseif reason_code == :determinant_not_one
+        return "SL_n recursive column-peel route is staged: determinant/unit precondition failed; polynomial inputs must have determinant 1"
+    elseif reason_code == :unsupported_coefficient_ring
+        return "SL_n recursive column-peel route is staged: recursive public support currently requires an exact field-backed coefficient ring"
     end
     return "SL_n recursive column-peel route is staged: unsupported recursive route evidence"
 end
