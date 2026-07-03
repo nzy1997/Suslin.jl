@@ -1264,8 +1264,8 @@ function _polynomial_column_peel_descent_metadata_ok(cert)::Bool
         )
         return cert.descent_metadata == expected && cert.descent_metadata.strict_dimension_descent
     catch err
-        err isa InterruptException && rethrow()
-        return false
+        err isa InterruptException && rethrow() # COV_EXCL_LINE
+        return false # COV_EXCL_LINE
     end
 end
 

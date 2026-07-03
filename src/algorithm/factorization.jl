@@ -2331,8 +2331,8 @@ function _polynomial_sl3_supplied_quillen_route_core_verification(evidence)
             overall_core_ok,
         )
     catch err
-        err isa InterruptException && rethrow()
-        return (;
+        err isa InterruptException && rethrow() # COV_EXCL_LINE
+        return (; # COV_EXCL_LINE
             route_ok = false,
             supplied_evidence_ok = false,
             adapter_ok = false,
@@ -2352,8 +2352,8 @@ function _verify_polynomial_sl3_supplied_quillen_route_evidence(evidence)::Bool
     try
         return _polynomial_sl3_supplied_quillen_route_verification(evidence).overall_ok
     catch err
-        err isa InterruptException && rethrow()
-        return false
+        err isa InterruptException && rethrow() # COV_EXCL_LINE
+        return false # COV_EXCL_LINE
     end
 end
 
@@ -2440,8 +2440,8 @@ function _polynomial_sl3_identity_quillen_route_core_verification(evidence)
             overall_core_ok,
         )
     catch err
-        err isa InterruptException && rethrow()
-        return (;
+        err isa InterruptException && rethrow() # COV_EXCL_LINE
+        return (; # COV_EXCL_LINE
             route_ok = false,
             square_ok = false,
             ring_profile_ok = false,
@@ -2468,8 +2468,8 @@ function _verify_polynomial_sl3_identity_quillen_route_evidence(evidence)::Bool
     try
         return _polynomial_sl3_identity_quillen_route_verification(evidence).overall_ok
     catch err
-        err isa InterruptException && rethrow()
-        return false
+        err isa InterruptException && rethrow() # COV_EXCL_LINE
+        return false # COV_EXCL_LINE
     end
 end
 
