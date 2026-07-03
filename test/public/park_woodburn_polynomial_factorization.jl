@@ -6,6 +6,8 @@ const PARK_WOODBURN_ACCEPTANCE_CATALOG_PATH =
     joinpath(@__DIR__, "..", "fixtures", "park_woodburn_polynomial_cases.jl")
 const PARK_WOODBURN_SLN_DRIVER_CATALOG_PATH =
     joinpath(@__DIR__, "..", "fixtures", "park_woodburn_sln_driver_cases.jl")
+const PARK_WOODBURN_MAINLINE_ACCEPTANCE_CATALOG_PATH =
+    joinpath(@__DIR__, "..", "fixtures", "park_woodburn_mainline_acceptance_cases.jl")
 
 function _pw_acceptance_result_or_error(A)
     factors = nothing
@@ -52,6 +54,55 @@ function _pw_assert_public_issue186_recursive_acceptance(A, expected_step_count:
     return cert
 end
 
+function _pw_assert_issue184_sl3_public_acceptance(entry)
+    A = entry.matrix
+    @test nrows(A) == 3
+    @test length(collect(gens(base_ring(A)))) > 1
+    factors, err = _pw_acceptance_result_or_error(A)
+    @test err === nothing
+    @test factors !== nothing
+    @test verify_factorization(A, factors)
+    cert = Suslin._polynomial_factorization_route_certificate(A)
+    @test cert.route == :quillen_patch
+    @test cert.status == :supported
+    @test factors == cert.factors
+    @test Suslin._verify_polynomial_factorization_route_certificate(cert)
+    @test cert.evidence isa Suslin.PolynomialSL3QuillenMurthyRouteEvidence ||
+          cert.evidence isa Suslin.PolynomialSL3SuppliedQuillenRouteEvidence ||
+          cert.evidence isa Suslin.PolynomialQuillenPatchRouteAdapter
+    @test entry.public_route.issue_id == "#187"
+    @test "#184" in entry.upstream_issue_ids
+    return cert
+end
+
+function _pw_assert_readme_public_acceptance(entry)
+    A = entry.matrix
+    factors, err = _pw_acceptance_result_or_error(A)
+    @test err === nothing
+    @test factors !== nothing
+    @test verify_factorization(A, factors)
+    cert = Suslin._polynomial_factorization_route_certificate(A)
+    @test cert.status == :supported
+    @test factors == cert.factors
+    @test Suslin._verify_polynomial_factorization_route_certificate(cert)
+    @test entry.entry_class == :readme_public_example
+    @test entry.public_route.issue_id == "#187"
+    return cert
+end
+
+function _pw_assert_issue187_recursive_catalog_acceptance(entry, expected_step_count::Int)
+    cert = _pw_assert_public_issue186_recursive_acceptance(entry.matrix, expected_step_count)
+    @test entry.entry_class == :issue185_186_sln_recursive
+    @test entry.public_route.route_marker == :issue186_recursive_mainline
+    @test entry.public_route.issue_id == "#187"
+    @test "#184" in entry.upstream_issue_ids
+    @test "#185" in entry.upstream_issue_ids
+    @test "#186" in entry.upstream_issue_ids
+    @test hasproperty(entry.upstream_evidence, :ecp_case_id)
+    @test hasproperty(entry.upstream_evidence, :final_sl3_case_id)
+    return cert
+end
+
 @testset "public Park-Woodburn polynomial factorization acceptance" begin
     if !isdefined(Main, :ParkWoodburnPolynomialFixtureCatalog)
         include(PARK_WOODBURN_ACCEPTANCE_CATALOG_PATH)
@@ -59,10 +110,26 @@ end
     if !isdefined(Main, :ParkWoodburnSLnDriverFixtureCatalog)
         include(PARK_WOODBURN_SLN_DRIVER_CATALOG_PATH)
     end
+    if !isdefined(Main, :ParkWoodburnMainlineAcceptanceFixtureCatalog)
+        include(PARK_WOODBURN_MAINLINE_ACCEPTANCE_CATALOG_PATH)
+    end
 
     catalog = ParkWoodburnPolynomialFixtureCatalog.catalog()
     entries = ParkWoodburnPolynomialFixtureCatalog.cases_by_id()
     sln_entries = ParkWoodburnSLnDriverFixtureCatalog.cases_by_id()
+    mainline_entries = ParkWoodburnMainlineAcceptanceFixtureCatalog.cases_by_id()
+
+    sl3_mainline =
+        mainline_entries["pw-mainline-sl3-multivariate-issue184-qq"]
+    _pw_assert_issue184_sl3_public_acceptance(sl3_mainline)
+
+    recursive_mainline =
+        mainline_entries["pw-mainline-sln-recursive-issue185-186-gf2"]
+    _pw_assert_issue187_recursive_catalog_acceptance(recursive_mainline, 1)
+
+    readme_mainline =
+        mainline_entries["pw-mainline-readme-ordinary-polynomial-qq"]
+    _pw_assert_readme_public_acceptance(readme_mainline)
 
     fast_local = entries["pw-poly-univariate-sl3-fast-local-qq"].matrix
     fast_factors, fast_err = _pw_acceptance_result_or_error(fast_local)
