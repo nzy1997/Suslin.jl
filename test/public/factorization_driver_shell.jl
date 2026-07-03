@@ -272,6 +272,31 @@ end
         recursive_unsupported_staged,
     )
 
+    missing_ecp_R, (missing_ecp_x, missing_ecp_y) =
+        Oscar.polynomial_ring(GF(2), ["missing_ecp_x", "missing_ecp_y"])
+    missing_ecp_a = missing_ecp_x^2
+    missing_ecp_b = missing_ecp_x * missing_ecp_y + one(missing_ecp_R)
+    missing_ecp_p = one(missing_ecp_R) + missing_ecp_x * missing_ecp_y
+    missing_ecp_q = missing_ecp_y^2
+    missing_ecp_matrix = matrix(missing_ecp_R, [
+        one(missing_ecp_R)  zero(missing_ecp_R) zero(missing_ecp_R) zero(missing_ecp_R);
+        zero(missing_ecp_R) zero(missing_ecp_R) missing_ecp_p     missing_ecp_a;
+        zero(missing_ecp_R) zero(missing_ecp_R) missing_ecp_q     missing_ecp_b;
+        zero(missing_ecp_R) one(missing_ecp_R)  zero(missing_ecp_R) zero(missing_ecp_R)
+    ])
+    @test det(missing_ecp_matrix) == one(missing_ecp_R)
+    missing_ecp_err = _captured_error(() -> elementary_factorization(missing_ecp_matrix))
+    @test missing_ecp_err isa ArgumentError
+    @test occursin(
+        "missing verified #185/#262 ECP peel evidence",
+        sprint(showerror, missing_ecp_err),
+    )
+    missing_ecp_staged =
+        Suslin._polynomial_factorization_route_certificate(missing_ecp_matrix)
+    @test missing_ecp_staged.route == :staged_failure
+    @test missing_ecp_staged.evidence.reason_code == :missing_ecp_evidence
+    @test Suslin._verify_polynomial_factorization_route_certificate(missing_ecp_staged)
+
     legacy_recursive = sln_entries["sln-driver-legacy-recursive-column-peel-qq"].matrix
     legacy_recursive_err = _captured_error(() -> elementary_factorization(legacy_recursive))
     @test legacy_recursive_err isa ArgumentError
