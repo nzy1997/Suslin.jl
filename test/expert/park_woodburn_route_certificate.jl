@@ -423,6 +423,28 @@ end
     @test !Suslin._verify_polynomial_column_peel_certificate(bad_mainline_cert.evidence)
     @test !Suslin._verify_polynomial_factorization_route_certificate(bad_mainline_cert)
 
+    first_step = first(mainline_acceptance_cert.evidence.peel_steps)
+    bad_ecp_evidence = _pw_rebuild(first_step.ecp_evidence; verification = nothing)
+    bad_ecp_step = _pw_rebuild(first_step; ecp_evidence = bad_ecp_evidence)
+    bad_ecp_steps = copy(mainline_acceptance_cert.evidence.peel_steps)
+    bad_ecp_steps[1] = bad_ecp_step
+    bad_ecp_mainline_evidence = _pw_replace_column_peel_certificate(
+        mainline_acceptance_cert.evidence;
+        peel_steps = bad_ecp_steps,
+    )
+    bad_ecp_mainline_cert = _pw_replace_certificate(
+        mainline_acceptance_cert;
+        evidence = bad_ecp_mainline_evidence,
+    )
+    @test !Suslin.verify_ecp_column_reduction(bad_ecp_evidence)
+    @test verify_factorization(bad_ecp_mainline_cert.matrix, bad_ecp_mainline_cert.factors)
+    @test !Suslin._verify_polynomial_column_peel_certificate(
+        bad_ecp_mainline_cert.evidence,
+    )
+    @test !Suslin._verify_polynomial_factorization_route_certificate(
+        bad_ecp_mainline_cert,
+    )
+
     tampered_mainline_evidence = _pw_replace_column_peel_certificate(
         auto_peel_cert.evidence;
         mainline_support_metadata = merge(
