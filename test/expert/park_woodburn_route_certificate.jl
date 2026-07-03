@@ -4,6 +4,8 @@ using Oscar
 
 const PARK_WOODBURN_ROUTE_CATALOG_PATH =
     joinpath(@__DIR__, "..", "fixtures", "park_woodburn_polynomial_cases.jl")
+const PARK_WOODBURN_SLN_DRIVER_CATALOG_PATH =
+    joinpath(@__DIR__, "..", "fixtures", "park_woodburn_sln_driver_cases.jl")
 
 struct PWRouteExplodingEq end
 
@@ -54,6 +56,34 @@ function _pw_replace_certificate(
         evidence,
         status,
         verification,
+    )
+end
+
+function _pw_replace_column_peel_certificate(
+        cert;
+        original_matrix = cert.original_matrix,
+        peel_steps = cert.peel_steps,
+        final_block = cert.final_block,
+        final_certificate = cert.final_certificate,
+        final_factors = cert.final_factors,
+        factors = cert.factors,
+        product = cert.product,
+        verification = cert.verification,
+        descent_metadata = cert.descent_metadata,
+        mainline_support_metadata = cert.mainline_support_metadata,
+        final_route_provenance = cert.final_route_provenance)
+    return Suslin.PolynomialColumnPeelCertificate(
+        original_matrix,
+        peel_steps,
+        final_block,
+        final_certificate,
+        final_factors,
+        factors,
+        product,
+        verification,
+        descent_metadata,
+        mainline_support_metadata,
+        final_route_provenance,
     )
 end
 
@@ -197,7 +227,11 @@ end
     if !isdefined(Main, :ParkWoodburnPolynomialFixtureCatalog)
         include(PARK_WOODBURN_ROUTE_CATALOG_PATH)
     end
+    if !isdefined(Main, :ParkWoodburnSLnDriverFixtureCatalog)
+        include(PARK_WOODBURN_SLN_DRIVER_CATALOG_PATH)
+    end
     entries = ParkWoodburnPolynomialFixtureCatalog.cases_by_id()
+    sln_entries = ParkWoodburnSLnDriverFixtureCatalog.cases_by_id()
 
     fast_entry = entries["pw-poly-univariate-sl3-fast-local-qq"]
     fast_cert = Suslin._polynomial_factorization_route_certificate(
@@ -243,6 +277,26 @@ end
     @test hasproperty(staged_cert.evidence, :message)
     @test !isempty(staged_cert.evidence.message)
     @test Suslin._verify_polynomial_factorization_route_certificate(staged_cert)
+    recursive_optout_staged_cert = Suslin._polynomial_factorization_route_certificate(
+        recursive_entry.matrix;
+        allow_recursive_column_peel = false,
+    )
+    @test recursive_optout_staged_cert.route == :staged_failure
+    @test recursive_optout_staged_cert.status == :staged
+    @test recursive_optout_staged_cert.evidence.allow_recursive_column_peel === false
+    @test Suslin._verify_polynomial_factorization_route_certificate(
+        recursive_optout_staged_cert,
+    )
+    explicit_recursive_optout_staged_cert = Suslin._polynomial_factorization_route_certificate(
+        recursive_entry.matrix;
+        route = :staged_failure,
+        allow_recursive_column_peel = false,
+    )
+    @test explicit_recursive_optout_staged_cert.route == :staged_failure
+    @test explicit_recursive_optout_staged_cert.evidence.allow_recursive_column_peel === false
+    @test Suslin._verify_polynomial_factorization_route_certificate(
+        explicit_recursive_optout_staged_cert,
+    )
 
     auto_staged_cert = Suslin._polynomial_factorization_route_certificate(recursive_entry.matrix)
     @test auto_staged_cert.route == :staged_failure
@@ -250,26 +304,152 @@ end
     @test Suslin._polynomial_staged_failure_evidence(fast_entry.matrix).error_type == :none
 
     recursive_supported_entry = entries["pw-poly-recursive-column-peel-sl3-qq"]
+    mainline_entry = sln_entries["sln-driver-sl4-gf2-ecp-mainline"]
     auto_peel_cert = Suslin._polynomial_factorization_route_certificate(
-        recursive_supported_entry.matrix,
+        mainline_entry.matrix,
     )
     @test auto_peel_cert.route == :polynomial_column_peel
     @test auto_peel_cert.status == :supported
     @test auto_peel_cert.evidence isa Suslin.PolynomialColumnPeelCertificate
     @test Suslin._verify_polynomial_factorization_route_certificate(auto_peel_cert)
     @test verify_factorization(auto_peel_cert.matrix, auto_peel_cert.factors)
+    @test auto_peel_cert.evidence.mainline_support_metadata.marker == :issue186_mainline
+    @test auto_peel_cert.evidence.mainline_support_metadata.supported
+    @test auto_peel_cert.evidence.mainline_support_metadata.issue_id == "#186"
+    @test auto_peel_cert.evidence.final_route_provenance ==
+          :issue184_evidence_backed_sl3
+    @test verify_factorization(auto_peel_cert.matrix, auto_peel_cert.evidence.factors)
 
-    alias_peel_cert = Suslin._polynomial_factorization_route_certificate(
+    tampered_mainline_evidence = _pw_replace_column_peel_certificate(
+        auto_peel_cert.evidence;
+        mainline_support_metadata = merge(
+            auto_peel_cert.evidence.mainline_support_metadata,
+            (; marker = :not_issue186_mainline),
+        ),
+    )
+    tampered_mainline_cert = _pw_replace_certificate(
+        auto_peel_cert;
+        evidence = tampered_mainline_evidence,
+    )
+    @test verify_factorization(tampered_mainline_cert.matrix, tampered_mainline_cert.factors)
+    @test !Suslin._verify_polynomial_factorization_route_certificate(
+        tampered_mainline_cert,
+    )
+
+    legacy_evidence = Suslin._polynomial_column_peel_certificate(
+        recursive_supported_entry.matrix,
+    )
+    @test !legacy_evidence.mainline_support_metadata.supported
+    final_block_reason_evidence = _pw_replace_column_peel_certificate(
+        legacy_evidence;
+        mainline_support_metadata = merge(
+            legacy_evidence.mainline_support_metadata,
+            (; reason_codes = (:final_block_not_sl3,)),
+        ),
+    )
+    @test Suslin._polynomial_column_peel_public_reason_code(
+        final_block_reason_evidence,
+    ) == :missing_final_sl3_route
+    unknown_reason_evidence = _pw_replace_column_peel_certificate(
+        legacy_evidence;
+        mainline_support_metadata = merge(
+            legacy_evidence.mainline_support_metadata,
+            (; reason_codes = (:factor_replay_mismatch,)),
+        ),
+    )
+    @test Suslin._polynomial_column_peel_public_reason_code(
+        unknown_reason_evidence,
+    ) == :missing_final_sl3_route
+    @test Suslin._polynomial_column_peel_public_reason_code(
+        ArgumentError("determinant/unit precondition failed"),
+    ) == :determinant_not_one
+    @test Suslin._polynomial_column_peel_public_reason_code(
+        ArgumentError("exact field-backed coefficient ring required"),
+    ) == :unsupported_coefficient_ring
+    @test occursin(
+        "determinant/unit precondition failed",
+        Suslin._polynomial_column_peel_public_staged_message(:determinant_not_one),
+    )
+    @test occursin(
+        "exact field-backed coefficient ring",
+        Suslin._polynomial_column_peel_public_staged_message(
+            :unsupported_coefficient_ring,
+        ),
+    )
+    @test occursin(
+        "unsupported recursive route evidence",
+        Suslin._polynomial_column_peel_public_staged_message(:unknown_recursive_reason),
+    )
+    legacy_route = Suslin.PolynomialFactorizationRouteCertificate(
+        recursive_supported_entry.matrix,
+        :polynomial_column_peel,
+        legacy_evidence.factors,
+        legacy_evidence.product,
+        legacy_evidence,
+        :supported,
+        nothing,
+    )
+    legacy_route = _pw_replace_certificate(
+        legacy_route;
+        verification = Suslin._polynomial_factorization_route_core_verification(
+            legacy_route,
+        ),
+    )
+    @test verify_factorization(legacy_route.matrix, legacy_route.factors)
+    @test !Suslin._verify_polynomial_factorization_route_certificate(legacy_route)
+    @test_throws ArgumentError Suslin._polynomial_factorization_route_certificate(
         recursive_supported_entry.matrix;
+        route = :polynomial_column_peel,
+    )
+
+    identity_route_R, (identity_route_x,) =
+        Oscar.polynomial_ring(GF(2), ["identity_route_x"])
+    identity_final_matrix = identity_matrix(identity_route_R, 4)
+    identity_final_matrix[1, 4] = identity_route_x
+    identity_final_evidence =
+        Suslin._polynomial_column_peel_certificate(identity_final_matrix)
+    @test identity_final_evidence.final_certificate.evidence isa
+          Suslin.PolynomialSL3IdentityQuillenRouteEvidence
+    forged_identity_route = Suslin.PolynomialFactorizationRouteCertificate(
+        identity_final_matrix,
+        :polynomial_column_peel,
+        identity_final_evidence.factors,
+        identity_final_evidence.product,
+        identity_final_evidence,
+        :supported,
+        nothing,
+    )
+    forged_identity_route = _pw_replace_certificate(
+        forged_identity_route;
+        verification = Suslin._polynomial_factorization_route_core_verification(
+            forged_identity_route,
+        ),
+    )
+    @test verify_factorization(forged_identity_route.matrix, forged_identity_route.factors)
+    @test !Suslin._verify_polynomial_factorization_route_certificate(
+        forged_identity_route,
+    )
+
+    @test_throws ArgumentError Suslin._polynomial_factorization_route_certificate(
+        recursive_supported_entry.matrix;
+        route = :recursive_column_peel,
+    )
+    alias_peel_cert = Suslin._polynomial_factorization_route_certificate(
+        mainline_entry.matrix;
         route = :recursive_column_peel,
     )
     @test alias_peel_cert.route == :recursive_column_peel
     @test Suslin._verify_polynomial_factorization_route_certificate(alias_peel_cert)
-    @test Suslin._polynomial_staged_failure_evidence(recursive_supported_entry.matrix).error_type == :none
-    @test_throws ErrorException Suslin._polynomial_factorization_route_certificate(
+    @test alias_peel_cert.evidence.mainline_support_metadata.marker == :issue186_mainline
+    @test Suslin._polynomial_staged_failure_evidence(mainline_entry.matrix).error_type == :none
+    legacy_staged_cert = Suslin._polynomial_factorization_route_certificate(
         recursive_supported_entry.matrix;
         route = :staged_failure,
     )
+    @test legacy_staged_cert.route == :staged_failure
+    @test legacy_staged_cert.status == :staged
+    @test legacy_staged_cert.evidence.reason_code == :missing_final_sl3_route
+    @test Suslin._verify_polynomial_factorization_route_certificate(legacy_staged_cert)
 
     bad_peel_route_cert = _pw_corrupt_route_peel_evidence(auto_peel_cert)
     @test verify_factorization(bad_peel_route_cert.matrix, bad_peel_route_cert.factors)

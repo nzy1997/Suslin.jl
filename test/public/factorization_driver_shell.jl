@@ -4,6 +4,8 @@ using Oscar
 
 const PARK_WOODBURN_DRIVER_CATALOG_PATH =
     joinpath(@__DIR__, "..", "fixtures", "park_woodburn_polynomial_cases.jl")
+const PARK_WOODBURN_SLN_DRIVER_CATALOG_PATH =
+    joinpath(@__DIR__, "..", "fixtures", "park_woodburn_sln_driver_cases.jl")
 
 function _captured_error(f)
     try
@@ -157,14 +159,23 @@ end
     if !isdefined(Main, :ParkWoodburnPolynomialFixtureCatalog)
         include(PARK_WOODBURN_DRIVER_CATALOG_PATH)
     end
+    if !isdefined(Main, :ParkWoodburnSLnDriverFixtureCatalog)
+        include(PARK_WOODBURN_SLN_DRIVER_CATALOG_PATH)
+    end
     entries = ParkWoodburnPolynomialFixtureCatalog.cases_by_id()
-    recursive_supported = entries["pw-poly-recursive-column-peel-sl3-qq"].matrix
+    sln_entries = ParkWoodburnSLnDriverFixtureCatalog.cases_by_id()
+    recursive_supported = sln_entries["sln-driver-sl4-gf2-ecp-mainline"].matrix
     recursive_factors = elementary_factorization(recursive_supported)
     @test verify_factorization(recursive_supported, recursive_factors)
     recursive_cert = Suslin._polynomial_factorization_route_certificate(recursive_supported)
     @test recursive_cert.route == :polynomial_column_peel
     @test recursive_factors == recursive_cert.factors
     @test recursive_cert.evidence isa Suslin.PolynomialColumnPeelCertificate
+    @test recursive_cert.evidence.mainline_support_metadata.marker == :issue186_mainline
+    @test recursive_cert.evidence.mainline_support_metadata.supported
+    @test recursive_cert.evidence.mainline_support_metadata.issue_id == "#186"
+    @test recursive_cert.evidence.final_route_provenance ==
+          :issue184_evidence_backed_sl3
     @test Suslin._verify_polynomial_column_peel_certificate(recursive_cert.evidence)
 
     quillen_supported = entries["quillen-patched-substitution-witness-qq"].matrix
@@ -250,7 +261,54 @@ end
         _captured_error(() -> elementary_factorization(recursive_unsupported))
     @test recursive_unsupported_err isa ArgumentError
     @test occursin(
-        "evidence-backed SL_3 polynomial route",
+        "missing verified #184/#263 final SL_3 route evidence",
         sprint(showerror, recursive_unsupported_err),
+    )
+    recursive_unsupported_staged =
+        Suslin._polynomial_factorization_route_certificate(recursive_unsupported)
+    @test recursive_unsupported_staged.route == :staged_failure
+    @test recursive_unsupported_staged.evidence.reason_code == :missing_final_sl3_route
+    @test Suslin._verify_polynomial_factorization_route_certificate(
+        recursive_unsupported_staged,
+    )
+
+    missing_ecp_R, (missing_ecp_x, missing_ecp_y) =
+        Oscar.polynomial_ring(GF(2), ["missing_ecp_x", "missing_ecp_y"])
+    missing_ecp_a = missing_ecp_x^2
+    missing_ecp_b = missing_ecp_x * missing_ecp_y + one(missing_ecp_R)
+    missing_ecp_p = one(missing_ecp_R) + missing_ecp_x * missing_ecp_y
+    missing_ecp_q = missing_ecp_y^2
+    missing_ecp_matrix = matrix(missing_ecp_R, [
+        one(missing_ecp_R)  zero(missing_ecp_R) zero(missing_ecp_R) zero(missing_ecp_R);
+        zero(missing_ecp_R) zero(missing_ecp_R) missing_ecp_p     missing_ecp_a;
+        zero(missing_ecp_R) zero(missing_ecp_R) missing_ecp_q     missing_ecp_b;
+        zero(missing_ecp_R) one(missing_ecp_R)  zero(missing_ecp_R) zero(missing_ecp_R)
+    ])
+    @test det(missing_ecp_matrix) == one(missing_ecp_R)
+    missing_ecp_err = _captured_error(() -> elementary_factorization(missing_ecp_matrix))
+    @test missing_ecp_err isa ArgumentError
+    @test occursin(
+        "missing verified #185/#262 ECP peel evidence",
+        sprint(showerror, missing_ecp_err),
+    )
+    missing_ecp_staged =
+        Suslin._polynomial_factorization_route_certificate(missing_ecp_matrix)
+    @test missing_ecp_staged.route == :staged_failure
+    @test missing_ecp_staged.evidence.reason_code == :missing_ecp_evidence
+    @test Suslin._verify_polynomial_factorization_route_certificate(missing_ecp_staged)
+
+    legacy_recursive = sln_entries["sln-driver-legacy-recursive-column-peel-qq"].matrix
+    legacy_recursive_err = _captured_error(() -> elementary_factorization(legacy_recursive))
+    @test legacy_recursive_err isa ArgumentError
+    @test occursin(
+        "missing verified #184/#263 final SL_3 route evidence",
+        sprint(showerror, legacy_recursive_err),
+    )
+    legacy_recursive_staged =
+        Suslin._polynomial_factorization_route_certificate(legacy_recursive)
+    @test legacy_recursive_staged.route == :staged_failure
+    @test legacy_recursive_staged.evidence.reason_code == :missing_final_sl3_route
+    @test Suslin._verify_polynomial_factorization_route_certificate(
+        legacy_recursive_staged,
     )
 end
