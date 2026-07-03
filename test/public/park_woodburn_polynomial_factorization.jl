@@ -70,6 +70,21 @@ function _pw_assert_issue184_sl3_public_acceptance(entry)
     @test cert.evidence isa Suslin.PolynomialSL3QuillenMurthyRouteEvidence ||
           cert.evidence isa Suslin.PolynomialSL3SuppliedQuillenRouteEvidence ||
           cert.evidence isa Suslin.PolynomialQuillenPatchRouteAdapter
+    if cert.evidence isa Suslin.PolynomialQuillenPatchRouteAdapter
+        issue184_cert = Suslin._polynomial_sl3_supplied_quillen_route_certificate(A)
+        @test issue184_cert.route == :quillen_patch
+        @test issue184_cert.status == :supported
+        @test Suslin._verify_polynomial_factorization_route_certificate(issue184_cert)
+        @test issue184_cert.evidence isa Suslin.PolynomialSL3SuppliedQuillenRouteEvidence
+        @test issue184_cert.evidence.replay_metadata.driver_issue_id == "#184"
+        @test issue184_cert.factors == factors
+        @test issue184_cert.evidence.quillen_route_adapter.target == cert.evidence.target
+        @test issue184_cert.evidence.quillen_route_adapter.target_matrix ==
+              cert.evidence.target_matrix
+        @test issue184_cert.evidence.quillen_route_adapter.product == cert.evidence.product
+        @test issue184_cert.evidence.quillen_route_adapter.global_elementary_factors ==
+              cert.evidence.global_elementary_factors
+    end
     @test entry.public_route.issue_id == "#187"
     @test "#184" in entry.upstream_issue_ids
     return cert

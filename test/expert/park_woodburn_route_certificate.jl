@@ -340,18 +340,31 @@ end
         mainline_acceptance_cert,
     )
 
-    bad_mainline_metadata = merge(
-        mainline_acceptance_cert.evidence.mainline_support_metadata,
-        (; final_route_issue184_ok = false),
+    bad_final_replay_metadata = merge(
+        mainline_acceptance_cert.evidence.final_certificate.evidence.replay_metadata,
+        (; driver_issue_id = "#184-tampered"),
+    )
+    bad_final_evidence = _pw_rebuild(
+        mainline_acceptance_cert.evidence.final_certificate.evidence;
+        replay_metadata = bad_final_replay_metadata,
+    )
+    bad_final_certificate = _pw_replace_certificate(
+        mainline_acceptance_cert.evidence.final_certificate;
+        evidence = bad_final_evidence,
+        factors = mainline_acceptance_cert.evidence.final_certificate.factors,
+        product = mainline_acceptance_cert.evidence.final_certificate.product,
     )
     bad_mainline_evidence = _pw_replace_column_peel_certificate(
         mainline_acceptance_cert.evidence;
-        mainline_support_metadata = bad_mainline_metadata,
+        final_certificate = bad_final_certificate,
+        final_factors = mainline_acceptance_cert.evidence.final_factors,
+        factors = mainline_acceptance_cert.evidence.factors,
         product = mainline_acceptance_cert.evidence.product,
     )
     bad_mainline_cert = _pw_replace_certificate(
         mainline_acceptance_cert;
         evidence = bad_mainline_evidence,
+        factors = mainline_acceptance_cert.factors,
         product = mainline_acceptance_cert.product,
     )
     @test verify_factorization(bad_mainline_cert.matrix, bad_mainline_cert.factors)
