@@ -563,6 +563,8 @@ struct PolynomialColumnPeelCertificate
     factors::Vector
     product
     verification
+    descent_metadata::NamedTuple
+    mainline_support_metadata::NamedTuple
     final_route_provenance::Symbol
 end
 
@@ -619,6 +621,24 @@ function PolynomialColumnPeelCertificate(
     product,
     verification,
 )
+    final_route_provenance = _polynomial_column_peel_final_route_provenance(final_certificate)
+    descent_metadata = _polynomial_column_peel_certificate_descent_metadata(
+        peel_steps,
+        original_matrix,
+        final_block,
+        final_route_provenance,
+    )
+    mainline_support_metadata = _polynomial_column_peel_mainline_support_metadata(
+        original_matrix,
+        peel_steps,
+        final_block,
+        final_certificate,
+        final_factors,
+        factors,
+        product,
+        final_route_provenance,
+        descent_metadata,
+    )
     return PolynomialColumnPeelCertificate(
         original_matrix,
         peel_steps,
@@ -628,7 +648,52 @@ function PolynomialColumnPeelCertificate(
         factors,
         product,
         verification,
-        _polynomial_column_peel_final_route_provenance(final_certificate),
+        descent_metadata,
+        mainline_support_metadata,
+        final_route_provenance,
+    )
+end
+
+function PolynomialColumnPeelCertificate(
+    original_matrix,
+    peel_steps::Vector{PolynomialColumnPeelStep},
+    final_block,
+    final_certificate,
+    final_factors::Vector,
+    factors::Vector,
+    product,
+    verification,
+    final_route_provenance::Symbol,
+)
+    descent_metadata = _polynomial_column_peel_certificate_descent_metadata(
+        peel_steps,
+        original_matrix,
+        final_block,
+        final_route_provenance,
+    )
+    mainline_support_metadata = _polynomial_column_peel_mainline_support_metadata(
+        original_matrix,
+        peel_steps,
+        final_block,
+        final_certificate,
+        final_factors,
+        factors,
+        product,
+        final_route_provenance,
+        descent_metadata,
+    )
+    return PolynomialColumnPeelCertificate(
+        original_matrix,
+        peel_steps,
+        final_block,
+        final_certificate,
+        final_factors,
+        factors,
+        product,
+        verification,
+        descent_metadata,
+        mainline_support_metadata,
+        final_route_provenance,
     )
 end
 
@@ -1138,6 +1203,133 @@ function _replay_polynomial_column_peel_factors(peel_steps, final_factors, R)
     return replayed
 end
 
+function _polynomial_column_peel_certificate_descent_metadata(
+    peel_steps,
+    original_matrix,
+    final_block,
+    final_route_provenance::Symbol,
+)
+    step_dimensions = tuple((step.dimension for step in peel_steps)...)
+    next_dimensions = tuple((nrows(step.next_block) for step in peel_steps)...)
+    descent_dimensions = tuple(nrows(original_matrix), next_dimensions...)
+    expected_step_count = nrows(original_matrix) - nrows(final_block)
+    strict_dimension_descent =
+        length(peel_steps) == expected_step_count &&
+        all(idx -> next_dimensions[idx] == step_dimensions[idx] - 1, eachindex(step_dimensions)) &&
+        all(idx -> idx == 1 || step_dimensions[idx] == next_dimensions[idx - 1], eachindex(step_dimensions))
+    final_block_is_sl3 = nrows(final_block) == 3 && ncols(final_block) == 3
+    return (;
+        route=:park_woodburn_recursive_column_peel,
+        input_dimension=nrows(original_matrix),
+        final_dimension=nrows(final_block),
+        step_count=length(peel_steps),
+        expected_step_count,
+        step_dimensions,
+        next_dimensions,
+        descent_dimensions,
+        strict_dimension_descent,
+        final_block_is_sl3,
+        final_route_provenance,
+    )
+end
+
+function _polynomial_column_peel_descent_metadata_ok(cert)::Bool
+    try
+        hasproperty(cert, :descent_metadata) || return false
+        expected = _polynomial_column_peel_certificate_descent_metadata(
+            cert.peel_steps,
+            cert.original_matrix,
+            cert.final_block,
+            cert.final_route_provenance,
+        )
+        return cert.descent_metadata == expected && cert.descent_metadata.strict_dimension_descent
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function _polynomial_column_peel_mainline_support_metadata(
+    original_matrix,
+    peel_steps,
+    final_block,
+    final_certificate,
+    final_factors,
+    factors,
+    product,
+    final_route_provenance::Symbol,
+    descent_metadata,
+)
+    peel_steps_ecp_verified = all(_polynomial_column_peel_left_certificate_ok, peel_steps)
+    final_route_issue184_ok = _polynomial_column_peel_quillen_issue184_final_route_ok(final_certificate)
+    factor_replay_ok = _factor_sequences_equal(
+        factors,
+        _replay_polynomial_column_peel_factors(peel_steps, final_factors, base_ring(original_matrix)),
+    )
+    product_replay_ok =
+        product == _factor_product(factors, base_ring(original_matrix), nrows(original_matrix))
+    reconstruction_ok = verify_factorization(original_matrix, factors)
+    supported = peel_steps_ecp_verified &&
+        descent_metadata.strict_dimension_descent &&
+        descent_metadata.final_block_is_sl3 &&
+        final_route_issue184_ok &&
+        final_route_provenance == _POLYNOMIAL_COLUMN_PEEL_ISSUE184_FINAL_ROUTE_PROVENANCE &&
+        factor_replay_ok &&
+        product_replay_ok &&
+        reconstruction_ok
+
+    reason_codes = Symbol[]
+    peel_steps_ecp_verified || push!(reason_codes, :missing_ecp_peel_evidence)
+    descent_metadata.strict_dimension_descent || push!(reason_codes, :non_strict_dimension_descent)
+    descent_metadata.final_block_is_sl3 || push!(reason_codes, :final_block_not_sl3)
+    (
+        final_route_issue184_ok &&
+        final_route_provenance == _POLYNOMIAL_COLUMN_PEEL_ISSUE184_FINAL_ROUTE_PROVENANCE
+    ) || push!(reason_codes, :missing_issue184_final_sl3_route)
+    factor_replay_ok || push!(reason_codes, :factor_replay_mismatch)
+    product_replay_ok || push!(reason_codes, :product_replay_mismatch)
+    reconstruction_ok || push!(reason_codes, :factorization_reconstruction_mismatch)
+
+    return (;
+        issue_id="#186",
+        marker=supported ? :issue186_mainline : :not_issue186_mainline,
+        supported,
+        reason_codes=tuple(reason_codes...),
+        peel_steps_ecp_verified,
+        strict_dimension_descent=descent_metadata.strict_dimension_descent,
+        final_block_is_sl3=descent_metadata.final_block_is_sl3,
+        final_route_issue184_ok,
+        final_route_provenance,
+        factor_replay_ok,
+        product_replay_ok,
+        reconstruction_ok,
+    )
+end
+
+function _polynomial_column_peel_mainline_support_metadata_ok(cert)::Bool
+    try
+        hasproperty(cert, :descent_metadata) || return false
+        hasproperty(cert, :mainline_support_metadata) || return false
+        expected = _polynomial_column_peel_mainline_support_metadata(
+            cert.original_matrix,
+            cert.peel_steps,
+            cert.final_block,
+            cert.final_certificate,
+            cert.final_factors,
+            cert.factors,
+            cert.product,
+            cert.final_route_provenance,
+            cert.descent_metadata,
+        )
+        cert.mainline_support_metadata == expected || return false
+        return (cert.mainline_support_metadata.marker == :issue186_mainline) ==
+               cert.mainline_support_metadata.supported
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
 function _polynomial_column_peel_core_verification(cert)
     preconditions_ok = _polynomial_column_peel_preconditions_ok(cert)
     step_chain_ok = _polynomial_column_peel_step_chain_ok(
@@ -1159,6 +1351,8 @@ function _polynomial_column_peel_core_verification(cert)
     end
     final_certificate_ok = _polynomial_column_peel_final_certificate_ok(cert)
     final_route_provenance_ok = _polynomial_column_peel_final_route_provenance_ok(cert)
+    descent_metadata_ok = _polynomial_column_peel_descent_metadata_ok(cert)
+    mainline_support_metadata_ok = _polynomial_column_peel_mainline_support_metadata_ok(cert)
     factor_sequence_ok = try
         replayed_factors = _replay_polynomial_column_peel_factors(
             cert.peel_steps,
@@ -1184,6 +1378,7 @@ function _polynomial_column_peel_core_verification(cert)
     end
     overall_core_ok = preconditions_ok && step_chain_ok && steps_ok && left_certificates_ok &&
         final_certificate_ok && final_route_provenance_ok &&
+        descent_metadata_ok && mainline_support_metadata_ok &&
         factor_sequence_ok && product_ok && factors_ok
     return (
         overall_core_ok=overall_core_ok,
@@ -1193,6 +1388,8 @@ function _polynomial_column_peel_core_verification(cert)
         left_certificates_ok=left_certificates_ok,
         final_certificate_ok=final_certificate_ok,
         final_route_provenance_ok=final_route_provenance_ok,
+        descent_metadata_ok=descent_metadata_ok,
+        mainline_support_metadata_ok=mainline_support_metadata_ok,
         factor_sequence_ok=factor_sequence_ok,
         product_ok=product_ok,
         factors_ok=factors_ok,
