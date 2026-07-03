@@ -27,7 +27,23 @@ const REQUIRED_PW_MAINLINE_NEGATIVE_IDS = Set([
     "pw-mainline-negative-det-not-one",
     "pw-mainline-negative-unsupported-coefficient-ring",
     "pw-mainline-negative-missing-evidence",
+    "pw-mainline-negative-missing-sl3-local-form-evidence",
+    "pw-mainline-negative-missing-sl3-quillen-evidence",
+    "pw-mainline-negative-missing-ecp-evidence",
+    "pw-mainline-negative-missing-final-sl3-evidence",
+    "pw-mainline-negative-laurent-boundary",
 ])
+
+const REQUIRED_PW_MAINLINE_NEGATIVE_KINDS = Dict(
+    "pw-mainline-negative-det-not-one" => :determinant_not_one,
+    "pw-mainline-negative-unsupported-coefficient-ring" => :unsupported_coefficient_ring,
+    "pw-mainline-negative-missing-evidence" => :missing_final_sl3_evidence,
+    "pw-mainline-negative-missing-sl3-local-form-evidence" => :missing_sl3_local_form_evidence,
+    "pw-mainline-negative-missing-sl3-quillen-evidence" => :missing_sl3_quillen_evidence,
+    "pw-mainline-negative-missing-ecp-evidence" => :missing_ecp_evidence,
+    "pw-mainline-negative-missing-final-sl3-evidence" => :missing_final_sl3_evidence,
+    "pw-mainline-negative-laurent-boundary" => :laurent_boundary,
+)
 
 const REQUIRED_PW_MAINLINE_CASE_METADATA = Dict(
     "pw-mainline-sl3-multivariate-issue184-qq" => (;
@@ -394,6 +410,17 @@ function validate_park_woodburn_mainline_acceptance_fixture_catalog(catalog)
     end
 
     for entry in catalog.negative_controls
+        negative_kind = _pwma_required_symbol(_pwma_field(entry, :negative_kind), "negative control $(entry.id) negative_kind")
+        negative_kind == REQUIRED_PW_MAINLINE_NEGATIVE_KINDS[entry.id] ||
+            throw(ArgumentError("negative control $(entry.id) must use negative_kind $(REQUIRED_PW_MAINLINE_NEGATIVE_KINDS[entry.id])"))
+        public_failure = _pwma_field(entry, :public_failure)
+        terms = _pwma_required_tuple(_pwma_field(public_failure, :terms), "negative control $(entry.id) public_failure terms")
+        !isempty(terms) ||
+            throw(ArgumentError("negative control $(entry.id) public_failure terms must not be empty"))
+        all(term -> term isa AbstractString && !isempty(term), terms) ||
+            throw(ArgumentError("negative control $(entry.id) public_failure terms must be non-empty strings"))
+        _pwma_field(public_failure, :staged_route) isa Bool ||
+            throw(ArgumentError("negative control $(entry.id) public_failure staged_route must be a Bool"))
         hasproperty(entry, :base_case_id) &&
             entry.base_case_id isa AbstractString &&
             entry.base_case_id in valid_case_ids ||
