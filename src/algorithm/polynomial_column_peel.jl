@@ -572,6 +572,7 @@ const _POLYNOMIAL_COLUMN_PEEL_FAST_FINAL_ROUTE_PROVENANCE = :fast_local_sl3
 const _POLYNOMIAL_COLUMN_PEEL_BLOCK_FINAL_ROUTE_PROVENANCE = :disjoint_local_blocks
 const _POLYNOMIAL_COLUMN_PEEL_ISSUE184_FINAL_ROUTE_PROVENANCE = :issue184_evidence_backed_sl3
 const _POLYNOMIAL_COLUMN_PEEL_UNSUPPORTED_FINAL_ROUTE_PROVENANCE = :unsupported_final_route
+const _POLYNOMIAL_COLUMN_PEEL_PUBLIC_ECP_ROUTES = (:embedded_three_block, :unit_entry)
 
 function _polynomial_column_peel_quillen_issue184_final_route_ok(final_certificate)::Bool
     try
@@ -1280,8 +1281,9 @@ function _polynomial_column_peel_mainline_support_metadata(
     final_route_provenance::Symbol,
     descent_metadata,
 )
-    peel_steps_ecp_verified = all(_polynomial_column_peel_left_certificate_ok, peel_steps)
-    final_route_issue184_ok = _polynomial_column_peel_quillen_issue184_final_route_ok(final_certificate)
+    peel_steps_ecp_verified = all(_polynomial_column_peel_public_ecp_peel_step_ok, peel_steps)
+    final_route_issue184_ok =
+        _polynomial_column_peel_public_final_sl3_evidence_ok(final_certificate)
     factor_replay_ok = _factor_sequences_equal(
         factors,
         _replay_polynomial_column_peel_factors(peel_steps, final_factors, base_ring(original_matrix)),
@@ -1400,6 +1402,20 @@ function _polynomial_column_peel_public_reason_code(err::ArgumentError)::Symbol
     return :missing_final_sl3_route
 end
 
+function _polynomial_column_peel_public_reason_code(A, err::ArgumentError)::Symbol
+    message = sprint(showerror, err)
+    if occursin("supported final route at size 3", message)
+        try
+            step = _polynomial_column_peel_step(A)
+            !_polynomial_column_peel_public_ecp_peel_step_ok(step) &&
+                return :missing_ecp_evidence
+        catch step_err
+            step_err isa InterruptException && rethrow()
+        end
+    end
+    return _polynomial_column_peel_public_reason_code(err)
+end
+
 function _polynomial_column_peel_public_staged_message(reason_code::Symbol)
     if reason_code == :missing_ecp_evidence
         return "SL_n recursive column-peel route is staged: missing verified #185/#262 ECP peel evidence"
@@ -1444,7 +1460,7 @@ function _polynomial_recursive_column_peel_public_staged_failure_evidence(A)
         _polynomial_column_peel_public_non_candidate_error(err) &&
             return _POLYNOMIAL_COLUMN_PEEL_PUBLIC_NOT_APPLICABLE
         return _polynomial_column_peel_public_staged_failure_evidence(
-            _polynomial_column_peel_public_reason_code(err),
+            _polynomial_column_peel_public_reason_code(A, err),
         )
     end
 end
@@ -1531,6 +1547,36 @@ function _polynomial_column_peel_left_certificate_ok(step)::Bool
     try
         replay = _polynomial_column_peel_step_core_verification(step)
         return replay.ecp_evidence_ok && replay.ecp_route_provenance_ok
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function _polynomial_column_peel_public_ecp_peel_step_ok(step)::Bool
+    try
+        _polynomial_column_peel_left_certificate_ok(step) || return false
+        hasproperty(step, :ecp_route_provenance) || return false
+        hasproperty(step.ecp_route_provenance, :route) || return false
+        return step.ecp_route_provenance.route in _POLYNOMIAL_COLUMN_PEEL_PUBLIC_ECP_ROUTES
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function _polynomial_column_peel_public_final_sl3_evidence_ok(final_certificate)::Bool
+    try
+        _polynomial_column_peel_quillen_issue184_final_route_ok(final_certificate) ||
+            return false
+        evidence = final_certificate.evidence
+        if evidence isa PolynomialSL3SuppliedQuillenRouteEvidence
+            supplied = evidence.supplied_evidence
+            hasproperty(supplied, :row) || return false
+            hasproperty(supplied, :col) || return false
+            supplied.row == 1 && supplied.col == 3 && return false
+        end
+        return true
     catch err
         err isa InterruptException && rethrow()
         return false

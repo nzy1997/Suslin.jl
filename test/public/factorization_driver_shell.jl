@@ -18,6 +18,36 @@ function _captured_error(f)
     end
 end
 
+function _pw_failure_field(failure, field::Symbol, default)
+    return hasproperty(failure, field) ? getproperty(failure, field) : default
+end
+
+function _pw_assert_mainline_negative_public_failure(entry)
+    factors = nothing
+    err = _captured_error(() -> begin
+        factors = elementary_factorization(entry.matrix)
+        nothing
+    end)
+    @test factors === nothing
+    @test err isa ArgumentError
+    msg = sprint(showerror, err)
+    for term in entry.public_failure.terms
+        @test occursin(term, msg)
+    end
+
+    if _pw_failure_field(entry.public_failure, :staged_route, false)
+        cert = Suslin._polynomial_factorization_route_certificate(entry.matrix)
+        @test cert.route == :staged_failure
+        @test cert.status == :staged
+        @test isempty(cert.factors)
+        @test Suslin._verify_polynomial_factorization_route_certificate(cert)
+        expected_reason = _pw_failure_field(entry.public_failure, :reason_code, nothing)
+        if expected_reason !== nothing
+            @test cert.evidence.reason_code == expected_reason
+        end
+    end
+end
+
 function _assert_public_issue186_recursive_route(A, expected_step_count::Int)
     factors = elementary_factorization(A)
     @test verify_factorization(A, factors)
@@ -204,6 +234,10 @@ end
     entries = ParkWoodburnPolynomialFixtureCatalog.cases_by_id()
     sln_entries = ParkWoodburnSLnDriverFixtureCatalog.cases_by_id()
     mainline_entries = ParkWoodburnMainlineAcceptanceFixtureCatalog.cases_by_id()
+    for entry in ParkWoodburnMainlineAcceptanceFixtureCatalog.catalog().negative_controls
+        _pw_assert_mainline_negative_public_failure(entry)
+    end
+
     recursive_supported = sln_entries["sln-driver-sl4-gf2-ecp-mainline"].matrix
     recursive_cert = _assert_public_issue186_recursive_route(recursive_supported, 1)
     @test Suslin._verify_polynomial_column_peel_certificate(recursive_cert.evidence)
