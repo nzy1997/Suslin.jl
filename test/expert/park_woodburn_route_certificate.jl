@@ -6,6 +6,8 @@ const PARK_WOODBURN_ROUTE_CATALOG_PATH =
     joinpath(@__DIR__, "..", "fixtures", "park_woodburn_polynomial_cases.jl")
 const PARK_WOODBURN_SLN_DRIVER_CATALOG_PATH =
     joinpath(@__DIR__, "..", "fixtures", "park_woodburn_sln_driver_cases.jl")
+const PARK_WOODBURN_MAINLINE_ACCEPTANCE_CATALOG_PATH =
+    joinpath(@__DIR__, "..", "fixtures", "park_woodburn_mainline_acceptance_cases.jl")
 
 struct PWRouteExplodingEq end
 
@@ -230,8 +232,12 @@ end
     if !isdefined(Main, :ParkWoodburnSLnDriverFixtureCatalog)
         include(PARK_WOODBURN_SLN_DRIVER_CATALOG_PATH)
     end
+    if !isdefined(Main, :ParkWoodburnMainlineAcceptanceFixtureCatalog)
+        include(PARK_WOODBURN_MAINLINE_ACCEPTANCE_CATALOG_PATH)
+    end
     entries = ParkWoodburnPolynomialFixtureCatalog.cases_by_id()
     sln_entries = ParkWoodburnSLnDriverFixtureCatalog.cases_by_id()
+    mainline_entries = ParkWoodburnMainlineAcceptanceFixtureCatalog.cases_by_id()
 
     fast_entry = entries["pw-poly-univariate-sl3-fast-local-qq"]
     fast_cert = Suslin._polynomial_factorization_route_certificate(
@@ -319,6 +325,39 @@ end
     @test auto_peel_cert.evidence.final_route_provenance ==
           :issue184_evidence_backed_sl3
     @test verify_factorization(auto_peel_cert.matrix, auto_peel_cert.evidence.factors)
+
+    mainline_acceptance_entry =
+        mainline_entries["pw-mainline-sln-recursive-issue185-186-gf2"]
+    mainline_acceptance_cert = Suslin._polynomial_factorization_route_certificate(
+        mainline_acceptance_entry.matrix,
+    )
+    @test mainline_acceptance_cert.route == :polynomial_column_peel
+    @test verify_factorization(
+        mainline_acceptance_cert.matrix,
+        mainline_acceptance_cert.factors,
+    )
+    @test Suslin._verify_polynomial_factorization_route_certificate(
+        mainline_acceptance_cert,
+    )
+
+    bad_mainline_metadata = merge(
+        mainline_acceptance_cert.evidence.mainline_support_metadata,
+        (; final_route_issue184_ok = false),
+    )
+    bad_mainline_evidence = _pw_replace_column_peel_certificate(
+        mainline_acceptance_cert.evidence;
+        mainline_support_metadata = bad_mainline_metadata,
+        product = mainline_acceptance_cert.evidence.product,
+    )
+    bad_mainline_cert = _pw_replace_certificate(
+        mainline_acceptance_cert;
+        evidence = bad_mainline_evidence,
+        product = mainline_acceptance_cert.product,
+    )
+    @test verify_factorization(bad_mainline_cert.matrix, bad_mainline_cert.factors)
+    @test bad_mainline_cert.product == mainline_acceptance_cert.matrix
+    @test !Suslin._verify_polynomial_column_peel_certificate(bad_mainline_cert.evidence)
+    @test !Suslin._verify_polynomial_factorization_route_certificate(bad_mainline_cert)
 
     tampered_mainline_evidence = _pw_replace_column_peel_certificate(
         auto_peel_cert.evidence;
