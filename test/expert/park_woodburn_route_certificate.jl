@@ -339,33 +339,84 @@ end
     @test Suslin._verify_polynomial_factorization_route_certificate(
         mainline_acceptance_cert,
     )
+    @test mainline_acceptance_cert.evidence.final_certificate.evidence isa
+          Suslin.PolynomialSL3SuppliedQuillenRouteEvidence
 
     bad_final_replay_metadata = merge(
         mainline_acceptance_cert.evidence.final_certificate.evidence.replay_metadata,
         (; driver_issue_id = "#184-tampered"),
     )
-    bad_final_evidence = _pw_rebuild(
+    unchecked_bad_final_evidence = _pw_rebuild(
         mainline_acceptance_cert.evidence.final_certificate.evidence;
         replay_metadata = bad_final_replay_metadata,
     )
-    bad_final_certificate = _pw_replace_certificate(
+    bad_final_evidence_core =
+        Suslin._polynomial_sl3_supplied_quillen_route_core_verification(
+            unchecked_bad_final_evidence,
+        )
+    @test !bad_final_evidence_core.replay_metadata_ok
+    @test !bad_final_evidence_core.overall_core_ok
+    bad_final_evidence = _pw_rebuild(
+        unchecked_bad_final_evidence;
+        verification = bad_final_evidence_core,
+    )
+    @test !Suslin._verify_polynomial_sl3_supplied_quillen_route_evidence(
+        bad_final_evidence,
+    )
+
+    unchecked_bad_final_certificate = _pw_replace_certificate(
         mainline_acceptance_cert.evidence.final_certificate;
         evidence = bad_final_evidence,
         factors = mainline_acceptance_cert.evidence.final_certificate.factors,
         product = mainline_acceptance_cert.evidence.final_certificate.product,
     )
-    bad_mainline_evidence = _pw_replace_column_peel_certificate(
+    bad_final_certificate_core =
+        Suslin._polynomial_factorization_route_core_verification(
+            unchecked_bad_final_certificate,
+        )
+    @test !bad_final_certificate_core.evidence_ok
+    @test !bad_final_certificate_core.overall_core_ok
+    bad_final_certificate = _pw_replace_certificate(
+        unchecked_bad_final_certificate;
+        verification = bad_final_certificate_core,
+    )
+    @test !Suslin._verify_polynomial_factorization_route_certificate(
+        bad_final_certificate,
+    )
+
+    unchecked_bad_mainline_evidence = _pw_replace_column_peel_certificate(
         mainline_acceptance_cert.evidence;
         final_certificate = bad_final_certificate,
         final_factors = mainline_acceptance_cert.evidence.final_factors,
         factors = mainline_acceptance_cert.evidence.factors,
         product = mainline_acceptance_cert.evidence.product,
     )
-    bad_mainline_cert = _pw_replace_certificate(
+    bad_mainline_evidence_core =
+        Suslin._polynomial_column_peel_core_verification(
+            unchecked_bad_mainline_evidence,
+        )
+    @test !bad_mainline_evidence_core.final_certificate_ok
+    @test !bad_mainline_evidence_core.overall_core_ok
+    bad_mainline_evidence = _pw_replace_column_peel_certificate(
+        unchecked_bad_mainline_evidence;
+        verification = bad_mainline_evidence_core,
+    )
+
+    unchecked_bad_mainline_cert = _pw_replace_certificate(
         mainline_acceptance_cert;
         evidence = bad_mainline_evidence,
         factors = mainline_acceptance_cert.factors,
         product = mainline_acceptance_cert.product,
+    )
+    bad_mainline_cert_core =
+        Suslin._polynomial_factorization_route_core_verification(
+            unchecked_bad_mainline_cert,
+        )
+    @test !bad_mainline_cert_core.evidence_ok
+    @test !bad_mainline_cert_core.overall_core_ok
+    bad_mainline_cert = _pw_replace_certificate(
+        unchecked_bad_mainline_cert;
+        verification = bad_mainline_cert_core,
     )
     @test verify_factorization(bad_mainline_cert.matrix, bad_mainline_cert.factors)
     @test bad_mainline_cert.product == mainline_acceptance_cert.matrix
