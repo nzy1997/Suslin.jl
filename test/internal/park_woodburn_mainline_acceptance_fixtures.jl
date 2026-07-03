@@ -29,6 +29,37 @@ const REQUIRED_PW_MAINLINE_NEGATIVE_IDS = Set([
     "pw-mainline-negative-missing-evidence",
 ])
 
+const REQUIRED_PW_MAINLINE_CASE_METADATA = Dict(
+    "pw-mainline-sl3-multivariate-issue184-qq" => (;
+        entry_class = :issue184_sl3_multivariate,
+        expected_status = :mainline_accepted,
+    ),
+    "pw-mainline-sln-recursive-issue185-186-gf2" => (;
+        entry_class = :issue185_186_sln_recursive,
+        expected_status = :mainline_accepted,
+    ),
+    "pw-mainline-readme-ordinary-polynomial-qq" => (;
+        entry_class = :readme_public_example,
+        expected_status = :mainline_accepted,
+    ),
+    "pw-mainline-staged-missing-evidence-qq" => (;
+        entry_class = :staged_missing_evidence_boundary,
+        expected_status = :staged,
+    ),
+)
+
+const REQUIRED_PW_MAINLINE_NEGATIVE_METADATA = Dict(
+    "pw-mainline-negative-det-not-one" => (;
+        base_case_id = "pw-mainline-readme-ordinary-polynomial-qq",
+    ),
+    "pw-mainline-negative-unsupported-coefficient-ring" => (;
+        base_case_id = "pw-mainline-readme-ordinary-polynomial-qq",
+    ),
+    "pw-mainline-negative-missing-evidence" => (;
+        base_case_id = "pw-mainline-sln-recursive-issue185-186-gf2",
+    ),
+)
+
 const REQUIRED_PW_MAINLINE_FIELDS = (
     :id,
     :entry_class,
@@ -335,6 +366,15 @@ function validate_park_woodburn_mainline_acceptance_fixture_catalog(catalog)
     issubset(REQUIRED_PW_MAINLINE_NEGATIVE_IDS, Set(control_ids)) ||
         throw(ArgumentError("catalog missing required mainline acceptance negative-control ids"))
 
+    cases_by_id = Dict(entry.id => entry for entry in catalog.cases)
+    for (id, expected) in REQUIRED_PW_MAINLINE_CASE_METADATA
+        entry = cases_by_id[id]
+        entry.entry_class == expected.entry_class ||
+            throw(ArgumentError("required case $(id) must use entry_class $(expected.entry_class)"))
+        entry.expected_status == expected.expected_status ||
+            throw(ArgumentError("required case $(id) must use expected_status $(expected.expected_status)"))
+    end
+
     catalog_refs = Set{String}()
     for entry in catalog.cases
         validate_park_woodburn_mainline_acceptance_fixture(entry)
@@ -346,6 +386,13 @@ function validate_park_woodburn_mainline_acceptance_fixture_catalog(catalog)
     end
 
     valid_case_ids = Set(case_ids)
+    controls_by_id = Dict(entry.id => entry for entry in catalog.negative_controls)
+    for (id, expected) in REQUIRED_PW_MAINLINE_NEGATIVE_METADATA
+        entry = controls_by_id[id]
+        entry.base_case_id == expected.base_case_id ||
+            throw(ArgumentError("required negative control $(id) must use base_case_id $(expected.base_case_id)"))
+    end
+
     for entry in catalog.negative_controls
         hasproperty(entry, :base_case_id) &&
             entry.base_case_id isa AbstractString &&
@@ -407,5 +454,41 @@ end
 
         duplicate_catalog = merge(catalog, (; cases = [catalog.cases; catalog.cases[1]]))
         @test_throws ArgumentError validate_park_woodburn_mainline_acceptance_fixture_catalog(duplicate_catalog)
+
+        relabeled_required_case = merge(sln_entry, (;
+            entry_class = :readme_public_example,
+        ))
+        relabeled_catalog = merge(catalog, (;
+            cases = [
+                entry.id == sln_entry.id ? relabeled_required_case : entry
+                for entry in catalog.cases
+            ],
+        ))
+        @test_throws ArgumentError validate_park_woodburn_mainline_acceptance_fixture_catalog(relabeled_catalog)
+
+        false_det_metadata = merge(sl3_entry, (;
+            determinant_metadata = merge(sl3_entry.determinant_metadata, (; certified = false)),
+        ))
+        @test_throws ArgumentError validate_park_woodburn_mainline_acceptance_fixture(false_det_metadata)
+
+        RZ, (XZ,) = Oscar.polynomial_ring(ZZ, ["X"])
+        unsupported_ring = (;
+            description = "ZZ[X]",
+            object = RZ,
+            generator_names = ("X",),
+            generators = (XZ,),
+        )
+        unsupported_ring_entry = merge(sl3_entry, (;
+            ring_constructor = merge(sl3_entry.ring_constructor, (; coefficient = "ZZ")),
+            ring = unsupported_ring,
+            matrix = identity_matrix(RZ, 3),
+            determinant_metadata = (;
+                expected = :one,
+                certified = true,
+                value = one(RZ),
+                unit = one(RZ),
+            ),
+        ))
+        @test_throws ArgumentError validate_park_woodburn_mainline_acceptance_fixture(unsupported_ring_entry)
     end
 end
