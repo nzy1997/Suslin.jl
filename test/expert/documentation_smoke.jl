@@ -10,10 +10,69 @@ const SUPPORT_BOUNDARY_EVIDENCE_PAGE = joinpath(
     "audits",
     "2026-06-26-laurent-toricbuilder-support-boundary-evidence.md",
 )
+const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
+const README_PATH = joinpath(REPO_ROOT, "README.md")
+const DOCS_INDEX_PATH = joinpath(REPO_ROOT, "docs", "src", "index.md")
 
 function _read_support_boundary_evidence()
     @test isfile(SUPPORT_BOUNDARY_EVIDENCE_PAGE)
     return read(SUPPORT_BOUNDARY_EVIDENCE_PAGE, String)
+end
+
+function _read_repo_text(path)
+    @test isfile(path)
+    return read(path, String)
+end
+
+function _paragraphs(text)
+    return split(replace(text, "\r\n" => "\n"), "\n\n")
+end
+
+function _squash_whitespace(text)
+    return replace(strip(text), r"\s+" => " ")
+end
+
+function _assert_not_claimed_as_issue187(text, item)
+    for paragraph in _paragraphs(text)
+        squashed = _squash_whitespace(paragraph)
+        lower_squashed = lowercase(squashed)
+        if occursin("#187", lower_squashed) && occursin(lowercase(item), lower_squashed)
+            @test occursin("separate", squashed) ||
+                  occursin("out of scope", squashed) ||
+                  occursin("not part of", squashed) ||
+                  occursin("outside", lowercase(squashed))
+        end
+    end
+end
+
+function _assert_issue187_public_contract(text)
+    squashed = _squash_whitespace(text)
+    @test occursin(
+        "The final ordinary-polynomial Park-Woodburn public contract (#187) is supported",
+        squashed,
+    )
+    @test occursin(
+        "exact field-backed ordinary-polynomial determinant-one `SL_3`",
+        squashed,
+    )
+    @test occursin(
+        "exact field-backed ordinary-polynomial determinant-one `SL_n`, `n > 3`",
+        squashed,
+    )
+    @test occursin("implemented evidence-backed route", squashed)
+    @test occursin(
+        "Unsupported coefficient rings remain out of scope",
+        squashed,
+    )
+    @test occursin(
+        "Arbitrary Laurent `GL_n`, ToricBuilder mainline acceptance, and Steinberg factor-count optimization (#188) remain separate from #187",
+        squashed,
+    )
+    @test !occursin("full public Park-Woodburn acceptance (#187)", squashed)
+    _assert_not_claimed_as_issue187(text, "unsupported coefficient rings")
+    _assert_not_claimed_as_issue187(text, "arbitrary Laurent `GL_n`")
+    _assert_not_claimed_as_issue187(text, "ToricBuilder")
+    _assert_not_claimed_as_issue187(text, "factor-count optimization")
 end
 
 @testset "documentation smoke" begin
@@ -53,5 +112,10 @@ end
         @test occursin("not arbitrary Laurent `GL_n`", evidence)
         @test occursin("julia --project=. test/runtests.jl", evidence)
         @test occursin("julia --project=. test/runtests.jl expert", evidence)
+    end
+
+    @testset "ordinary-polynomial Park-Woodburn public contract" begin
+        _assert_issue187_public_contract(_read_repo_text(README_PATH))
+        _assert_issue187_public_contract(_read_repo_text(DOCS_INDEX_PATH))
     end
 end
