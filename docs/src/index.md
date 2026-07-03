@@ -35,6 +35,15 @@ verify_factorization(A, factors)
   closeout does not claim arbitrary determinant-one multivariate `SL_3`
   realization unless the corresponding local-form, variable-change, or
   normality/conjugation witness is implemented and replayed.
+- The final ordinary-polynomial Park-Woodburn public contract (#187) is
+  supported for exact field-backed ordinary-polynomial determinant-one `SL_3`
+  and exact field-backed ordinary-polynomial determinant-one `SL_n`, `n > 3`,
+  inputs through the implemented evidence-backed route. Public acceptance
+  requires the factors returned by `elementary_factorization(A)` to satisfy
+  `verify_factorization(A, factors)`, and the route certificate must replay the
+  required #184 `SL_3` evidence plus #185/#186 ECP-backed recursive provenance
+  for larger sizes. The example above is the README-style ordinary-polynomial
+  public call shape covered by the #187 acceptance tests.
 - `verify_factorization(A, factors)` checks exact multiplication against `A`.
 - `laurent_gl_factorization_certificate(A)` defaults to the eager Laurent
   normalization/core certificate. With `determinant_strategy = :lazy`, it
@@ -67,15 +76,14 @@ verify_factorization(A, factors)
   staged with stable reason codes such as `:missing_ecp_evidence` and
   `:missing_final_sl3_route`; legacy fast-local/disjoint-block examples may
   still verify factors but do not count as #186 mainline support by themselves.
-- Staged ordinary-polynomial `SL_3` inputs include determinant-one matrices with
-  no supported local-form, variable-change, normality/conjugation, Murthy, or
-  Quillen evidence path. Outside the evidence-backed #184 and #186 slices
-  above, Quillen automatic patching (#183), general `SL_3` (#184), recursive
-  `SL_n` (#186), full public Park-Woodburn acceptance (#187),
-  coefficient-ring support beyond exact field-backed ordinary polynomial rings,
-  arbitrary Laurent `GL_n` determinant correction, Laurent/ToricBuilder
-  mainline acceptance, and Steinberg factor-count optimization remain staged
-  boundaries.
+- Staged ordinary-polynomial inputs include determinant-one matrices missing the
+  required local-form, variable-change, normality/conjugation, Murthy,
+  Quillen, ECP, or final `SL_3` evidence path. Those inputs fail before public
+  factors are returned, with stable reason codes such as
+  `:missing_ecp_evidence` and `:missing_final_sl3_route` for recursive staged
+  failures. Unsupported coefficient rings remain out of scope. Arbitrary
+  Laurent `GL_n`, ToricBuilder mainline acceptance, and Steinberg factor-count
+  optimization (#188) remain separate from #187.
 
 See [ToricBuilder Integration Contract](@ref) for the first recorded
 consumer-boundary fixture contract.
