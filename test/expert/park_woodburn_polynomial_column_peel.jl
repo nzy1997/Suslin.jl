@@ -361,21 +361,27 @@ Base.getproperty(::_PWPolyExplodingColumnPeelCertificate, ::Symbol) =
     @test block_recursive_cert.final_certificate.route == :disjoint_local_blocks
     _pw_poly_assert_real_peel_certificate(block_recursive_cert, block_recursive_entry.matrix)
 
-    route_cert = Suslin._polynomial_factorization_route_certificate(
+    @test_throws ArgumentError Suslin._polynomial_factorization_route_certificate(
         recursive_entry.matrix;
         route = :recursive_column_peel,
     )
-    @test route_cert.route == :recursive_column_peel
-    @test route_cert.evidence isa Suslin.PolynomialColumnPeelCertificate
-    @test Suslin._verify_polynomial_factorization_route_certificate(route_cert)
-    bad_route_evidence = _pw_poly_corrupt_last_column(route_cert.evidence)
-    bad_route_cert = _pw_poly_replace_route_certificate(
-        route_cert;
-        evidence = bad_route_evidence,
-        product = route_cert.product,
+    legacy_route_cert = Suslin.PolynomialFactorizationRouteCertificate(
+        recursive_entry.matrix,
+        :recursive_column_peel,
+        recursive_cert.factors,
+        recursive_cert.product,
+        recursive_cert,
+        :supported,
+        nothing,
     )
-    @test verify_factorization(bad_route_cert.matrix, bad_route_cert.factors)
-    @test !Suslin._verify_polynomial_factorization_route_certificate(bad_route_cert)
+    legacy_route_cert = _pw_poly_replace_route_certificate(
+        legacy_route_cert;
+        verification = Suslin._polynomial_factorization_route_core_verification(
+            legacy_route_cert,
+        ),
+    )
+    @test verify_factorization(legacy_route_cert.matrix, legacy_route_cert.factors)
+    @test !Suslin._verify_polynomial_factorization_route_certificate(legacy_route_cert)
 
     staged_entry = entries["pw-poly-recursive-column-peel-gf2"]
     @test_throws ArgumentError Suslin._polynomial_column_peel_certificate(staged_entry.matrix)

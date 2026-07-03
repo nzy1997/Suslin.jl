@@ -277,6 +277,26 @@ end
     @test hasproperty(staged_cert.evidence, :message)
     @test !isempty(staged_cert.evidence.message)
     @test Suslin._verify_polynomial_factorization_route_certificate(staged_cert)
+    recursive_optout_staged_cert = Suslin._polynomial_factorization_route_certificate(
+        recursive_entry.matrix;
+        allow_recursive_column_peel = false,
+    )
+    @test recursive_optout_staged_cert.route == :staged_failure
+    @test recursive_optout_staged_cert.status == :staged
+    @test recursive_optout_staged_cert.evidence.allow_recursive_column_peel === false
+    @test Suslin._verify_polynomial_factorization_route_certificate(
+        recursive_optout_staged_cert,
+    )
+    explicit_recursive_optout_staged_cert = Suslin._polynomial_factorization_route_certificate(
+        recursive_entry.matrix;
+        route = :staged_failure,
+        allow_recursive_column_peel = false,
+    )
+    @test explicit_recursive_optout_staged_cert.route == :staged_failure
+    @test explicit_recursive_optout_staged_cert.evidence.allow_recursive_column_peel === false
+    @test Suslin._verify_polynomial_factorization_route_certificate(
+        explicit_recursive_optout_staged_cert,
+    )
 
     auto_staged_cert = Suslin._polynomial_factorization_route_certificate(recursive_entry.matrix)
     @test auto_staged_cert.route == :staged_failure
@@ -340,6 +360,34 @@ end
     @test_throws ArgumentError Suslin._polynomial_factorization_route_certificate(
         recursive_supported_entry.matrix;
         route = :polynomial_column_peel,
+    )
+
+    identity_route_R, (identity_route_x,) =
+        Oscar.polynomial_ring(GF(2), ["identity_route_x"])
+    identity_final_matrix = identity_matrix(identity_route_R, 4)
+    identity_final_matrix[1, 4] = identity_route_x
+    identity_final_evidence =
+        Suslin._polynomial_column_peel_certificate(identity_final_matrix)
+    @test identity_final_evidence.final_certificate.evidence isa
+          Suslin.PolynomialSL3IdentityQuillenRouteEvidence
+    forged_identity_route = Suslin.PolynomialFactorizationRouteCertificate(
+        identity_final_matrix,
+        :polynomial_column_peel,
+        identity_final_evidence.factors,
+        identity_final_evidence.product,
+        identity_final_evidence,
+        :supported,
+        nothing,
+    )
+    forged_identity_route = _pw_replace_certificate(
+        forged_identity_route;
+        verification = Suslin._polynomial_factorization_route_core_verification(
+            forged_identity_route,
+        ),
+    )
+    @test verify_factorization(forged_identity_route.matrix, forged_identity_route.factors)
+    @test !Suslin._verify_polynomial_factorization_route_certificate(
+        forged_identity_route,
     )
 
     @test_throws ArgumentError Suslin._polynomial_factorization_route_certificate(

@@ -1869,7 +1869,10 @@ function _polynomial_factorization_route_certificate(
     elseif _is_polynomial_column_peel_route(route)
         return _polynomial_recursive_column_peel_route_certificate(A; route_tag = route)
     elseif route == :staged_failure
-        return _polynomial_staged_failure_route_certificate(A)
+        return _polynomial_staged_failure_route_certificate(
+            A;
+            allow_recursive_column_peel = allow_recursive_column_peel,
+        )
     end
 
     throw(ArgumentError("unsupported polynomial factorization route certificate tag $(route)"))
@@ -1901,6 +1904,7 @@ function _polynomial_staged_failure_route_certificate(
         A;
         allow_recursive_column_peel = allow_recursive_column_peel,
     )
+    evidence = merge(evidence, (; allow_recursive_column_peel))
     return _polynomial_route_certificate(A, :staged_failure, factors, product, evidence, :staged)
 end
 
@@ -3775,6 +3779,7 @@ function _polynomial_route_evidence_ok(cert)::Bool
             return cert.evidence isa PolynomialColumnPeelCertificate &&
                 cert.evidence.original_matrix == cert.matrix &&
                 cert.evidence.product == cert.matrix &&
+                !(cert.evidence.final_certificate.evidence isa PolynomialSL3IdentityQuillenRouteEvidence) &&
                 _verify_polynomial_column_peel_certificate(cert.evidence) &&
                 _polynomial_column_peel_public_mainline_supported(cert.evidence) &&
                 _polynomial_route_factor_sequences_equal(cert.factors, cert.evidence.factors)
@@ -3816,7 +3821,16 @@ function _polynomial_route_evidence_ok(cert)::Bool
                 cert.evidence.message isa AbstractString &&
                 !isempty(cert.evidence.message) ||
                 return false
-            fresh_evidence = _polynomial_staged_failure_evidence(cert.matrix)
+            hasproperty(cert.evidence, :allow_recursive_column_peel) ||
+                return false
+            cert.evidence.allow_recursive_column_peel isa Bool ||
+                return false
+            allow_recursive_column_peel = cert.evidence.allow_recursive_column_peel
+            fresh_evidence = _polynomial_staged_failure_evidence(
+                cert.matrix;
+                allow_recursive_column_peel,
+            )
+            fresh_evidence = merge(fresh_evidence, (; allow_recursive_column_peel))
             return cert.evidence == fresh_evidence &&
                 fresh_evidence.error_type == :ArgumentError &&
                 !isempty(fresh_evidence.message)
