@@ -144,6 +144,62 @@ function _pw_assert_issue187_recursive_catalog_acceptance(entry, expected_step_c
     return cert
 end
 
+const REQUIRED_MAINLINE_ACCEPTANCE_CASE_IDS = (
+    "pw-mainline-sl3-multivariate-issue184-qq",
+    "pw-mainline-sln-recursive-issue185-186-gf2",
+    "pw-mainline-readme-ordinary-polynomial-qq",
+)
+
+const REQUIRED_MAINLINE_NEGATIVE_CONTROL_IDS = (
+    "pw-mainline-negative-det-not-one",
+    "pw-mainline-negative-unsupported-coefficient-ring",
+    "pw-mainline-negative-missing-sl3-local-form-evidence",
+    "pw-mainline-negative-missing-sl3-quillen-evidence",
+    "pw-mainline-negative-missing-ecp-evidence",
+    "pw-mainline-negative-missing-evidence",
+    "pw-mainline-negative-missing-final-sl3-evidence",
+    "pw-mainline-negative-laurent-boundary",
+)
+
+function _pw_assert_required_mainline_catalog_inventory(
+        mainline_entries,
+        mainline_negative_entries)
+    @test all(id -> haskey(mainline_entries, id), REQUIRED_MAINLINE_ACCEPTANCE_CASE_IDS)
+    @test all(
+        id -> haskey(mainline_negative_entries, id),
+        REQUIRED_MAINLINE_NEGATIVE_CONTROL_IDS,
+    )
+    @test mainline_entries["pw-mainline-sl3-multivariate-issue184-qq"].entry_class ==
+          :issue184_sl3_multivariate
+    @test mainline_entries["pw-mainline-sln-recursive-issue185-186-gf2"].entry_class ==
+          :issue185_186_sln_recursive
+    @test mainline_entries["pw-mainline-readme-ordinary-polynomial-qq"].entry_class ==
+          :readme_public_example
+    @test mainline_negative_entries[
+        "pw-mainline-negative-unsupported-coefficient-ring"
+    ].negative_kind == :unsupported_coefficient_ring
+    @test mainline_negative_entries["pw-mainline-negative-laurent-boundary"].negative_kind ==
+          :laurent_boundary
+
+    pruned_acceptance = filter(
+        pair -> pair.first != "pw-mainline-sln-recursive-issue185-186-gf2",
+        mainline_entries,
+    )
+    @test !all(
+        id -> haskey(pruned_acceptance, id),
+        REQUIRED_MAINLINE_ACCEPTANCE_CASE_IDS,
+    )
+    pruned_negative = filter(
+        pair -> pair.first != "pw-mainline-negative-unsupported-coefficient-ring",
+        mainline_negative_entries,
+    )
+    @test !all(
+        id -> haskey(pruned_negative, id),
+        REQUIRED_MAINLINE_NEGATIVE_CONTROL_IDS,
+    )
+    return nothing
+end
+
 @testset "public Park-Woodburn polynomial factorization acceptance" begin
     if !isdefined(Main, :ParkWoodburnPolynomialFixtureCatalog)
         include(PARK_WOODBURN_ACCEPTANCE_CATALOG_PATH)
@@ -159,7 +215,15 @@ end
     entries = ParkWoodburnPolynomialFixtureCatalog.cases_by_id()
     sln_entries = ParkWoodburnSLnDriverFixtureCatalog.cases_by_id()
     mainline_entries = ParkWoodburnMainlineAcceptanceFixtureCatalog.cases_by_id()
-    for entry in ParkWoodburnMainlineAcceptanceFixtureCatalog.catalog().negative_controls
+    mainline_negative_entries = Dict(
+        entry.id => entry for
+        entry in ParkWoodburnMainlineAcceptanceFixtureCatalog.catalog().negative_controls
+    )
+    _pw_assert_required_mainline_catalog_inventory(
+        mainline_entries,
+        mainline_negative_entries,
+    )
+    for entry in values(mainline_negative_entries)
         _pw_poly_assert_mainline_negative_public_failure(entry)
     end
 
