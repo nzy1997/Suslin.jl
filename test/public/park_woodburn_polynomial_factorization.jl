@@ -19,11 +19,11 @@ function _pw_acceptance_result_or_error(A)
     end
 end
 
-function _pw_failure_field(failure, field::Symbol, default)
+function _pw_poly_failure_field(failure, field::Symbol, default)
     return hasproperty(failure, field) ? getproperty(failure, field) : default
 end
 
-function _pw_assert_mainline_negative_public_failure(entry)
+function _pw_poly_assert_mainline_negative_public_failure(entry)
     factors, err = _pw_acceptance_result_or_error(entry.matrix)
     @test factors === nothing
     @test err isa ArgumentError
@@ -32,13 +32,13 @@ function _pw_assert_mainline_negative_public_failure(entry)
         @test occursin(term, msg)
     end
 
-    if _pw_failure_field(entry.public_failure, :staged_route, false)
+    if _pw_poly_failure_field(entry.public_failure, :staged_route, false)
         cert = Suslin._polynomial_factorization_route_certificate(entry.matrix)
         @test cert.route == :staged_failure
         @test cert.status == :staged
         @test isempty(cert.factors)
         @test Suslin._verify_polynomial_factorization_route_certificate(cert)
-        expected_reason = _pw_failure_field(entry.public_failure, :reason_code, nothing)
+        expected_reason = _pw_poly_failure_field(entry.public_failure, :reason_code, nothing)
         if expected_reason !== nothing
             @test cert.evidence.reason_code == expected_reason
         end
@@ -160,7 +160,7 @@ end
     sln_entries = ParkWoodburnSLnDriverFixtureCatalog.cases_by_id()
     mainline_entries = ParkWoodburnMainlineAcceptanceFixtureCatalog.cases_by_id()
     for entry in ParkWoodburnMainlineAcceptanceFixtureCatalog.catalog().negative_controls
-        _pw_assert_mainline_negative_public_failure(entry)
+        _pw_poly_assert_mainline_negative_public_failure(entry)
     end
 
     sl3_mainline =
