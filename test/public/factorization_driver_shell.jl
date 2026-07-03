@@ -261,7 +261,29 @@ end
         _captured_error(() -> elementary_factorization(recursive_unsupported))
     @test recursive_unsupported_err isa ArgumentError
     @test occursin(
-        "evidence-backed SL_3 polynomial route",
+        "missing verified #184/#263 final SL_3 route evidence",
         sprint(showerror, recursive_unsupported_err),
+    )
+    recursive_unsupported_staged =
+        Suslin._polynomial_factorization_route_certificate(recursive_unsupported)
+    @test recursive_unsupported_staged.route == :staged_failure
+    @test recursive_unsupported_staged.evidence.reason_code == :missing_final_sl3_route
+    @test Suslin._verify_polynomial_factorization_route_certificate(
+        recursive_unsupported_staged,
+    )
+
+    legacy_recursive = sln_entries["sln-driver-legacy-recursive-column-peel-qq"].matrix
+    legacy_recursive_err = _captured_error(() -> elementary_factorization(legacy_recursive))
+    @test legacy_recursive_err isa ArgumentError
+    @test occursin(
+        "missing verified #184/#263 final SL_3 route evidence",
+        sprint(showerror, legacy_recursive_err),
+    )
+    legacy_recursive_staged =
+        Suslin._polynomial_factorization_route_certificate(legacy_recursive)
+    @test legacy_recursive_staged.route == :staged_failure
+    @test legacy_recursive_staged.evidence.reason_code == :missing_final_sl3_route
+    @test Suslin._verify_polynomial_factorization_route_certificate(
+        legacy_recursive_staged,
     )
 end

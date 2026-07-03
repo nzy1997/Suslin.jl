@@ -354,10 +354,14 @@ end
     @test Suslin._verify_polynomial_factorization_route_certificate(alias_peel_cert)
     @test alias_peel_cert.evidence.mainline_support_metadata.marker == :issue186_mainline
     @test Suslin._polynomial_staged_failure_evidence(mainline_entry.matrix).error_type == :none
-    @test_throws ErrorException Suslin._polynomial_factorization_route_certificate(
+    legacy_staged_cert = Suslin._polynomial_factorization_route_certificate(
         recursive_supported_entry.matrix;
         route = :staged_failure,
     )
+    @test legacy_staged_cert.route == :staged_failure
+    @test legacy_staged_cert.status == :staged
+    @test legacy_staged_cert.evidence.reason_code == :missing_final_sl3_route
+    @test Suslin._verify_polynomial_factorization_route_certificate(legacy_staged_cert)
 
     bad_peel_route_cert = _pw_corrupt_route_peel_evidence(auto_peel_cert)
     @test verify_factorization(bad_peel_route_cert.matrix, bad_peel_route_cert.factors)

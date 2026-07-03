@@ -1797,6 +1797,22 @@ function _polynomial_factorization_route_certificate(
         X = _supported_local_sl3_generator(A, R, ring_profile)
         X !== nothing && return _polynomial_fast_local_sl3_route_certificate(A, X)
 
+        if n > 3 && allow_recursive_column_peel
+            recursive_staged_evidence =
+                _polynomial_recursive_column_peel_public_staged_failure_evidence(A)
+            if recursive_staged_evidence === nothing
+                return _polynomial_recursive_column_peel_route_certificate(
+                    A;
+                    route_tag = :polynomial_column_peel,
+                )
+            elseif recursive_staged_evidence !== _POLYNOMIAL_COLUMN_PEEL_PUBLIC_NOT_APPLICABLE
+                return _polynomial_staged_failure_route_certificate(
+                    A;
+                    allow_recursive_column_peel = allow_recursive_column_peel,
+                )
+            end
+        end
+
         if n > 3
             try
                 return _polynomial_disjoint_local_blocks_route_certificate(A)
@@ -3563,6 +3579,16 @@ function _polynomial_staged_failure_evidence(A; allow_recursive_column_peel::Boo
     end
 
     if nrows(A) > 3
+        if allow_recursive_column_peel
+            recursive_staged_evidence =
+                _polynomial_recursive_column_peel_public_staged_failure_evidence(A)
+            if recursive_staged_evidence === nothing
+                return (; error_type = :none, message = "")
+            elseif recursive_staged_evidence !== _POLYNOMIAL_COLUMN_PEEL_PUBLIC_NOT_APPLICABLE
+                return recursive_staged_evidence
+            end
+        end
+
         staged_error = nothing
         try
             reduce_sln_to_sl3(A)
@@ -3571,19 +3597,6 @@ function _polynomial_staged_failure_evidence(A; allow_recursive_column_peel::Boo
             err isa InterruptException && rethrow()
             err isa ArgumentError || rethrow()
             staged_error = err
-        end
-
-        if allow_recursive_column_peel
-            try
-                _polynomial_recursive_column_peel_route_certificate(
-                    A;
-                    route_tag = :polynomial_column_peel,
-                )
-                return (; error_type = :none, message = "")
-            catch err
-                err isa InterruptException && rethrow()
-                err isa ArgumentError || rethrow()
-            end
         end
 
         return (;

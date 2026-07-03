@@ -1431,6 +1431,9 @@ end
 function _polynomial_recursive_column_peel_public_staged_failure_evidence(A)
     try
         evidence = _polynomial_column_peel_certificate(A)
+        if evidence.final_certificate.evidence isa PolynomialSL3IdentityQuillenRouteEvidence
+            return _POLYNOMIAL_COLUMN_PEEL_PUBLIC_NOT_APPLICABLE
+        end
         _polynomial_column_peel_public_mainline_supported(evidence) && return nothing
         return _polynomial_column_peel_public_staged_failure_evidence(
             _polynomial_column_peel_public_reason_code(evidence),
