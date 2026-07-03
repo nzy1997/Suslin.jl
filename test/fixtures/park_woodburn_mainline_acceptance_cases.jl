@@ -105,8 +105,20 @@ function _case(;
     return entry
 end
 
-function _negative_control(id, base_case_id, reason, entry)
-    return merge(entry, (; id = id, base_case_id = base_case_id, reason = reason))
+function _negative_failure(terms; staged_route = true, reason_code = nothing)
+    data = (; terms = Tuple(terms), staged_route = staged_route)
+    reason_code === nothing || (data = merge(data, (; reason_code = reason_code)))
+    return data
+end
+
+function _negative_control(id, base_case_id, reason, negative_kind, public_failure, entry)
+    return merge(entry, (;
+        id = id,
+        base_case_id = base_case_id,
+        reason = reason,
+        negative_kind = negative_kind,
+        public_failure = public_failure,
+    ))
 end
 
 function _determinant_metadata(matrix_value; certified = true)
@@ -269,6 +281,45 @@ function catalog()
         staged_reason = "missing verified final issue 184 SL_3 evidence for the #187 ordinary-polynomial acceptance claim",
     )
 
+    issue238_R, (issue238_X, issue238_r) = Oscar.polynomial_ring(QQ, ["X", "r"])
+    issue238_constructor = _ordinary_ring_constructor("QQ", ("X", "r"))
+    issue238_ring = _ring_metadata("QQ[X, r]", issue238_R, ("X", "r"), (issue238_X, issue238_r))
+    missing_local_form_matrix =
+        elementary_matrix(3, 1, 3, issue238_X, issue238_R) *
+        elementary_matrix(3, 2, 1, issue238_r, issue238_R)
+
+    missing_quillen_matrix =
+        elementary_matrix(3, 1, 2, one(issue238_R), issue238_R) *
+        elementary_matrix(3, 2, 1, issue238_X, issue238_R) *
+        elementary_matrix(3, 1, 2, one(issue238_R), issue238_R)
+
+    missing_ecp_R, (missing_ecp_x, missing_ecp_y) = Oscar.polynomial_ring(QQ, ["x", "y"])
+    missing_ecp_constructor = _ordinary_ring_constructor("QQ", ("x", "y"))
+    missing_ecp_ring = _ring_metadata("QQ[x, y]", missing_ecp_R, ("x", "y"), (missing_ecp_x, missing_ecp_y))
+    missing_ecp_p = missing_ecp_x
+    missing_ecp_a = missing_ecp_x * missing_ecp_y - one(missing_ecp_R)
+    missing_ecp_q = one(missing_ecp_R)
+    missing_ecp_b = missing_ecp_y
+    missing_ecp_matrix = matrix(missing_ecp_R, [
+        one(missing_ecp_R)  zero(missing_ecp_R) zero(missing_ecp_R) zero(missing_ecp_R);
+        zero(missing_ecp_R) zero(missing_ecp_R) missing_ecp_p     missing_ecp_a;
+        zero(missing_ecp_R) zero(missing_ecp_R) missing_ecp_q     missing_ecp_b;
+        zero(missing_ecp_R) one(missing_ecp_R)  zero(missing_ecp_R) zero(missing_ecp_R)
+    ])
+
+    L, (lx,) = Suslin.suslin_laurent_polynomial_ring(QQ, ["x"])
+    laurent_constructor = (;
+        function_name = :suslin_laurent_polynomial_ring,
+        coefficient = "QQ",
+        variables = ("x",),
+    )
+    laurent_ring = _ring_metadata("QQ[x, x^-1]", L, ("x",), (lx,))
+    normalizable_laurent = matrix(L, [
+        lx      zero(L) zero(L);
+        zero(L) one(L)  zero(L);
+        zero(L) zero(L) one(L)
+    ])
+
     R_readme = readme_style_case.ring.object
     X_readme = readme_style_case.ring.generators[1]
     det_not_one_matrix = matrix(R_readme, [
@@ -280,6 +331,11 @@ function catalog()
         "pw-mainline-negative-det-not-one",
         readme_style_case.id,
         "supported mainline acceptance must not record a determinant-not-one matrix",
+        :determinant_not_one,
+        _negative_failure((
+            "determinant/unit precondition failed",
+            "polynomial inputs must have determinant 1",
+        ); staged_route = false),
         merge(readme_style_case, (;
             matrix = det_not_one_matrix,
             determinant_metadata = _determinant_metadata(det_not_one_matrix; certified = false),
@@ -298,6 +354,10 @@ function catalog()
         "pw-mainline-negative-unsupported-coefficient-ring",
         readme_style_case.id,
         "supported mainline acceptance must stay on exact field-backed ordinary polynomial rings",
+        :unsupported_coefficient_ring,
+        _negative_failure((
+            "ordinary polynomial factorization currently requires an exact field-backed coefficient ring",
+        )),
         merge(readme_style_case, (;
             ring_constructor = zz_constructor,
             ring = zz_ring,
@@ -306,15 +366,119 @@ function catalog()
         )),
     )
 
+    missing_local_form_control = _negative_control(
+        "pw-mainline-negative-missing-sl3-local-form-evidence",
+        sl3_multivariate_case.id,
+        "mainline SL_3 support cannot proceed without replayable local-form evidence",
+        :missing_sl3_local_form_evidence,
+        _negative_failure((
+            "determinant-one polynomial input is outside the implemented evidence-backed SL_3 polynomial route",
+            "missing a #236 local-form witness",
+        )),
+        merge(sl3_multivariate_case, (;
+            ring_constructor = issue238_constructor,
+            ring = issue238_ring,
+            matrix = missing_local_form_matrix,
+            determinant_metadata = _determinant_metadata(missing_local_form_matrix),
+            upstream_evidence = NamedTuple(),
+        )),
+    )
+
+    missing_quillen_control = _negative_control(
+        "pw-mainline-negative-missing-sl3-quillen-evidence",
+        sl3_multivariate_case.id,
+        "mainline SL_3 support cannot proceed without ordinary Quillen local evidence",
+        :missing_sl3_quillen_evidence,
+        _negative_failure((
+            "determinant-one polynomial input is outside the implemented evidence-backed SL_3 polynomial route",
+            "missing #237 ordinary Quillen local evidence",
+        )),
+        merge(sl3_multivariate_case, (;
+            ring_constructor = issue238_constructor,
+            ring = issue238_ring,
+            matrix = missing_quillen_matrix,
+            determinant_metadata = _determinant_metadata(missing_quillen_matrix),
+            upstream_evidence = NamedTuple(),
+        )),
+    )
+
+    missing_ecp_control = _negative_control(
+        "pw-mainline-negative-missing-ecp-evidence",
+        sln_recursive_case.id,
+        "recursive mainline support cannot proceed without verified ECP peel evidence",
+        :missing_ecp_evidence,
+        _negative_failure((
+            "SL_n recursive column-peel route is staged",
+            "missing verified #185/#262 ECP peel evidence",
+        ); reason_code = :missing_ecp_evidence),
+        merge(sln_recursive_case, (;
+            ring_constructor = missing_ecp_constructor,
+            ring = missing_ecp_ring,
+            matrix = missing_ecp_matrix,
+            determinant_metadata = _determinant_metadata(missing_ecp_matrix),
+            upstream_evidence = (;
+                sln_case_id = sln_recursive_base.id,
+                final_sl3_case_id = final_sl3_base.id,
+            ),
+        )),
+    )
+
     missing_evidence_control = _negative_control(
         "pw-mainline-negative-missing-evidence",
         sln_recursive_case.id,
         "mainline acceptance cannot claim recursive support while omitting the final issue 184 evidence id",
+        :missing_final_sl3_evidence,
+        _negative_failure((
+            "SL_n recursive column-peel route is staged",
+            "missing verified #184/#263 final SL_3 route evidence",
+        ); reason_code = :missing_final_sl3_route),
         merge(sln_recursive_case, (;
+            ring_constructor = staged_base.ring_constructor,
+            ring = staged_base.ring,
+            matrix = staged_base.matrix,
+            determinant_metadata = _determinant_metadata(staged_base.matrix),
             upstream_evidence = (;
-                sln_case_id = sln_recursive_base.id,
+                sln_case_id = staged_base.id,
                 ecp_case_id = ecp_mainline_base.id,
             ),
+        )),
+    )
+
+    missing_final_sl3_control = _negative_control(
+        "pw-mainline-negative-missing-final-sl3-evidence",
+        staged_missing_evidence_case.id,
+        "recursive mainline support cannot proceed without verified final issue 184 SL_3 evidence",
+        :missing_final_sl3_evidence,
+        _negative_failure((
+            "SL_n recursive column-peel route is staged",
+            "missing verified #184/#263 final SL_3 route evidence",
+        ); reason_code = :missing_final_sl3_route),
+        merge(sln_recursive_case, (;
+            ring_constructor = staged_base.ring_constructor,
+            ring = staged_base.ring,
+            matrix = staged_base.matrix,
+            determinant_metadata = _determinant_metadata(staged_base.matrix),
+            upstream_evidence = (;
+                sln_case_id = staged_base.id,
+                ecp_case_id = ecp_mainline_base.id,
+            ),
+        )),
+    )
+
+    laurent_boundary_control = _negative_control(
+        "pw-mainline-negative-laurent-boundary",
+        readme_style_case.id,
+        "Laurent/ToricBuilder normalization remains outside the ordinary-polynomial #187 public route",
+        :laurent_boundary,
+        _negative_failure((
+            "Laurent GL_n normalization boundary succeeded",
+            "determinant-correction/driver path cannot yet return elementary factors",
+        ); staged_route = false),
+        merge(readme_style_case, (;
+            ring_constructor = laurent_constructor,
+            ring = laurent_ring,
+            matrix = normalizable_laurent,
+            determinant_metadata = _determinant_metadata(normalizable_laurent),
         )),
     )
 
@@ -328,7 +492,12 @@ function catalog()
         negative_controls = [
             det_not_one_control,
             unsupported_ring_control,
+            missing_local_form_control,
+            missing_quillen_control,
+            missing_ecp_control,
             missing_evidence_control,
+            missing_final_sl3_control,
+            laurent_boundary_control,
         ],
     )
 end
