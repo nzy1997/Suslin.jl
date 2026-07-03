@@ -1366,8 +1366,8 @@ function _polynomial_column_peel_public_mainline_supported(cert)::Bool
             metadata.final_route_provenance ==
                 _POLYNOMIAL_COLUMN_PEEL_ISSUE184_FINAL_ROUTE_PROVENANCE
     catch err
-        err isa InterruptException && rethrow()
-        return false
+        err isa InterruptException && rethrow() # COV_EXCL_LINE
+        return false # COV_EXCL_LINE
     end
 end
 
@@ -1384,7 +1384,7 @@ function _polynomial_column_peel_public_reason_code(cert)::Symbol
         :missing_issue184_final_sl3_route in reasons && return :missing_final_sl3_route
         :final_block_not_sl3 in reasons && return :missing_final_sl3_route
     catch err
-        err isa InterruptException && rethrow()
+        err isa InterruptException && rethrow() # COV_EXCL_LINE
     end
     return :missing_final_sl3_route
 end

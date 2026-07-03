@@ -340,6 +340,46 @@ end
         recursive_supported_entry.matrix,
     )
     @test !legacy_evidence.mainline_support_metadata.supported
+    final_block_reason_evidence = _pw_replace_column_peel_certificate(
+        legacy_evidence;
+        mainline_support_metadata = merge(
+            legacy_evidence.mainline_support_metadata,
+            (; reason_codes = (:final_block_not_sl3,)),
+        ),
+    )
+    @test Suslin._polynomial_column_peel_public_reason_code(
+        final_block_reason_evidence,
+    ) == :missing_final_sl3_route
+    unknown_reason_evidence = _pw_replace_column_peel_certificate(
+        legacy_evidence;
+        mainline_support_metadata = merge(
+            legacy_evidence.mainline_support_metadata,
+            (; reason_codes = (:factor_replay_mismatch,)),
+        ),
+    )
+    @test Suslin._polynomial_column_peel_public_reason_code(
+        unknown_reason_evidence,
+    ) == :missing_final_sl3_route
+    @test Suslin._polynomial_column_peel_public_reason_code(
+        ArgumentError("determinant/unit precondition failed"),
+    ) == :determinant_not_one
+    @test Suslin._polynomial_column_peel_public_reason_code(
+        ArgumentError("exact field-backed coefficient ring required"),
+    ) == :unsupported_coefficient_ring
+    @test occursin(
+        "determinant/unit precondition failed",
+        Suslin._polynomial_column_peel_public_staged_message(:determinant_not_one),
+    )
+    @test occursin(
+        "exact field-backed coefficient ring",
+        Suslin._polynomial_column_peel_public_staged_message(
+            :unsupported_coefficient_ring,
+        ),
+    )
+    @test occursin(
+        "unsupported recursive route evidence",
+        Suslin._polynomial_column_peel_public_staged_message(:unknown_recursive_reason),
+    )
     legacy_route = Suslin.PolynomialFactorizationRouteCertificate(
         recursive_supported_entry.matrix,
         :polynomial_column_peel,
