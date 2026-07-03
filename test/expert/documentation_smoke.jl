@@ -35,7 +35,8 @@ end
 function _assert_not_claimed_as_issue187(text, item)
     for paragraph in _paragraphs(text)
         squashed = _squash_whitespace(paragraph)
-        if occursin("#187", squashed) && occursin(item, squashed)
+        lower_squashed = lowercase(squashed)
+        if occursin("#187", lower_squashed) && occursin(lowercase(item), lower_squashed)
             @test occursin("separate", squashed) ||
                   occursin("out of scope", squashed) ||
                   occursin("not part of", squashed) ||
