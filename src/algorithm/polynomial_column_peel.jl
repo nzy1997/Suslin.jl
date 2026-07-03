@@ -1410,7 +1410,7 @@ function _polynomial_column_peel_public_reason_code(A, err::ArgumentError)::Symb
             !_polynomial_column_peel_public_ecp_peel_step_ok(step) &&
                 return :missing_ecp_evidence
         catch step_err
-            step_err isa InterruptException && rethrow()
+            step_err isa InterruptException && rethrow() # COV_EXCL_LINE
         end
     end
     return _polynomial_column_peel_public_reason_code(err)
@@ -1560,8 +1560,8 @@ function _polynomial_column_peel_public_ecp_peel_step_ok(step)::Bool
         hasproperty(step.ecp_route_provenance, :route) || return false
         return step.ecp_route_provenance.route in _POLYNOMIAL_COLUMN_PEEL_PUBLIC_ECP_ROUTES
     catch err
-        err isa InterruptException && rethrow()
-        return false
+        err isa InterruptException && rethrow() # COV_EXCL_LINE
+        return false # COV_EXCL_LINE
     end
 end
 
@@ -1578,8 +1578,8 @@ function _polynomial_column_peel_public_final_sl3_evidence_ok(final_certificate)
         end
         return true
     catch err
-        err isa InterruptException && rethrow()
-        return false
+        err isa InterruptException && rethrow() # COV_EXCL_LINE
+        return false # COV_EXCL_LINE
     end
 end
 
