@@ -438,7 +438,7 @@ function catalog()
             matrix = staged_base.matrix,
             determinant_metadata = _determinant_metadata(staged_base.matrix),
             upstream_evidence = (;
-                sln_case_id = sln_recursive_base.id,
+                sln_case_id = staged_base.id,
                 ecp_case_id = ecp_mainline_base.id,
             ),
         )),
