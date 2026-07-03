@@ -57,16 +57,25 @@ verify_factorization(A, factors)
   monicity normalization (#244), link witness extraction (#245), link-step
   replay (#246), induction/normality composition (#247), and public reducer
   dispatch (#248). Polynomial column peel records the verified ECP certificate
-  used for each last-column peel step, which gives later #186 work a stable
-  consumer boundary without claiming recursive `SL_n` matrix factorization.
+  used for each last-column peel step.
+- The recursive ordinary-polynomial `SL_n` driver (#186) is supported for exact
+  field-backed ordinary-polynomial `SL_n`, `n > 3`, inputs whose recursive peel
+  steps verify #185 ECP evidence, whose final `SL_3` block verifies #184 route
+  evidence, and whose public route certificate carries #186 mainline
+  provenance; determinant-one `SL_n` inputs missing ECP, final `SL_3`,
+  variable, local-form, Quillen/Murthy, or unsupported-ring evidence remain
+  staged with stable reason codes such as `:missing_ecp_evidence` and
+  `:missing_final_sl3_route`; legacy fast-local/disjoint-block examples may
+  still verify factors but do not count as #186 mainline support by themselves.
 - Staged ordinary-polynomial `SL_3` inputs include determinant-one matrices with
   no supported local-form, variable-change, normality/conjugation, Murthy, or
-  Quillen evidence path. Outside the evidence-backed #184 slice above,
-  Quillen automatic patching (#183), general `SL_3` (#184), recursive `SL_n`
-  (#186), full public Park-Woodburn acceptance (#187), coefficient-ring
-  support beyond exact field-backed ordinary polynomial rings, arbitrary
-  Laurent `GL_n` determinant correction, Laurent/ToricBuilder mainline
-  acceptance, and Steinberg factor-count optimization remain staged boundaries.
+  Quillen evidence path. Outside the evidence-backed #184 and #186 slices
+  above, Quillen automatic patching (#183), general `SL_3` (#184), recursive
+  `SL_n` (#186), full public Park-Woodburn acceptance (#187),
+  coefficient-ring support beyond exact field-backed ordinary polynomial rings,
+  arbitrary Laurent `GL_n` determinant correction, Laurent/ToricBuilder
+  mainline acceptance, and Steinberg factor-count optimization remain staged
+  boundaries.
 
 ## Testing
 
