@@ -68,6 +68,9 @@ function _sln_recursive_rebuild(record; kwargs...)
     values = map(fieldnames(typeof(record))) do name
         get(overrides, name, getproperty(record, name))
     end
+    if record isa NamedTuple
+        return typeof(record)(Tuple(values))
+    end
     return typeof(record)(values...)
 end
 
@@ -81,6 +84,47 @@ function _sln_recursive_assert_mainline_certificate(cert, entry)
     @test nrows(cert.final_block) == 3
     @test ncols(cert.final_block) == 3
     @test cert.final_certificate.route == :quillen_patch
+    @test cert.final_certificate.evidence isa Suslin.PolynomialSL3SuppliedQuillenRouteEvidence
+    @test Suslin._verify_polynomial_sl3_supplied_quillen_route_evidence(
+        cert.final_certificate.evidence,
+    )
+    supplied_evidence = cert.final_certificate.evidence.supplied_evidence
+    tampered_local_certificates = copy(supplied_evidence.local_certificates)
+    tampered_local_certificates[1] = _sln_recursive_rebuild(
+        tampered_local_certificates[1];
+        witness_metadata = merge(
+            tampered_local_certificates[1].witness_metadata,
+            (; tampered = true),
+        ),
+    )
+    tampered_supplied_evidence = _sln_recursive_rebuild(
+        supplied_evidence;
+        local_certificates = tampered_local_certificates,
+    )
+    tampered_evidence = _sln_recursive_rebuild(
+        cert.final_certificate.evidence;
+        supplied_evidence = tampered_supplied_evidence,
+    )
+    @test !Suslin._verify_polynomial_sl3_supplied_quillen_route_evidence(tampered_evidence)
+    quillen_route_adapter = cert.final_certificate.evidence.quillen_route_adapter
+    tampered_quillen_patch = _sln_recursive_rebuild(
+        quillen_route_adapter.quillen_patch;
+        replay_metadata = merge(
+            quillen_route_adapter.quillen_patch.replay_metadata,
+            (; tampered = true),
+        ),
+    )
+    tampered_adapter = _sln_recursive_rebuild(
+        quillen_route_adapter;
+        quillen_patch = tampered_quillen_patch,
+    )
+    tampered_patch_evidence = _sln_recursive_rebuild(
+        cert.final_certificate.evidence;
+        quillen_route_adapter = tampered_adapter,
+    )
+    @test !Suslin._verify_polynomial_sl3_supplied_quillen_route_evidence(
+        tampered_patch_evidence,
+    )
     @test cert.final_route_provenance == :issue184_evidence_backed_sl3
     @test cert.descent_metadata.strict_dimension_descent
     @test cert.descent_metadata.final_block_is_sl3

@@ -1936,6 +1936,15 @@ function _polynomial_sl3_supplied_quillen_route_fields(A; metadata = (;))
 end
 
 function _same_polynomial_sl3_supplied_quillen_data(left, right)::Bool
+    local_certificates_ok =
+        _same_quillen_local_factor_sequence_certificates(
+            left.local_certificates,
+            right.local_certificates,
+        ) ||
+        _same_polynomial_sl3_supplied_quillen_local_certificates(
+            left.local_certificates,
+            right.local_certificates,
+        )
     return left.selected_variable == right.selected_variable &&
         left.cover_generator == right.cover_generator &&
         left.row == right.row &&
@@ -1945,13 +1954,322 @@ function _same_polynomial_sl3_supplied_quillen_data(left, right)::Bool
         left.delta_entry == right.delta_entry &&
         left.base_term_policy == right.base_term_policy &&
         _polynomial_route_factor_sequences_equal(left.base_term_factors, right.base_term_factors) &&
-        length(left.local_certificates) == length(right.local_certificates) &&
-        all(verify_quillen_local_factor_sequence_certificate, left.local_certificates)
+        local_certificates_ok &&
+        all(verify_quillen_local_factor_sequence_certificate, left.local_certificates) &&
+        all(verify_quillen_local_factor_sequence_certificate, right.local_certificates)
+end
+
+function _same_polynomial_sl3_supplied_quillen_elementary_correction(left, right)::Bool
+    return left.row == right.row &&
+        left.col == right.col &&
+        left.entry == right.entry
+end
+
+function _same_polynomial_sl3_supplied_quillen_local_contribution(left, right)::Bool
+    return left.certificate.indices == right.certificate.indices &&
+        left.certificate.denominators == right.certificate.denominators &&
+        left.denominator == right.denominator &&
+        left.coverage_multiplier == right.coverage_multiplier &&
+        _same_polynomial_sl3_supplied_quillen_elementary_correction(
+            left.correction,
+            right.correction,
+        )
+end
+
+function _same_polynomial_sl3_supplied_quillen_local_contributions(left, right)::Bool
+    length(left) == length(right) || return false
+    for idx in eachindex(left)
+        _same_polynomial_sl3_supplied_quillen_local_contribution(
+            left[idx],
+            right[idx],
+        ) || return false
+    end
+    return true
+end
+
+function _same_polynomial_sl3_supplied_quillen_local_certificate(left, right)::Bool
+    return left.original_input == right.original_input &&
+        left.ring == right.ring &&
+        left.size == right.size &&
+        left.selected_variable == right.selected_variable &&
+        _same_quillen_local_elementary_factors(left.factors, right.factors) &&
+        left.raw_denominators == right.raw_denominators &&
+        left.product_denominator == right.product_denominator &&
+        left.local_product == right.local_product &&
+        left.local_correction == right.local_correction &&
+        _same_polynomial_sl3_supplied_quillen_local_contributions(
+            left.normalized_local_contributions,
+            right.normalized_local_contributions,
+        ) &&
+        _same_quillen_factors(
+            left.normalized_global_elementary_factors,
+            right.normalized_global_elementary_factors,
+        ) &&
+        left.patched_substitution_witness == right.patched_substitution_witness &&
+        left.chain_witness == right.chain_witness &&
+        left.witness_metadata == right.witness_metadata
+end
+
+function _same_polynomial_sl3_supplied_quillen_local_certificates(left, right)::Bool
+    length(left) == length(right) || return false
+    for idx in eachindex(left)
+        _same_polynomial_sl3_supplied_quillen_local_certificate(
+            left[idx],
+            right[idx],
+        ) || return false
+    end
+    return true
+end
+
+function _same_polynomial_sl3_supplied_quillen_cover_candidate_verification(left, right)::Bool
+    return left.local_count == right.local_count &&
+        left.raw_denominators == right.raw_denominators &&
+        left.local_certificates_ok == right.local_certificates_ok &&
+        left.same_original_input_ok == right.same_original_input_ok &&
+        left.same_ring_ok == right.same_ring_ok &&
+        left.same_size_ok == right.same_size_ok &&
+        left.same_selected_variable_ok == right.same_selected_variable_ok &&
+        _same_quillen_local_denominator_supports(left.local_supports, right.local_supports) &&
+        left.local_supports_ok == right.local_supports_ok &&
+        left.raw_denominators_ok == right.raw_denominators_ok &&
+        left.replay_metadata_ok == right.replay_metadata_ok &&
+        left.overall_ok == right.overall_ok
+end
+
+function _same_polynomial_sl3_supplied_quillen_cover_candidate(left, right)::Bool
+    return _same_quillen_denominator_cover_candidate_data(left, right) ||
+        (
+            left.original_input == right.original_input &&
+            left.ring == right.ring &&
+            left.size == right.size &&
+            left.selected_variable == right.selected_variable &&
+            _same_polynomial_sl3_supplied_quillen_local_certificates(
+                left.local_certificates,
+                right.local_certificates,
+            ) &&
+            left.raw_denominators == right.raw_denominators &&
+            _same_quillen_local_denominator_supports(
+                left.local_supports,
+                right.local_supports,
+            ) &&
+            _same_polynomial_sl3_supplied_quillen_cover_candidate_verification(
+                left.verification,
+                right.verification,
+            )
+        )
+end
+
+function _same_polynomial_sl3_supplied_quillen_solver_result(left, right)::Bool
+    return _same_quillen_denominator_cover_solver_result_data(left, right) ||
+        (
+            _same_polynomial_sl3_supplied_quillen_cover_candidate(
+                left.source_candidate,
+                right.source_candidate,
+            ) &&
+            left.ring == right.ring &&
+            left.raw_denominators == right.raw_denominators &&
+            left.exponent == right.exponent &&
+            left.powered_denominators == right.powered_denominators &&
+            left.coverage_multipliers == right.coverage_multipliers &&
+            left.coverage_terms == right.coverage_terms &&
+            left.coverage_sum == right.coverage_sum &&
+            _same_quillen_cover_certificate_data(
+                left.cover_certificate,
+                right.cover_certificate,
+            ) &&
+            _same_quillen_denominator_cover_solver_verification(
+                left.verification,
+                right.verification,
+            )
+        )
+end
+
+function _same_polynomial_sl3_supplied_quillen_sequence_expansion_verification(left, right)::Bool
+    return left.local_certificate_ok == right.local_certificate_ok &&
+        left.solver_result_ok == right.solver_result_ok &&
+        left.local_index_ok == right.local_index_ok &&
+        left.solver_context_ok == right.solver_context_ok &&
+        left.powered_denominator == right.powered_denominator &&
+        left.coverage_multiplier == right.coverage_multiplier &&
+        left.cover_term == right.cover_term &&
+        left.cover_term_ok == right.cover_term_ok &&
+        left.factor_provenance == right.factor_provenance &&
+        left.factor_provenance_ok == right.factor_provenance_ok &&
+        _same_quillen_factors(left.global_elementary_factors, right.global_elementary_factors) &&
+        left.global_elementary_factors_ok == right.global_elementary_factors_ok &&
+        left.replay_metadata_ok == right.replay_metadata_ok &&
+        left.overall_ok == right.overall_ok
+end
+
+function _same_polynomial_sl3_supplied_quillen_sequence_expansions(left, right)::Bool
+    return _same_quillen_sequence_expansions(left, right) ||
+        (
+            length(left) == length(right) &&
+            all(eachindex(left, right)) do idx
+                left[idx].local_index == right[idx].local_index &&
+                _same_polynomial_sl3_supplied_quillen_solver_result(
+                    left[idx].solver_result,
+                    right[idx].solver_result,
+                ) &&
+                left[idx].cover_term == right[idx].cover_term &&
+                _same_quillen_factors(
+                    left[idx].global_elementary_factors,
+                    right[idx].global_elementary_factors,
+                ) &&
+                _same_polynomial_sl3_supplied_quillen_sequence_expansion_verification(
+                    left[idx].verification,
+                    right[idx].verification,
+                )
+            end
+        )
+end
+
+function _same_polynomial_sl3_supplied_quillen_substitution_chain_verification(left, right)::Bool
+    return left.solver_result_ok == right.solver_result_ok &&
+        left.ring_ok == right.ring_ok &&
+        left.matrix_ok == right.matrix_ok &&
+        left.selected_variable_ok == right.selected_variable_ok &&
+        left.sign_convention_ok == right.sign_convention_ok &&
+        left.coefficient_count == right.coefficient_count &&
+        left.step_count == right.step_count &&
+        left.bracket_count == right.bracket_count &&
+        left.cumulative_coefficients == right.cumulative_coefficients &&
+        left.cumulative_coefficients_ok == right.cumulative_coefficients_ok &&
+        left.intermediate_matrices == right.intermediate_matrices &&
+        left.intermediate_matrices_ok == right.intermediate_matrices_ok &&
+        _same_quillen_patch_substitution_steps(left.expected_steps, right.expected_steps) &&
+        left.steps_ok == right.steps_ok &&
+        left.bracket_matrices == right.bracket_matrices &&
+        left.bracket_matrices_ok == right.bracket_matrices_ok &&
+        left.final_coefficient == right.final_coefficient &&
+        left.final_coefficient_ok == right.final_coefficient_ok &&
+        left.base_term == right.base_term &&
+        left.base_term_ok == right.base_term_ok &&
+        left.telescope_product == right.telescope_product &&
+        left.telescope_ok == right.telescope_ok &&
+        left.replay_metadata_ok == right.replay_metadata_ok &&
+        left.overall_ok == right.overall_ok
+end
+
+function _same_polynomial_sl3_supplied_quillen_substitution_chain(left, right)::Bool
+    return _same_polynomial_sl3_quillen_murthy_substitution_chain_data(left, right) ||
+        (
+            left.original_matrix == right.original_matrix &&
+            left.ring == right.ring &&
+            left.size == right.size &&
+            left.selected_variable == right.selected_variable &&
+            left.sign_convention == right.sign_convention &&
+            _same_polynomial_sl3_supplied_quillen_solver_result(
+                left.solver_result,
+                right.solver_result,
+            ) &&
+            left.cumulative_coefficients == right.cumulative_coefficients &&
+            left.intermediate_matrices == right.intermediate_matrices &&
+            _same_quillen_patch_substitution_steps(left.steps, right.steps) &&
+            left.bracket_matrices == right.bracket_matrices &&
+            left.base_term == right.base_term &&
+            left.metadata == right.metadata &&
+            _same_polynomial_sl3_supplied_quillen_substitution_chain_verification(
+                left.verification,
+                right.verification,
+            )
+        )
+end
+
+function _same_polynomial_sl3_supplied_quillen_patch_verification(left, right)::Bool
+    return _same_quillen_supplied_patch_verification(left, right) ||
+        (
+            left.local_certificates_ok == right.local_certificates_ok &&
+            left.denominator_candidate_ok == right.denominator_candidate_ok &&
+            left.denominator_candidate_matches == right.denominator_candidate_matches &&
+            left.solver_result_ok == right.solver_result_ok &&
+            left.solver_source_candidate_ok == right.solver_source_candidate_ok &&
+            left.cover_certificate_ok == right.cover_certificate_ok &&
+            left.substitution_chain_ok == right.substitution_chain_ok &&
+            left.substitution_chain_matches == right.substitution_chain_matches &&
+            left.base_term_ok == right.base_term_ok &&
+            left.sequence_expansions_ok == right.sequence_expansions_ok &&
+            _same_quillen_factors(
+                left.global_elementary_factors,
+                right.global_elementary_factors,
+            ) &&
+            left.global_elementary_factors_ok == right.global_elementary_factors_ok &&
+            left.product == right.product &&
+            left.product_ok == right.product_ok &&
+            left.target == right.target &&
+            left.target_ok == right.target_ok &&
+            left.replay_metadata_ok == right.replay_metadata_ok &&
+            left.overall_ok == right.overall_ok
+        )
+end
+
+function _same_polynomial_sl3_supplied_quillen_patch_data(adapted, raw)::Bool
+    return verify_quillen_patch(adapted) &&
+        verify_quillen_patch(raw) &&
+        adapted.ring == raw.ring &&
+        adapted.size == raw.size &&
+        adapted.substitution_variable == raw.substitution_variable &&
+        adapted.original_input == raw.original_input &&
+        (
+            _same_quillen_local_factor_sequence_certificates(
+                adapted.local_certificates,
+                raw.local_certificates,
+            ) ||
+            _same_polynomial_sl3_supplied_quillen_local_certificates(
+                adapted.local_certificates,
+                raw.local_certificates,
+            )
+        ) &&
+        _same_polynomial_sl3_supplied_quillen_cover_candidate(
+            adapted.denominator_candidate,
+            raw.denominator_candidate,
+        ) &&
+        _same_polynomial_sl3_supplied_quillen_solver_result(
+            adapted.solver_result,
+            raw.solver_result,
+        ) &&
+        _same_quillen_cover_certificate_data(
+            adapted.cover_certificate,
+            raw.cover_certificate,
+        ) &&
+        _same_polynomial_sl3_supplied_quillen_substitution_chain(
+            adapted.substitution_chain,
+            raw.substitution_chain,
+        ) &&
+        adapted.base_term_policy == raw.base_term_policy &&
+        adapted.base_term == raw.base_term &&
+        _polynomial_route_factor_sequences_equal(
+            adapted.base_term_factors,
+            raw.base_term_factors,
+        ) &&
+        adapted.base_term_product == raw.base_term_product &&
+        _same_polynomial_sl3_supplied_quillen_sequence_expansions(
+            adapted.sequence_expansions,
+            raw.sequence_expansions,
+        ) &&
+        _same_quillen_factors(
+            adapted.sequence_elementary_factors,
+            raw.sequence_elementary_factors,
+        ) &&
+        _same_quillen_factors(
+            adapted.global_elementary_factors,
+            raw.global_elementary_factors,
+        ) &&
+        adapted.product == raw.product &&
+        adapted.target == raw.target &&
+        _same_polynomial_sl3_supplied_quillen_patch_verification(
+            adapted.verification,
+            raw.verification,
+        )
 end
 
 function _same_polynomial_sl3_supplied_quillen_route_adapter(left, right)::Bool
     return left.target == right.target &&
         left.route == right.route &&
+        _same_polynomial_sl3_supplied_quillen_patch_data(
+            left.quillen_patch,
+            right.quillen_patch,
+        ) &&
         left.target_matrix == right.target_matrix &&
         _polynomial_route_factor_sequences_equal(
             left.global_elementary_factors,
@@ -1964,7 +2282,8 @@ function _same_polynomial_sl3_supplied_quillen_route_adapter(left, right)::Bool
         left.replay_metadata.local_certificate_count == right.replay_metadata.local_certificate_count &&
         left.replay_metadata.normalized_contribution_count ==
             right.replay_metadata.normalized_contribution_count &&
-        _verify_polynomial_quillen_patch_route_adapter(left)
+        _verify_polynomial_quillen_patch_route_adapter(left) &&
+        _verify_polynomial_quillen_patch_route_adapter(right)
 end
 
 function _polynomial_sl3_supplied_quillen_route_core_verification(evidence)
