@@ -1898,6 +1898,10 @@ function _polynomial_recursive_column_peel_route_certificate(
     if evidence.final_certificate.evidence isa PolynomialSL3IdentityQuillenRouteEvidence
         throw(ArgumentError("polynomial column-peel route with a trivial identity SL_3 final block is certificate-only and not part of public elementary factorization dispatch"))
     end
+    if !_polynomial_column_peel_public_mainline_supported(evidence)
+        reason_code = _polynomial_column_peel_public_reason_code(evidence)
+        throw(ArgumentError(_polynomial_column_peel_public_staged_message(reason_code)))
+    end
     factors = copy(evidence.factors)
     product = _polynomial_route_factor_product(factors, base_ring(A), nrows(A))
     return _polynomial_route_certificate(A, route_tag, factors, product, evidence, :supported)
@@ -3759,6 +3763,7 @@ function _polynomial_route_evidence_ok(cert)::Bool
                 cert.evidence.original_matrix == cert.matrix &&
                 cert.evidence.product == cert.matrix &&
                 _verify_polynomial_column_peel_certificate(cert.evidence) &&
+                _polynomial_column_peel_public_mainline_supported(cert.evidence) &&
                 _polynomial_route_factor_sequences_equal(cert.factors, cert.evidence.factors)
         elseif cert.route == :quillen_patch
             if cert.evidence isa PolynomialQuillenPatchRouteAdapter

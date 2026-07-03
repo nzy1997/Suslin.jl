@@ -1350,6 +1350,94 @@ function _polynomial_column_peel_mainline_support_metadata_ok(cert)::Bool
     end
 end
 
+function _polynomial_column_peel_public_mainline_supported(cert)::Bool
+    try
+        cert isa PolynomialColumnPeelCertificate || return false
+        _verify_polynomial_column_peel_certificate(cert) || return false
+        hasproperty(cert, :mainline_support_metadata) || return false
+        metadata = cert.mainline_support_metadata
+        return hasproperty(metadata, :issue_id) &&
+            hasproperty(metadata, :marker) &&
+            hasproperty(metadata, :supported) &&
+            hasproperty(metadata, :final_route_provenance) &&
+            metadata.issue_id == "#186" &&
+            metadata.marker == :issue186_mainline &&
+            metadata.supported == true &&
+            metadata.final_route_provenance ==
+                _POLYNOMIAL_COLUMN_PEEL_ISSUE184_FINAL_ROUTE_PROVENANCE
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+const _POLYNOMIAL_COLUMN_PEEL_PUBLIC_NOT_APPLICABLE =
+    :not_polynomial_column_peel_candidate
+
+function _polynomial_column_peel_public_reason_code(cert)::Symbol
+    try
+        cert isa PolynomialColumnPeelCertificate || return :missing_final_sl3_route
+        hasproperty(cert, :mainline_support_metadata) || return :missing_final_sl3_route
+        reasons = cert.mainline_support_metadata.reason_codes
+        :missing_ecp_peel_evidence in reasons && return :missing_ecp_evidence
+        :missing_issue184_final_sl3_route in reasons && return :missing_final_sl3_route
+        :final_block_not_sl3 in reasons && return :missing_final_sl3_route
+    catch err
+        err isa InterruptException && rethrow()
+    end
+    return :missing_final_sl3_route
+end
+
+function _polynomial_column_peel_public_reason_code(err::ArgumentError)::Symbol
+    message = sprint(showerror, err)
+    occursin("ECP", message) && return :missing_ecp_evidence
+    occursin("left factors", message) && return :missing_ecp_evidence
+    occursin("last column", message) && return :missing_ecp_evidence
+    return :missing_final_sl3_route
+end
+
+function _polynomial_column_peel_public_staged_message(reason_code::Symbol)
+    if reason_code == :missing_ecp_evidence
+        return "SL_n recursive column-peel route is staged: missing verified #185/#262 ECP peel evidence"
+    elseif reason_code == :missing_final_sl3_route
+        return "SL_n recursive column-peel route is staged: missing verified #184/#263 final SL_3 route evidence"
+    end
+    return "SL_n recursive column-peel route is staged: unsupported recursive route evidence"
+end
+
+function _polynomial_column_peel_public_staged_failure_evidence(reason_code::Symbol)
+    return (;
+        error_type = :ArgumentError,
+        reason_code,
+        message = _polynomial_column_peel_public_staged_message(reason_code),
+    )
+end
+
+function _polynomial_column_peel_public_non_candidate_error(err::ArgumentError)::Bool
+    return occursin(
+        "polynomial column-peel certificate requires at least one real peel step",
+        sprint(showerror, err),
+    )
+end
+
+function _polynomial_recursive_column_peel_public_staged_failure_evidence(A)
+    try
+        evidence = _polynomial_column_peel_certificate(A)
+        _polynomial_column_peel_public_mainline_supported(evidence) && return nothing
+        return _polynomial_column_peel_public_staged_failure_evidence(
+            _polynomial_column_peel_public_reason_code(evidence),
+        )
+    catch err
+        err isa InterruptException && rethrow()
+        err isa ArgumentError || rethrow()
+        _polynomial_column_peel_public_non_candidate_error(err) &&
+            return _POLYNOMIAL_COLUMN_PEEL_PUBLIC_NOT_APPLICABLE
+        return _polynomial_column_peel_public_staged_failure_evidence(
+            _polynomial_column_peel_public_reason_code(err),
+        )
+    end
+end
+
 function _polynomial_column_peel_core_verification(cert)
     preconditions_ok = _polynomial_column_peel_preconditions_ok(cert)
     step_chain_ok = _polynomial_column_peel_step_chain_ok(
