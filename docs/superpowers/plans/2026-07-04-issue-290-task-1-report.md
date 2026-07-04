@@ -179,3 +179,56 @@ Steinberg optimization certificate accepts univariate ordinary polynomial rings 
 - kept the construction internal; no public exports changed
 - added only no-op certificate coverage for the supported univariate ordinary polynomial ring case
 - did not implement any shortening rules
+
+## Task 1 Review Fix: Impossible Same-Delta Rewrite Log Counts
+
+Addressed the final whole-branch review finding for issue #290: certificate verification previously accepted a coherently forged rewrite log when its aggregate factor-count delta matched the sequence delta, even if the logged counts were impossible for the actual factor sequences.
+
+### TDD Evidence
+
+#### RED
+
+After adding a focused expert regression for a same-delta but impossible rewrite log, I ran:
+
+```bash
+julia --project=. -e 'include("test/expert/steinberg_factor_count_optimization.jl")'
+```
+
+Observed expected failure:
+
+```text
+Steinberg optimization certificate replay: Test Failed at .../test/expert/steinberg_factor_count_optimization.jl:114
+  Expression: !(Suslin._verify_steinberg_optimization_certificate(impossible_same_delta_certificate))
+...
+Test Summary:                             | Pass  Fail  Total  Time
+Steinberg optimization certificate replay |   22     1     23  1.5s
+ERROR: LoadError: Some tests did not pass: 22 passed, 1 failed, 0 errored, 0 broken.
+```
+
+This showed the regression was real: the verifier still accepted a forged certificate whose rewrite log claimed counts far larger than either sequence length while preserving net delta zero.
+
+#### GREEN
+
+After tightening rewrite-log validation in `src/algorithm/redundancy.jl`, I reran:
+
+```bash
+julia --project=. -e 'include("test/expert/steinberg_factor_count_optimization.jl")'
+```
+
+Observed success:
+
+```text
+Test Summary:                                 | Pass  Total  Time
+Steinberg canonical elementary factor records |   15     15  0.5s
+Test Summary:                             | Pass  Total  Time
+Steinberg optimization certificate replay |   23     23  0.9s
+Test Summary:                                                                   | Pass  Total  Time
+Steinberg optimization certificate accepts univariate ordinary polynomial rings |    7      7  0.2s
+```
+
+### Scope Notes
+
+- verification now rejects rewrite logs whose summed `original_factor_count` exceeds the original factor sequence length
+- verification now rejects rewrite logs whose summed `optimized_factor_count` exceeds the optimized factor sequence length
+- malformed rewrite records still raise deliberate `ArgumentError`s during normalization, while tampered certificates return `false` from `_verify_steinberg_optimization_certificate`
+- verification remained focused to `src/algorithm/redundancy.jl`, the expert regression file, and this report

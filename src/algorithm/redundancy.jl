@@ -136,6 +136,19 @@ function _steinberg_rewrite_log_delta(records)::Int
     return sum(record.optimized_factor_count - record.original_factor_count for record in records; init = 0)
 end
 
+function _steinberg_rewrite_log_counts_within_sequence_lengths(
+    records,
+    original_factor_count::Int,
+    optimized_factor_count::Int,
+)::Bool
+    total_original_factor_count =
+        sum(record.original_factor_count for record in records; init = 0)
+    total_optimized_factor_count =
+        sum(record.optimized_factor_count for record in records; init = 0)
+    return total_original_factor_count <= original_factor_count &&
+           total_optimized_factor_count <= optimized_factor_count
+end
+
 function _steinberg_comparison_summary(
     original_factors,
     optimized_factors,
@@ -168,8 +181,14 @@ function _steinberg_summary_core_status(
     optimized_product,
 )::Bool
     factor_count_delta = length(optimized_factors) - length(original_factors)
+    rewrite_log_counts_ok = _steinberg_rewrite_log_counts_within_sequence_lengths(
+        applied_rewrites,
+        length(original_factors),
+        length(optimized_factors),
+    )
     return original_product == optimized_product &&
-           _steinberg_rewrite_log_delta(applied_rewrites) == factor_count_delta
+           _steinberg_rewrite_log_delta(applied_rewrites) == factor_count_delta &&
+           rewrite_log_counts_ok
 end
 
 function _steinberg_optimization_core_verification(certificate)
@@ -189,8 +208,17 @@ function _steinberg_optimization_core_verification(certificate)
     rewrite_log_delta_ok =
         _steinberg_rewrite_log_delta(applied_rewrites) ==
         length(optimized_context.factors) - length(original_context.factors)
+    rewrite_log_counts_ok = _steinberg_rewrite_log_counts_within_sequence_lengths(
+        applied_rewrites,
+        length(original_context.factors),
+        length(optimized_context.factors),
+    )
     summary_core_status =
-        original_product_replay_ok && optimized_product_replay_ok && products_equal && rewrite_log_delta_ok
+        original_product_replay_ok &&
+        optimized_product_replay_ok &&
+        products_equal &&
+        rewrite_log_delta_ok &&
+        rewrite_log_counts_ok
 
     expected_summary = _steinberg_comparison_summary(
         original_context.factors,
@@ -210,6 +238,7 @@ function _steinberg_optimization_core_verification(certificate)
         optimized_product_replay_ok,
         products_equal,
         rewrite_log_delta_ok,
+        rewrite_log_counts_ok,
         comparison_summary_ok,
         overall_ok,
     )

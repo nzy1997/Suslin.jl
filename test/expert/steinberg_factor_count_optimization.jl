@@ -101,6 +101,18 @@ end
     )
     @test !Suslin._verify_steinberg_optimization_certificate(stale_log_certificate)
 
+    impossible_same_delta_log = [(
+        rule_name = :same_position_merge,
+        original_factor_count = length(original_factors) + 100,
+        optimized_factor_count = length(original_factors) + 100,
+    )]
+    impossible_same_delta_certificate = Suslin._steinberg_optimization_certificate(
+        original_factors,
+        copy(original_factors),
+        impossible_same_delta_log,
+    )
+    @test !Suslin._verify_steinberg_optimization_certificate(impossible_same_delta_certificate)
+
     R_alt, (u, v) = Oscar.polynomial_ring(QQ, ["u", "v"])
     mixed_ring_factors = copy(original_factors)
     mixed_ring_factors[2] = elementary_matrix(n, 1, 2, u + one(R_alt), R_alt)
