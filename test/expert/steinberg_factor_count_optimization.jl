@@ -2,6 +2,13 @@ using Test
 using Suslin
 using Oscar
 
+const STEINBERG_OPTIMIZATION_FIXTURE_PATH =
+    joinpath(@__DIR__, "..", "fixtures", "steinberg_optimization_cases.jl")
+
+if !isdefined(Main, :SteinbergOptimizationFixtureCatalog)
+    include(STEINBERG_OPTIMIZATION_FIXTURE_PATH)
+end
+
 @testset "Steinberg canonical elementary factor records" begin
     R, (x, y) = Oscar.polynomial_ring(QQ, ["x", "y"])
     coefficient = x + y + one(R)
@@ -38,11 +45,173 @@ using Oscar
     @test_throws ArgumentError Suslin._elementary_factor_record_matrix((; kind = :unsupported, n = 3, ring = R))
 end
 
-const STEINBERG_OPTIMIZATION_FIXTURE_PATH =
-    joinpath(@__DIR__, "..", "fixtures", "steinberg_optimization_cases.jl")
+function _assert_valid_commutator_certificate(
+    certificate,
+    original_factors,
+    expected_optimized_factors,
+    expected_rule_names,
+)
+    @test certificate isa Suslin.SteinbergOptimizationCertificate
+    @test Suslin._verify_steinberg_optimization_certificate(certificate)
+    @test certificate.original_factors == original_factors
+    @test certificate.optimized_factors == expected_optimized_factors
+    @test certificate.original_product == certificate.optimized_product
+    @test certificate.comparison_summary.products_equal
+    @test certificate.comparison_summary.original_factor_count == length(original_factors)
+    @test certificate.comparison_summary.optimized_factor_count == length(expected_optimized_factors)
+    @test certificate.comparison_summary.factor_count_delta ==
+          length(expected_optimized_factors) - length(original_factors)
+    @test [rewrite.rule_name for rewrite in certificate.applied_rewrites] == expected_rule_names
+    @test all(rewrite -> rewrite.metadata.local_products_equal, certificate.applied_rewrites)
+    return certificate
+end
 
-if !isdefined(Main, :SteinbergOptimizationFixtureCatalog)
-    include(STEINBERG_OPTIMIZATION_FIXTURE_PATH)
+@testset "Steinberg conservative commutator optimizer positives" begin
+    R, (x, y) = Oscar.polynomial_ring(QQ, ["x", "y"])
+    a = x + one(R)
+    b = y
+
+    forward_factors = [
+        elementary_matrix(3, 1, 2, a, R),
+        elementary_matrix(3, 2, 3, b, R),
+        elementary_matrix(3, 1, 2, -a, R),
+        elementary_matrix(3, 2, 3, -b, R),
+    ]
+    forward_expected = [
+        elementary_matrix(3, 1, 3, a * b, R),
+    ]
+    forward_certificate =
+        Suslin._steinberg_commutator_rewrite_optimization_certificate(forward_factors)
+    _assert_valid_commutator_certificate(
+        forward_certificate,
+        forward_factors,
+        forward_expected,
+        [:commutator_forward],
+    )
+    @test forward_certificate.applied_rewrites[1].original_span == (start = 1, stop = 4)
+    @test forward_certificate.applied_rewrites[1].optimized_span == (start = 1, stop = 1)
+    @test forward_certificate.applied_rewrites[1].metadata.indices == (i = 1, j = 2, l = 3)
+
+    reverse_factors = [
+        elementary_matrix(3, 2, 3, x, R),
+        elementary_matrix(3, 1, 2, y + one(R), R),
+        elementary_matrix(3, 2, 3, -x, R),
+        elementary_matrix(3, 1, 2, -(y + one(R)), R),
+    ]
+    reverse_expected = [
+        elementary_matrix(3, 1, 3, -(x * (y + one(R))), R),
+    ]
+    reverse_certificate =
+        Suslin._steinberg_commutator_rewrite_optimization_certificate(reverse_factors)
+    _assert_valid_commutator_certificate(
+        reverse_certificate,
+        reverse_factors,
+        reverse_expected,
+        [:commutator_reverse],
+    )
+    @test reverse_certificate.applied_rewrites[1].metadata.indices == (l = 1, i = 2, j = 3)
+
+    disjoint_factors = [
+        elementary_matrix(4, 1, 2, x, R),
+        elementary_matrix(4, 3, 4, y + one(R), R),
+        elementary_matrix(4, 1, 2, -x, R),
+        elementary_matrix(4, 3, 4, -(y + one(R)), R),
+    ]
+    disjoint_certificate =
+        Suslin._steinberg_commutator_rewrite_optimization_certificate(disjoint_factors)
+    _assert_valid_commutator_certificate(
+        disjoint_certificate,
+        disjoint_factors,
+        typeof(first(disjoint_factors))[],
+        [:disjoint_commutator_identity],
+    )
+    @test disjoint_certificate.applied_rewrites[1].optimized_span == (start = 1, stop = 0)
+    @test disjoint_certificate.applied_rewrites[1].metadata.indices == (i = 1, j = 2, l = 3, p = 4)
+end
+
+@testset "Steinberg commutator optimizer fixture catalog positives" begin
+    entries = SteinbergOptimizationFixtureCatalog.cases_by_id()
+    for id in (
+        "steinberg-commutator-forward-qq",
+        "steinberg-commutator-reverse-qq",
+        "steinberg-disjoint-commutator-identity-qq",
+    )
+        entry = entries[id]
+        original_factors = collect(entry.factors)
+        expected_factors = collect(entry.expected_rewrite_factors)
+        certificate =
+            Suslin._steinberg_commutator_rewrite_optimization_certificate(original_factors)
+
+        _assert_valid_commutator_certificate(
+            certificate,
+            original_factors,
+            expected_factors,
+            [entry.rule_name],
+        )
+        @test certificate.optimized_product == entry.rewritten_product
+        @test certificate.original_product == entry.original_product
+    end
+end
+
+@testset "Steinberg commutator optimizer negative controls" begin
+    R, (x, y) = Oscar.polynomial_ring(QQ, ["x", "y"])
+    a = x + one(R)
+    b = y + one(R)
+
+    reordered_factors = [
+        elementary_matrix(3, 1, 2, a, R),
+        elementary_matrix(3, 1, 2, -a, R),
+        elementary_matrix(3, 2, 3, b, R),
+        elementary_matrix(3, 2, 3, -b, R),
+    ]
+    reordered_certificate =
+        Suslin._steinberg_commutator_rewrite_optimization_certificate(reordered_factors)
+    _assert_valid_commutator_certificate(reordered_certificate, reordered_factors, reordered_factors, Symbol[])
+
+    wrong_inverse_factors = [
+        elementary_matrix(3, 1, 2, a, R),
+        elementary_matrix(3, 2, 3, b, R),
+        elementary_matrix(3, 1, 2, -(a + one(R)), R),
+        elementary_matrix(3, 2, 3, -b, R),
+    ]
+    wrong_inverse_certificate =
+        Suslin._steinberg_commutator_rewrite_optimization_certificate(wrong_inverse_factors)
+    _assert_valid_commutator_certificate(
+        wrong_inverse_certificate,
+        wrong_inverse_factors,
+        wrong_inverse_factors,
+        Symbol[],
+    )
+
+    invalid_forward_indices = [
+        elementary_matrix(3, 1, 2, a, R),
+        elementary_matrix(3, 2, 1, b, R),
+        elementary_matrix(3, 1, 2, -a, R),
+        elementary_matrix(3, 2, 1, -b, R),
+    ]
+    invalid_forward_certificate =
+        Suslin._steinberg_commutator_rewrite_optimization_certificate(invalid_forward_indices)
+    _assert_valid_commutator_certificate(
+        invalid_forward_certificate,
+        invalid_forward_indices,
+        invalid_forward_indices,
+        Symbol[],
+    )
+
+    invalid_disjoint_indices = [
+        elementary_matrix(3, 1, 3, a, R),
+        elementary_matrix(3, 3, 1, b, R),
+        elementary_matrix(3, 1, 3, -a, R),
+        elementary_matrix(3, 3, 1, -b, R),
+    ]
+    invalid_disjoint_certificate =
+        Suslin._steinberg_commutator_rewrite_optimization_certificate(invalid_disjoint_indices)
+    _assert_valid_commutator_certificate(
+        invalid_disjoint_certificate,
+        invalid_disjoint_indices,
+        invalid_disjoint_indices,
+        Symbol[],
+    )
 end
 
 @testset "Steinberg optimization certificate replay" begin
