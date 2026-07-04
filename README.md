@@ -47,6 +47,21 @@ verify_factorization(A, factors)
   coverage audit maps the accepted public cases and upstream gates in
   `docs/audits/2026-07-04-issue-187-park-woodburn-mainline-acceptance.md`.
 - `verify_factorization(A, factors)` checks exact multiplication against `A`.
+- The optional Steinberg factor-count optimizer (#188) is available only
+  through `optimize_elementary_factor_sequence(factors; rules = :safe)`. It is
+  not enabled by default, and #188 does not change the correctness contract of
+  `elementary_factorization(A)`: public factorization still returns the
+  evidence-backed sequence for `A`, and callers may separately optimize that
+  sequence only by making the opt-in call. The safe rewrite set is the
+  Park-Woodburn Section 6 subset covered by the #288 catalog:
+  `:identity_removal`, `:same_position_merge`, `:inverse_cancellation`,
+  `:commutator_forward`, `:commutator_reverse`, and
+  `:disjoint_commutator_identity`. every optimized sequence is accepted only
+  through exact product verification by
+  `verify_steinberg_optimization_certificate`; #188 does not claim global
+  minimum factor counts and does not add Laurent `GL_n` or ToricBuilder
+  support. The closeout audit is
+  `docs/audits/2026-07-04-issue-188-steinberg-optimization.md`.
 - `laurent_gl_factorization_certificate(A)` defaults to the eager Laurent
   normalization/core certificate. With `determinant_strategy = :lazy`, it
   records the supported monomial-unit deferred determinant correction path for
