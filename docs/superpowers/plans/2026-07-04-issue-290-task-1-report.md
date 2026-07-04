@@ -129,3 +129,53 @@ The full run also emitted pre-existing Julia 1.12 world-age warnings in Quillen 
 - `src/Suslin.jl`
 - `test/expert/steinberg_factor_count_optimization.jl`
 - `docs/superpowers/plans/2026-07-04-issue-290-task-1-report.md`
+
+## Task 1 Review Fix: PolyRing Acceptance
+
+Addressed the Task 1 review finding that `_require_steinberg_ordinary_polynomial_ring` accepted only `MPolyRing` and rejected supported exact ordinary univariate `PolyRing`.
+
+### TDD Evidence
+
+#### RED
+
+After adding a univariate no-op certificate regression over `Oscar.polynomial_ring(QQ, "x")`, I ran:
+
+```bash
+julia --project=. -e 'include("test/expert/steinberg_factor_count_optimization.jl")'
+```
+
+Observed expected failure:
+
+```text
+Steinberg optimization certificate accepts univariate ordinary polynomial rings: Error During Test
+  ArgumentError: Steinberg optimization certificates require an ordinary polynomial ring
+  Stacktrace:
+    [1] _require_steinberg_ordinary_polynomial_ring(R::QQPolyRing)
+```
+
+This confirmed the test was exercising the missing `PolyRing` support rather than an unrelated issue.
+
+#### GREEN
+
+After updating `src/algorithm/redundancy.jl` to accept `PolyRing` alongside `MPolyRing`, I reran:
+
+```bash
+julia --project=. -e 'include("test/expert/steinberg_factor_count_optimization.jl")'
+```
+
+Observed success:
+
+```text
+Test Summary:                                 | Pass  Total  Time
+Steinberg canonical elementary factor records |   15     15  0.5s
+Test Summary:                             | Pass  Total  Time
+Steinberg optimization certificate replay |   22     22  0.7s
+Test Summary:                                                                   | Pass  Total  Time
+Steinberg optimization certificate accepts univariate ordinary polynomial rings |    7      7  0.1s
+```
+
+### Scope Notes
+
+- kept the construction internal; no public exports changed
+- added only no-op certificate coverage for the supported univariate ordinary polynomial ring case
+- did not implement any shortening rules

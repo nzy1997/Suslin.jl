@@ -110,3 +110,21 @@ end
         (),
     )
 end
+
+@testset "Steinberg optimization certificate accepts univariate ordinary polynomial rings" begin
+    R, x = Oscar.polynomial_ring(QQ, "x")
+    original_factors = [
+        elementary_matrix(3, 1, 2, x + one(R), R),
+        elementary_matrix(3, 2, 3, x^2 + one(R), R),
+    ]
+
+    certificate = Suslin._steinberg_optimization_certificate(original_factors, copy(original_factors), ())
+
+    @test certificate isa Suslin.SteinbergOptimizationCertificate
+    @test Suslin._verify_steinberg_optimization_certificate(certificate)
+    @test certificate.original_product == certificate.optimized_product
+    @test certificate.comparison_summary.original_factor_count == length(original_factors)
+    @test certificate.comparison_summary.optimized_factor_count == length(original_factors)
+    @test certificate.comparison_summary.factor_count_delta == 0
+    @test isempty(certificate.applied_rewrites)
+end

@@ -11,7 +11,7 @@ end
 function _require_steinberg_ordinary_polynomial_ring(R)
     _is_laurent_polynomial_ring(R) &&
         throw(ArgumentError("Steinberg optimization certificates require an ordinary polynomial ring"))
-    R isa MPolyRing ||
+    (R isa MPolyRing || R isa PolyRing) ||
         throw(ArgumentError("Steinberg optimization certificates require an ordinary polynomial ring"))
     Oscar.is_exact_type(typeof(zero(coefficient_ring(R)))) ||
         throw(ArgumentError("Steinberg optimization certificates require an exact coefficient ring"))
