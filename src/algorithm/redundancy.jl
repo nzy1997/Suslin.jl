@@ -72,6 +72,34 @@ function _steinberg_metric_summary(factors)
     )
 end
 
+function _steinberg_metric_deltas(original_metrics, optimized_metrics)
+    return (;
+        max_elementary_factor_monomial_degree =
+            optimized_metrics.max_elementary_factor_monomial_degree -
+            original_metrics.max_elementary_factor_monomial_degree,
+        total_elementary_factor_offdiagonal_monomials =
+            optimized_metrics.total_elementary_factor_offdiagonal_monomials -
+            original_metrics.total_elementary_factor_offdiagonal_monomials,
+    )
+end
+
+function _steinberg_rewrite_rule_names(records)
+    names = Symbol[]
+    for record in records
+        metadata = hasproperty(record, :metadata) ? record.metadata : (;)
+        if hasproperty(metadata, :passes)
+            for pass in metadata.passes
+                for pass_record in pass.applied_rewrites
+                    push!(names, pass_record.rule_name)
+                end
+            end
+        else
+            push!(names, record.rule_name)
+        end
+    end
+    return names
+end
+
 function _steinberg_rewrite_count(record, field::Symbol)
     hasproperty(record, field) ||
         throw(ArgumentError("Steinberg rewrite record must include $(field)"))
@@ -159,12 +187,21 @@ function _steinberg_comparison_summary(
 )
     original_factor_count = length(original_factors)
     optimized_factor_count = length(optimized_factors)
+    original_metrics = _steinberg_metric_summary(original_factors)
+    optimized_metrics = _steinberg_metric_summary(optimized_factors)
     return (;
         original_factor_count,
         optimized_factor_count,
         factor_count_delta = optimized_factor_count - original_factor_count,
-        original_metrics = _steinberg_metric_summary(original_factors),
-        optimized_metrics = _steinberg_metric_summary(optimized_factors),
+        factor_count = (;
+            before = original_factor_count,
+            after = optimized_factor_count,
+            delta = optimized_factor_count - original_factor_count,
+        ),
+        original_metrics,
+        optimized_metrics,
+        metric_deltas = _steinberg_metric_deltas(original_metrics, optimized_metrics),
+        applied_rule_names = _steinberg_rewrite_rule_names(applied_rewrites),
         applied_rewrites = copy(applied_rewrites),
         original_product,
         optimized_product,
@@ -309,6 +346,90 @@ function _verify_steinberg_optimization_certificate(certificate)::Bool
         err isa InterruptException && rethrow()
         return false
     end
+end
+
+function _require_steinberg_optimization_rules(rules)
+    rules isa Symbol ||
+        throw(ArgumentError("Steinberg optimization rules must be a Symbol"))
+    rules == :safe ||
+        throw(ArgumentError("unsupported Steinberg optimization rule set; supported rule sets: :safe"))
+    return rules
+end
+
+function _steinberg_pass_summary(pass_name::Symbol, certificate)
+    return (;
+        pass_name,
+        original_factor_count = length(certificate.original_factors),
+        optimized_factor_count = length(certificate.optimized_factors),
+        factor_count_delta =
+            length(certificate.optimized_factors) - length(certificate.original_factors),
+        applied_rewrites = copy(certificate.applied_rewrites),
+    )
+end
+
+function _empty_steinberg_pass_summary(pass_name::Symbol, factors)
+    factor_count = length(factors)
+    return (;
+        pass_name,
+        original_factor_count = factor_count,
+        optimized_factor_count = factor_count,
+        factor_count_delta = 0,
+        applied_rewrites = Any[],
+    )
+end
+
+function _steinberg_safe_public_rewrite_metadata(original_factors, optimized_factors, pass_summaries)
+    active_passes = Tuple(pass for pass in pass_summaries if !isempty(pass.applied_rewrites))
+    isempty(active_passes) && return Any[]
+
+    return [(
+        rule_name = :safe_steinberg_optimization,
+        original_factor_count = length(original_factors),
+        optimized_factor_count = length(optimized_factors),
+        original_span = (start = 1, stop = length(original_factors)),
+        optimized_span = (start = 1, stop = length(optimized_factors)),
+        metadata = (;
+            rules = :safe,
+            passes = active_passes,
+        ),
+    )]
+end
+
+function optimize_elementary_factor_sequence(factors; rules = :safe)
+    checked_rules = _require_steinberg_optimization_rules(rules)
+    original_context = _steinberg_sequence_context(factors, "original")
+
+    adjacent_certificate =
+        _steinberg_adjacent_rewrite_optimization_certificate(original_context.factors)
+    adjacent_summary = _steinberg_pass_summary(:adjacent, adjacent_certificate)
+
+    if isempty(adjacent_certificate.optimized_factors)
+        commutator_summary =
+            _empty_steinberg_pass_summary(:commutator, adjacent_certificate.optimized_factors)
+        optimized_factors = adjacent_certificate.optimized_factors
+    else
+        commutator_certificate =
+            _steinberg_commutator_rewrite_optimization_certificate(
+                adjacent_certificate.optimized_factors,
+            )
+        commutator_summary = _steinberg_pass_summary(:commutator, commutator_certificate)
+        optimized_factors = commutator_certificate.optimized_factors
+    end
+
+    applied_rewrites = _steinberg_safe_public_rewrite_metadata(
+        original_context.factors,
+        optimized_factors,
+        (adjacent_summary, commutator_summary),
+    )
+    return _steinberg_optimization_certificate(
+        original_context.factors,
+        optimized_factors,
+        applied_rewrites,
+    )
+end
+
+function verify_steinberg_optimization_certificate(certificate)::Bool
+    return _verify_steinberg_optimization_certificate(certificate)
 end
 
 function _steinberg_same_elementary_position(left, right)::Bool
