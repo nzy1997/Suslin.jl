@@ -80,8 +80,11 @@ function _case008_d15_preconditioning_bounds(
     row_synthesis_max_steps,
 )
     target_column = _checked_index(column_index, ncols(M), "column_index")
+    max_depth_checked = _checked_nonnegative_integer(max_depth, "max_depth")
+    max_depth_checked <= 1 ||
+        throw(ArgumentError("max_depth values greater than 1 are not supported"))
     return (;
-        max_depth = _checked_nonnegative_integer(max_depth, "max_depth"),
+        max_depth = max_depth_checked,
         side_order = _checked_side_order(side_order),
         operation_family = _checked_operation_family(operation_family),
         column_index = target_column,
@@ -103,14 +106,20 @@ function _case008_d15_preconditioning_bounds(
     )
 end
 
-function _not_found_preconditioning_result(original_matrix, R, bounds, attempt_count::Int, progress)
+function _not_found_preconditioning_result(
+    original_matrix,
+    R,
+    bounds,
+    attempt_count::Int,
+    progress_summary,
+)
     transformed_column = _case008_d15_column(original_matrix, bounds.column_index)
     diagnostic = Suslin.diagnose_unimodular_column_reduction(transformed_column, R)
     return (;
         status = :not_found,
         bounds,
         attempt_count,
-        progress = tuple(progress...),
+        progress_summary = tuple(progress_summary...),
         steps = (),
         transformed_column,
         reducer_diagnostic = diagnostic,
@@ -189,6 +198,18 @@ function case008_d15_preconditioning_search(
     progress = NamedTuple[]
     right_diagnostic_budget = bounds.right_full_diagnostic_limit
 
+    if bounds.max_depth == 0
+        push!(progress, (
+            side = :right,
+            source = nothing,
+            coefficient_index = nothing,
+            outcome = :max_depth_zero,
+            direct_unit_rows = (),
+            normalized_unimodular = false,
+        ))
+        return _not_found_preconditioning_result(original_matrix, R, bounds, attempt_count, progress)
+    end
+
     for side in bounds.side_order
         if side == :right
             if isempty(bounds.source_column_candidates)
@@ -258,13 +279,13 @@ function case008_d15_preconditioning_search(
                             step.transformed_matrix,
                         ) || error("internal preconditioning replay invariant failed")
                         return (;
-                            status = :found,
-                            bounds,
-                            attempt_count,
-                            progress = tuple(progress...),
-                            steps = (step,),
-                            transformed_column,
-                            reducer_diagnostic = diagnostic,
+                        status = :found,
+                        bounds,
+                        attempt_count,
+                        progress_summary = tuple(progress...),
+                        steps = (step,),
+                        transformed_column,
+                        reducer_diagnostic = diagnostic,
                         )
                     end
                 end
@@ -329,13 +350,13 @@ function case008_d15_preconditioning_search(
 
                 if diagnostic.status == :supported
                     return (;
-                        status = :found,
-                        bounds,
-                        attempt_count,
-                        progress = tuple(progress...),
-                        steps,
-                        transformed_column,
-                        reducer_diagnostic = diagnostic,
+                    status = :found,
+                    bounds,
+                    attempt_count,
+                    progress_summary = tuple(progress...),
+                    steps,
+                    transformed_column,
+                    reducer_diagnostic = diagnostic,
                     )
                 end
             end
@@ -407,6 +428,7 @@ end
     @test all(step -> step.target == 1, result.steps)
     @test result.transformed_column[1] |> is_unit
     @test result.reducer_diagnostic.status == :supported
+    @test all(record -> hasproperty(record, :outcome), result.progress_summary)
     @test _case008_d15_preconditioning_result_is_verified(
         fixture.failing_input_matrix,
         result,
@@ -443,6 +465,19 @@ end
     )
 end
 
+@testset "case_008 d=15 max depth bound" begin
+    fixture = ToricBuilderCase008D15MatrixBoundary.matrix_fixture()
+    max_depth_zero = case008_d15_preconditioning_search(fixture; max_depth = 0)
+
+    @test max_depth_zero.status == :not_found
+    @test isempty(max_depth_zero.steps)
+    @test any(
+        record -> record.outcome == :max_depth_zero,
+        max_depth_zero.progress_summary,
+    )
+    @test_throws ArgumentError case008_d15_preconditioning_search(fixture; max_depth = 2)
+end
+
 @testset "case_008 d=15 empty candidate controls" begin
     fixture = ToricBuilderCase008D15MatrixBoundary.matrix_fixture()
 
@@ -456,6 +491,6 @@ end
     @test result.bounds.source_column_candidates == ()
     @test result.bounds.row_synthesis_pivots == ()
     @test result.attempt_count > 0
-    @test any(record -> record.outcome == :no_source_columns, result.progress)
-    @test any(record -> record.outcome == :no_row_synthesis_pivots, result.progress)
+    @test any(record -> record.outcome == :no_source_columns, result.progress_summary)
+    @test any(record -> record.outcome == :no_row_synthesis_pivots, result.progress_summary)
 end
