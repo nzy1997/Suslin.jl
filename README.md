@@ -43,7 +43,9 @@ verify_factorization(A, factors)
   `verify_factorization(A, factors)`, and the route certificate must replay the
   required #184 `SL_3` evidence plus #185/#186 ECP-backed recursive provenance
   for larger sizes. The example above is the README-style ordinary-polynomial
-  public call shape covered by the #187 acceptance tests.
+  public call shape covered by the #187 acceptance tests. The #187 closeout
+  coverage audit maps the accepted public cases and upstream gates in
+  `docs/audits/2026-07-04-issue-187-park-woodburn-mainline-acceptance.md`.
 - `verify_factorization(A, factors)` checks exact multiplication against `A`.
 - `laurent_gl_factorization_certificate(A)` defaults to the eager Laurent
   normalization/core certificate. With `determinant_strategy = :lazy`, it

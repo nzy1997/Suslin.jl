@@ -10,6 +10,14 @@ const SUPPORT_BOUNDARY_EVIDENCE_PAGE = joinpath(
     "audits",
     "2026-06-26-laurent-toricbuilder-support-boundary-evidence.md",
 )
+const ISSUE187_ACCEPTANCE_AUDIT_PAGE = joinpath(
+    @__DIR__,
+    "..",
+    "..",
+    "docs",
+    "audits",
+    "2026-07-04-issue-187-park-woodburn-mainline-acceptance.md",
+)
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const README_PATH = joinpath(REPO_ROOT, "README.md")
 const DOCS_INDEX_PATH = joinpath(REPO_ROOT, "docs", "src", "index.md")
@@ -17,6 +25,11 @@ const DOCS_INDEX_PATH = joinpath(REPO_ROOT, "docs", "src", "index.md")
 function _read_support_boundary_evidence()
     @test isfile(SUPPORT_BOUNDARY_EVIDENCE_PAGE)
     return read(SUPPORT_BOUNDARY_EVIDENCE_PAGE, String)
+end
+
+function _read_issue187_acceptance_audit()
+    @test isfile(ISSUE187_ACCEPTANCE_AUDIT_PAGE)
+    return read(ISSUE187_ACCEPTANCE_AUDIT_PAGE, String)
 end
 
 function _read_repo_text(path)
@@ -73,6 +86,45 @@ function _assert_issue187_public_contract(text)
     _assert_not_claimed_as_issue187(text, "arbitrary Laurent `GL_n`")
     _assert_not_claimed_as_issue187(text, "ToricBuilder")
     _assert_not_claimed_as_issue187(text, "factor-count optimization")
+    @test occursin("#187 closeout coverage audit", squashed)
+end
+
+function _assert_issue187_acceptance_audit(text)
+    squashed = _squash_whitespace(text)
+    for pair in (
+        ("#181", "#195"),
+        ("#182", "#212"),
+        ("#183", "#220"),
+        ("#184", "#239"),
+        ("#185", "#249"),
+        ("#186", "#266"),
+    )
+        @test occursin(pair[1], squashed)
+        @test occursin(pair[2], squashed)
+    end
+    for issue_id in ("#270", "#271", "#272")
+        @test occursin(issue_id, squashed)
+    end
+    for case_id in (
+        "pw-mainline-sl3-multivariate-issue184-qq",
+        "pw-mainline-sln-recursive-issue185-186-gf2",
+        "pw-mainline-readme-ordinary-polynomial-qq",
+        "pw-mainline-negative-unsupported-coefficient-ring",
+        "pw-mainline-negative-missing-ecp-evidence",
+        "pw-mainline-negative-missing-final-sl3-evidence",
+        "pw-mainline-negative-laurent-boundary",
+    )
+        @test occursin(case_id, squashed)
+    end
+    @test occursin(
+        "Steinberg factor-count optimization (#188) remains separate",
+        squashed,
+    )
+    @test occursin(
+        "Laurent/ToricBuilder mainline support remains separate",
+        squashed,
+    )
+    @test occursin("Unsupported coefficient rings remain negative controls", squashed)
 end
 
 @testset "documentation smoke" begin
@@ -112,6 +164,9 @@ end
         @test occursin("not arbitrary Laurent `GL_n`", evidence)
         @test occursin("julia --project=. test/runtests.jl", evidence)
         @test occursin("julia --project=. test/runtests.jl expert", evidence)
+
+        audit = _read_issue187_acceptance_audit()
+        _assert_issue187_acceptance_audit(audit)
     end
 
     @testset "ordinary-polynomial Park-Woodburn public contract" begin
