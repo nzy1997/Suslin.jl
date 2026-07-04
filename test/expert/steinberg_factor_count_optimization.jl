@@ -493,3 +493,86 @@ end
     )
     @test !Suslin._verify_steinberg_optimization_certificate(tampered_certificate)
 end
+
+@testset "public Steinberg elementary factor sequence optimizer" begin
+    entries = SteinbergOptimizationFixtureCatalog.cases_by_id()
+    entry = entries["steinberg-commutator-forward-qq"]
+    original_factors = collect(entry.factors)
+
+    certificate = optimize_elementary_factor_sequence(original_factors)
+    summary = certificate.comparison_summary
+
+    @test certificate isa Suslin.SteinbergOptimizationCertificate
+    @test verify_steinberg_optimization_certificate(certificate)
+    @test certificate.original_factors == original_factors
+    @test certificate.optimized_factors == collect(entry.expected_rewrite_factors)
+    @test length(certificate.optimized_factors) < length(original_factors)
+    @test certificate.original_product == certificate.optimized_product
+    @test summary.products_equal
+    @test summary.verification_status
+    @test summary.original_factor_count == length(original_factors)
+    @test summary.optimized_factor_count == length(certificate.optimized_factors)
+    @test summary.factor_count_delta ==
+          length(certificate.optimized_factors) - length(original_factors)
+    @test summary.factor_count == (;
+        before = length(original_factors),
+        after = length(certificate.optimized_factors),
+        delta = length(certificate.optimized_factors) - length(original_factors),
+    )
+    @test summary.original_metrics.max_elementary_factor_monomial_degree ==
+          max_elementary_factor_monomial_degree(original_factors)
+    @test summary.optimized_metrics.max_elementary_factor_monomial_degree ==
+          max_elementary_factor_monomial_degree(certificate.optimized_factors)
+    @test summary.original_metrics.total_elementary_factor_offdiagonal_monomials ==
+          total_elementary_factor_offdiagonal_monomials(original_factors)
+    @test summary.optimized_metrics.total_elementary_factor_offdiagonal_monomials ==
+          total_elementary_factor_offdiagonal_monomials(certificate.optimized_factors)
+    @test summary.metric_deltas.max_elementary_factor_monomial_degree ==
+          summary.optimized_metrics.max_elementary_factor_monomial_degree -
+          summary.original_metrics.max_elementary_factor_monomial_degree
+    @test summary.metric_deltas.total_elementary_factor_offdiagonal_monomials ==
+          summary.optimized_metrics.total_elementary_factor_offdiagonal_monomials -
+          summary.original_metrics.total_elementary_factor_offdiagonal_monomials
+    @test summary.applied_rule_names == [:commutator_forward]
+    @test length(summary.applied_rewrites) == 1
+    @test summary.applied_rewrites[1].rule_name == :safe_steinberg_optimization
+    @test summary.applied_rewrites[1].metadata.rules == :safe
+    @test length(summary.applied_rewrites[1].metadata.passes) == 1
+    @test summary.applied_rewrites[1].metadata.passes[1].pass_name == :commutator
+    @test summary.applied_rewrites[1].metadata.passes[1].applied_rewrites[1].rule_name ==
+          :commutator_forward
+
+    explicit_safe_certificate = optimize_elementary_factor_sequence(original_factors; rules = :safe)
+    @test verify_steinberg_optimization_certificate(explicit_safe_certificate)
+    @test explicit_safe_certificate.optimized_factors == certificate.optimized_factors
+
+    R = base_ring(first(original_factors))
+    tampered_optimized = copy(certificate.optimized_factors)
+    tampered_optimized[1] = elementary_matrix(3, 1, 3, one(R), R)
+    tampered_certificate = Suslin.SteinbergOptimizationCertificate(
+        certificate.original_factors,
+        tampered_optimized,
+        certificate.applied_rewrites,
+        certificate.comparison_summary,
+        certificate.original_product,
+        certificate.optimized_product,
+        certificate.verification,
+    )
+    @test !verify_steinberg_optimization_certificate(tampered_certificate)
+
+    bad_factor = identity_matrix(R, 3)
+    bad_factor[1, 1] = first(gens(R))
+    @test_throws ArgumentError optimize_elementary_factor_sequence([bad_factor])
+    @test_throws ArgumentError optimize_elementary_factor_sequence(original_factors; rules = :aggressive)
+
+    default_factorization_matrix = entry.original_product
+    default_factors = elementary_factorization(default_factorization_matrix)
+    default_route_certificate =
+        Suslin._polynomial_factorization_route_certificate(default_factorization_matrix)
+    @test verify_factorization(default_factorization_matrix, default_factors)
+    @test default_factors == default_route_certificate.factors
+    @test length(default_factors) > length(certificate.optimized_factors)
+    @test_throws MethodError elementary_factorization(default_factorization_matrix; optimize = true)
+    @test_throws MethodError elementary_factorization(default_factorization_matrix; optimize = false)
+    @test_throws MethodError elementary_factorization(default_factorization_matrix; rules = :safe)
+end

@@ -8,6 +8,8 @@ using Oscar
     @test isdefined(Suslin, :elementary_matrix)
     @test isdefined(Suslin, :max_elementary_factor_monomial_degree)
     @test isdefined(Suslin, :total_elementary_factor_offdiagonal_monomials)
+    @test isdefined(Suslin, :optimize_elementary_factor_sequence)
+    @test isdefined(Suslin, :verify_steinberg_optimization_certificate)
     @test isdefined(Suslin, :elementary_preconditioning_step)
     @test isdefined(Suslin, :replay_elementary_preconditioning)
     @test isdefined(Suslin, :verify_elementary_preconditioning)
@@ -56,6 +58,8 @@ using Oscar
     @test Suslin.elementary_matrix === elementary_matrix
     @test Suslin.max_elementary_factor_monomial_degree === max_elementary_factor_monomial_degree
     @test Suslin.total_elementary_factor_offdiagonal_monomials === total_elementary_factor_offdiagonal_monomials
+    @test Suslin.optimize_elementary_factor_sequence === optimize_elementary_factor_sequence
+    @test Suslin.verify_steinberg_optimization_certificate === verify_steinberg_optimization_certificate
     @test Suslin.elementary_preconditioning_step === elementary_preconditioning_step
     @test Suslin.replay_elementary_preconditioning === replay_elementary_preconditioning
     @test Suslin.verify_elementary_preconditioning === verify_elementary_preconditioning
