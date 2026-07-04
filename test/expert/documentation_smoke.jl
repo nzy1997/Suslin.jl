@@ -18,6 +18,14 @@ const ISSUE187_ACCEPTANCE_AUDIT_PAGE = joinpath(
     "audits",
     "2026-07-04-issue-187-park-woodburn-mainline-acceptance.md",
 )
+const ISSUE188_ACCEPTANCE_AUDIT_PAGE = joinpath(
+    @__DIR__,
+    "..",
+    "..",
+    "docs",
+    "audits",
+    "2026-07-04-issue-188-steinberg-optimization.md",
+)
 const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const README_PATH = joinpath(REPO_ROOT, "README.md")
 const DOCS_INDEX_PATH = joinpath(REPO_ROOT, "docs", "src", "index.md")
@@ -30,6 +38,11 @@ end
 function _read_issue187_acceptance_audit()
     @test isfile(ISSUE187_ACCEPTANCE_AUDIT_PAGE)
     return read(ISSUE187_ACCEPTANCE_AUDIT_PAGE, String)
+end
+
+function _read_issue188_acceptance_audit()
+    @test isfile(ISSUE188_ACCEPTANCE_AUDIT_PAGE)
+    return read(ISSUE188_ACCEPTANCE_AUDIT_PAGE, String)
 end
 
 function _read_repo_text(path)
@@ -127,6 +140,88 @@ function _assert_issue187_acceptance_audit(text)
     @test occursin("Unsupported coefficient rings remain negative controls", squashed)
 end
 
+function _assert_issue188_no_overclaims(text)
+    for paragraph in _paragraphs(text)
+        squashed = _squash_whitespace(paragraph)
+        lower_squashed = lowercase(squashed)
+        mentions_issue188 =
+            occursin("#188", lower_squashed) || occursin("steinberg", lower_squashed)
+
+        if mentions_issue188 && occursin("enabled by default", lower_squashed)
+            @test occursin("not enabled by default", lower_squashed) ||
+                  occursin("does not optimize by default", lower_squashed) ||
+                  occursin("does not enable optimization by default", lower_squashed)
+        end
+
+        if mentions_issue188 && (
+            occursin("global minimum", lower_squashed) ||
+            occursin("globally minimal", lower_squashed) ||
+            occursin("global optimal", lower_squashed)
+        )
+            @test occursin("does not claim", lower_squashed) ||
+                  occursin("not claim", lower_squashed) ||
+                  occursin("no claim", lower_squashed)
+        end
+
+        if mentions_issue188 &&
+           (occursin("laurent", lower_squashed) || occursin("toricbuilder", lower_squashed)) &&
+           (occursin("support", lower_squashed) || occursin("mainline", lower_squashed))
+            @test occursin("does not add", lower_squashed) ||
+                  occursin("not add", lower_squashed) ||
+                  occursin("does not claim", lower_squashed) ||
+                  occursin("not claim", lower_squashed) ||
+                  occursin("separate", lower_squashed) ||
+                  occursin("out of scope", lower_squashed)
+        end
+    end
+end
+
+function _assert_issue188_optimizer_contract(text)
+    squashed = _squash_whitespace(text)
+    @test occursin(
+        "The optional Steinberg factor-count optimizer (#188) is available only through `optimize_elementary_factor_sequence(factors; rules = :safe)`",
+        squashed,
+    )
+    @test occursin("It is not enabled by default", squashed)
+    @test occursin(
+        "every optimized sequence is accepted only through exact product verification by `verify_steinberg_optimization_certificate`",
+        squashed,
+    )
+    for rule_name in (
+        ":identity_removal",
+        ":same_position_merge",
+        ":inverse_cancellation",
+        ":commutator_forward",
+        ":commutator_reverse",
+        ":disjoint_commutator_identity",
+    )
+        @test occursin(rule_name, squashed)
+    end
+    @test occursin(
+        "#188 does not change the correctness contract of `elementary_factorization(A)`",
+        squashed,
+    )
+    @test occursin("does not claim global minimum factor counts", squashed)
+    @test occursin("does not add Laurent `GL_n` or ToricBuilder support", squashed)
+    _assert_issue188_no_overclaims(text)
+end
+
+function _assert_issue188_acceptance_audit(text)
+    squashed = _squash_whitespace(text)
+    for issue_id in ("#288", "#289", "#290", "#291", "#292", "#293")
+        @test occursin(issue_id, squashed)
+    end
+    @test occursin("Park-Woodburn Section 6", squashed)
+    @test occursin("| Metric | Original | Optimized | Delta |", text)
+    @test occursin("| Factor count | 4 | 1 | -3 |", text)
+    @test occursin("| Max monomial degree | 1 | 2 | 1 |", text)
+    @test occursin("| Total off-diagonal monomial count | 6 | 2 | -4 |", text)
+    @test occursin("| Applied rewrites | `:commutator_forward` | `:commutator_forward` | accepted safe rewrite |", text)
+    @test occursin("products_equal = true", squashed)
+    @test occursin("verification_status = true", squashed)
+    _assert_issue188_optimizer_contract(text)
+end
+
 @testset "documentation smoke" begin
     R, (X,) = Oscar.polynomial_ring(QQ, ["X"])
     A = matrix(R, [
@@ -167,10 +262,14 @@ end
 
         audit = _read_issue187_acceptance_audit()
         _assert_issue187_acceptance_audit(audit)
+        issue188_audit = _read_issue188_acceptance_audit()
+        _assert_issue188_acceptance_audit(issue188_audit)
     end
 
     @testset "ordinary-polynomial Park-Woodburn public contract" begin
         _assert_issue187_public_contract(_read_repo_text(README_PATH))
         _assert_issue187_public_contract(_read_repo_text(DOCS_INDEX_PATH))
+        _assert_issue188_optimizer_contract(_read_repo_text(README_PATH))
+        _assert_issue188_optimizer_contract(_read_repo_text(DOCS_INDEX_PATH))
     end
 end

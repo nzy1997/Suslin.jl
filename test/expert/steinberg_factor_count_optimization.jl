@@ -9,6 +9,15 @@ if !isdefined(Main, :SteinbergOptimizationFixtureCatalog)
     include(STEINBERG_OPTIMIZATION_FIXTURE_PATH)
 end
 
+const ACCEPTED_SAFE_STEINBERG_RULE_NAMES = Set([
+    :identity_removal,
+    :same_position_merge,
+    :inverse_cancellation,
+    :commutator_forward,
+    :commutator_reverse,
+    :disjoint_commutator_identity,
+])
+
 @testset "Steinberg canonical elementary factor records" begin
     R, (x, y) = Oscar.polynomial_ring(QQ, ["x", "y"])
     coefficient = x + y + one(R)
@@ -590,4 +599,53 @@ end
     @test_throws MethodError elementary_factorization(default_factorization_matrix; optimize = true)
     @test_throws MethodError elementary_factorization(default_factorization_matrix; optimize = false)
     @test_throws MethodError elementary_factorization(default_factorization_matrix; rules = :safe)
+end
+
+@testset "public Steinberg safe rewrite set acceptance" begin
+    entries = SteinbergOptimizationFixtureCatalog.cases_by_id()
+    observed_rule_names = Set{Symbol}()
+
+    for entry in values(entries)
+        original_factors = collect(entry.factors)
+        expected_factors = collect(entry.expected_rewrite_factors)
+        certificate = optimize_elementary_factor_sequence(original_factors; rules = :safe)
+        summary = certificate.comparison_summary
+
+        @test verify_steinberg_optimization_certificate(certificate)
+        @test certificate.original_factors == original_factors
+        @test certificate.optimized_factors == expected_factors
+        @test certificate.original_product == entry.original_product
+        @test certificate.optimized_product == entry.rewritten_product
+        @test certificate.original_product == certificate.optimized_product
+        @test summary.products_equal
+        @test summary.verification_status
+        @test summary.factor_count == (;
+            before = length(original_factors),
+            after = length(expected_factors),
+            delta = length(expected_factors) - length(original_factors),
+        )
+        @test summary.optimized_factor_count < summary.original_factor_count
+        @test summary.applied_rule_names == [entry.rule_name]
+        push!(observed_rule_names, entry.rule_name)
+    end
+
+    @test observed_rule_names == ACCEPTED_SAFE_STEINBERG_RULE_NAMES
+
+    entry = entries["steinberg-commutator-forward-qq"]
+    certificate = optimize_elementary_factor_sequence(collect(entry.factors))
+    R = base_ring(first(certificate.optimized_factors))
+    n = nrows(first(certificate.optimized_factors))
+    corrupted_optimized_factors = copy(certificate.optimized_factors)
+    corrupted_optimized_factors[1] = elementary_matrix(n, 1, 3, one(R), R)
+    corrupted_certificate = Suslin.SteinbergOptimizationCertificate(
+        certificate.original_factors,
+        corrupted_optimized_factors,
+        certificate.applied_rewrites,
+        certificate.comparison_summary,
+        certificate.original_product,
+        certificate.optimized_product,
+        certificate.verification,
+    )
+
+    @test !verify_steinberg_optimization_certificate(corrupted_certificate)
 end
