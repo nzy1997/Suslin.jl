@@ -192,7 +192,7 @@ git commit -m "feat: canonicalize elementary factor records"
 - Consumes: Task 1 and Task 2 commits.
 - Produces: verified branch ready for PR.
 
-- [ ] **Step 1: Run issue-required focused command**
+- [x] **Step 1: Run issue-required focused command**
 
 Run:
 
@@ -202,7 +202,7 @@ julia --project=. -e 'include("test/expert/steinberg_factor_count_optimization.j
 
 Expected: PASS.
 
-- [ ] **Step 2: Run required package suite**
+- [x] **Step 2: Run required package suite**
 
 Run:
 
@@ -212,7 +212,7 @@ julia --project=. -e 'using Pkg; Pkg.test()'
 
 Expected: PASS for the default public/internal suite.
 
-- [ ] **Step 3: Review branch diff**
+- [x] **Step 3: Review branch diff**
 
 Run:
 
@@ -223,7 +223,7 @@ git diff origin/main..HEAD
 
 Expected: only docs, `src/core/elementary_matrices.jl`, `test/expert/steinberg_factor_count_optimization.jl`, and `test/runtests.jl` contain intentional changes.
 
-- [ ] **Step 4: Commit any verification-only plan updates**
+- [x] **Step 4: Commit any verification-only plan updates**
 
 If the plan checkboxes were updated, run:
 
