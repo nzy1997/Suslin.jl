@@ -37,7 +37,7 @@ The public safe rule set is exactly:
 - `:commutator_reverse`
 - `:disjoint_commutator_identity`
 
-Every optimized sequence is accepted only through exact product verification by
+every optimized sequence is accepted only through exact product verification by
 `verify_steinberg_optimization_certificate`. A certificate is accepted only
 when the original and optimized products replay exactly, the summary agrees
 with the replayed products and metrics, and `verification_status = true`.
