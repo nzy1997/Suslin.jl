@@ -37,7 +37,7 @@
 - Consumes: private functions `Suslin._canonical_elementary_factor_record(factor)` and `Suslin._elementary_factor_record_matrix(record)`.
 - Produces: failing tests that define canonical identity and elementary records plus malformed-factor rejection.
 
-- [ ] **Step 1: Write the failing test file**
+- [x] **Step 1: Write the failing test file**
 
 Create `test/expert/steinberg_factor_count_optimization.jl` with:
 
@@ -82,11 +82,11 @@ using Oscar
 end
 ```
 
-- [ ] **Step 2: Register the expert test**
+- [x] **Step 2: Register the expert test**
 
 Add `"expert/steinberg_factor_count_optimization.jl"` to the expert file list in `test/runtests.jl` immediately after `"expert/elementary_matrices.jl"`.
 
-- [ ] **Step 3: Run RED verification**
+- [x] **Step 3: Run RED verification**
 
 Run:
 
@@ -96,7 +96,7 @@ julia --project=. -e 'include("test/expert/steinberg_factor_count_optimization.j
 
 Expected: FAIL with `UndefVarError` for `_canonical_elementary_factor_record`.
 
-- [ ] **Step 4: Commit the red tests**
+- [x] **Step 4: Commit the red tests**
 
 Run:
 
@@ -116,7 +116,7 @@ git commit -m "test: add Steinberg elementary factor record coverage"
   - `_canonical_elementary_factor_record(factor)`
   - `_elementary_factor_record_matrix(record)`
 
-- [ ] **Step 1: Add the private implementation**
+- [x] **Step 1: Add the private implementation**
 
 Add this implementation near the existing elementary factor analysis helpers in `src/core/elementary_matrices.jl`:
 
@@ -154,7 +154,7 @@ function _elementary_factor_record_matrix(record)
 end
 ```
 
-- [ ] **Step 2: Run GREEN focused verification**
+- [x] **Step 2: Run GREEN focused verification**
 
 Run:
 
@@ -164,7 +164,7 @@ julia --project=. -e 'include("test/expert/steinberg_factor_count_optimization.j
 
 Expected: PASS.
 
-- [ ] **Step 3: Run expert registration verification**
+- [x] **Step 3: Run expert registration verification**
 
 Run:
 
@@ -174,7 +174,7 @@ julia --project=. test/runtests.jl expert
 
 Expected: PASS, including the new expert file.
 
-- [ ] **Step 4: Commit the implementation**
+- [x] **Step 4: Commit the implementation**
 
 Run:
 
