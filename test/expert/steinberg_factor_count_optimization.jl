@@ -547,6 +547,21 @@ end
     @test explicit_safe_certificate.optimized_factors == certificate.optimized_factors
 
     R = base_ring(first(original_factors))
+    cancellation_coefficient = first(gens(R))
+    cancellation_factors = [
+        elementary_matrix(3, 1, 2, cancellation_coefficient, R),
+        elementary_matrix(3, 1, 2, -cancellation_coefficient, R),
+    ]
+    cancellation_certificate = optimize_elementary_factor_sequence(cancellation_factors)
+    cancellation_summary = cancellation_certificate.comparison_summary
+
+    @test verify_steinberg_optimization_certificate(cancellation_certificate)
+    @test isempty(cancellation_certificate.optimized_factors)
+    @test cancellation_summary.factor_count == (; before = 2, after = 0, delta = -2)
+    @test cancellation_summary.applied_rule_names == [:inverse_cancellation]
+    @test length(cancellation_summary.applied_rewrites[1].metadata.passes) == 1
+    @test cancellation_summary.applied_rewrites[1].metadata.passes[1].pass_name == :adjacent
+
     tampered_optimized = copy(certificate.optimized_factors)
     tampered_optimized[1] = elementary_matrix(3, 1, 3, one(R), R)
     tampered_certificate = Suslin.SteinbergOptimizationCertificate(
