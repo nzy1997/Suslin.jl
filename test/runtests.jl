@@ -41,6 +41,7 @@ const TEST_GROUP_FILES = Dict(
     ],
     "expert" => [
         "expert/elementary_matrices.jl",
+        "expert/steinberg_factor_count_optimization.jl",
         "expert/elementary_preconditioning.jl",
         "expert/block_embeddings.jl",
         "expert/documentation_smoke.jl",
