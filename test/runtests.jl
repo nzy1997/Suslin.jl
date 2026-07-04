@@ -36,6 +36,7 @@ const TEST_GROUP_FILES = Dict(
         "internal/park_woodburn_sl3_driver_fixtures.jl",
         "internal/park_woodburn_sln_driver_fixtures.jl",
         "internal/park_woodburn_mainline_acceptance_fixtures.jl",
+        "internal/steinberg_optimization_fixtures.jl",
     ],
     "expert" => [
         "expert/elementary_matrices.jl",

@@ -39,7 +39,7 @@
 - Consumes: `elementary_matrix(n, row, col, coefficient, R)`, Oscar `polynomial_ring`, `identity_matrix`, and matrix multiplication.
 - Produces: `SteinbergOptimizationFixtureCatalog.catalog()`, `SteinbergOptimizationFixtureCatalog.cases_by_id()`, `validate_steinberg_optimization_fixture(entry)`, and `validate_steinberg_optimization_fixture_catalog(catalog)`.
 
-- [ ] **Step 1: Write the failing validator and test registration**
+- [x] **Step 1: Write the failing validator and test registration**
 
 Create `test/internal/steinberg_optimization_fixtures.jl` with constants and empty validator functions first:
 
@@ -93,7 +93,7 @@ end
 
 Add `"internal/steinberg_optimization_fixtures.jl"` to `TEST_GROUP_FILES["internal"]` in `test/runtests.jl` immediately after `"internal/park_woodburn_mainline_acceptance_fixtures.jl"`.
 
-- [ ] **Step 2: Run the red validator command**
+- [x] **Step 2: Run the red validator command**
 
 Run:
 
@@ -103,7 +103,7 @@ julia --project=. -e 'include("test/internal/steinberg_optimization_fixtures.jl"
 
 Expected: FAIL because `test/fixtures/steinberg_optimization_cases.jl` does not exist or because the initial validator throws `ArgumentError`.
 
-- [ ] **Step 3: Implement the fixture module**
+- [x] **Step 3: Implement the fixture module**
 
 Create `test/fixtures/steinberg_optimization_cases.jl` as module `SteinbergOptimizationFixtureCatalog`. The module must define helpers:
 
@@ -202,7 +202,7 @@ Negative controls must be:
 
 The mismatched-ring control should replace one factor with a factor over a separate polynomial ring. The stale-product control should keep valid factors but set `original_product = identity_matrix(R, 3)` for a nonidentity product. The invalid-commutator control should set `rule_metadata.indices` so the claimed commutator relation violates the Section 6 index condition.
 
-- [ ] **Step 4: Implement validator rules**
+- [x] **Step 4: Implement validator rules**
 
 Replace the initial validator with helpers that enforce:
 
@@ -232,7 +232,7 @@ function validate_steinberg_optimization_fixture_catalog(catalog)
 
 `validate_steinberg_optimization_fixture_catalog(catalog)` must require positive and negative ids, unique ids across both lists, one positive case for every required rule name, and negative controls that each throw `ArgumentError` when passed to `validate_steinberg_optimization_fixture`.
 
-- [ ] **Step 5: Run focused green tests**
+- [x] **Step 5: Run focused green tests**
 
 Run:
 
@@ -243,7 +243,7 @@ julia --project=. test/runtests.jl internal
 
 Expected: both commands exit 0.
 
-- [ ] **Step 6: Run package verification**
+- [x] **Step 6: Run package verification**
 
 Run:
 
@@ -253,7 +253,7 @@ julia --project=. -e 'using Pkg; Pkg.test()'
 
 Expected: exits 0.
 
-- [ ] **Step 7: Inspect and commit implementation**
+- [x] **Step 7: Inspect and commit implementation**
 
 Run:
 
