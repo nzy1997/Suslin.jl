@@ -265,3 +265,62 @@ end
     @test certificate.comparison_summary.factor_count_delta == 0
     @test isempty(certificate.applied_rewrites)
 end
+
+@testset "Steinberg adjacent identity merge cancellation optimizer" begin
+    R, (x, y) = Oscar.polynomial_ring(QQ, ["x", "y"])
+    inverse_coefficient = x * y + one(R)
+    original_factors = [
+        elementary_matrix(3, 1, 2, zero(R), R),
+        elementary_matrix(3, 2, 3, inverse_coefficient, R),
+        elementary_matrix(3, 2, 3, -inverse_coefficient, R),
+        elementary_matrix(3, 1, 3, x, R),
+        elementary_matrix(3, 1, 3, y + one(R), R),
+    ]
+
+    certificate = Suslin._steinberg_adjacent_rewrite_optimization_certificate(original_factors)
+
+    @test certificate isa Suslin.SteinbergOptimizationCertificate
+    @test Suslin._verify_steinberg_optimization_certificate(certificate)
+    @test length(certificate.optimized_factors) < length(original_factors)
+    @test certificate.comparison_summary.original_factor_count == length(original_factors)
+    @test certificate.comparison_summary.optimized_factor_count == 1
+    @test certificate.comparison_summary.factor_count_delta == -4
+    @test certificate.original_product == certificate.optimized_product
+    @test certificate.comparison_summary.products_equal
+    @test certificate.optimized_factors == [
+        elementary_matrix(3, 1, 3, x + y + one(R), R),
+    ]
+    @test [rewrite.rule_name for rewrite in certificate.applied_rewrites] == [
+        :identity_removal,
+        :inverse_cancellation,
+        :same_position_merge,
+    ]
+    @test certificate.applied_rewrites[1].original_span == (start = 1, stop = 1)
+    @test certificate.applied_rewrites[2].original_span == (start = 2, stop = 3)
+    @test certificate.applied_rewrites[3].original_span == (start = 4, stop = 5)
+
+    different_position_factors = [
+        elementary_matrix(3, 1, 2, x, R),
+        elementary_matrix(3, 1, 3, -x, R),
+    ]
+    different_position_certificate =
+        Suslin._steinberg_adjacent_rewrite_optimization_certificate(different_position_factors)
+
+    @test Suslin._verify_steinberg_optimization_certificate(different_position_certificate)
+    @test isempty(different_position_certificate.applied_rewrites)
+    @test different_position_certificate.optimized_factors == different_position_factors
+    @test different_position_certificate.comparison_summary.factor_count_delta == 0
+
+    tampered_optimized = copy(certificate.optimized_factors)
+    tampered_optimized[1] = elementary_matrix(3, 1, 3, x + y + 2 * one(R), R)
+    tampered_certificate = Suslin.SteinbergOptimizationCertificate(
+        certificate.original_factors,
+        tampered_optimized,
+        certificate.applied_rewrites,
+        certificate.comparison_summary,
+        certificate.original_product,
+        certificate.optimized_product,
+        certificate.verification,
+    )
+    @test !Suslin._verify_steinberg_optimization_certificate(tampered_certificate)
+end

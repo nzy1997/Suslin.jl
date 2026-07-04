@@ -310,3 +310,117 @@ function _verify_steinberg_optimization_certificate(certificate)::Bool
         return false
     end
 end
+
+function _steinberg_same_elementary_position(left, right)::Bool
+    return left.kind == :elementary &&
+           right.kind == :elementary &&
+           left.row == right.row &&
+           left.col == right.col
+end
+
+function _steinberg_adjacent_rewrite_record(
+    rule_name::Symbol,
+    original_start::Int,
+    original_stop::Int,
+    optimized_start::Int,
+    optimized_stop::Int,
+    metadata,
+)
+    return (;
+        rule_name,
+        original_factor_count = original_stop - original_start + 1,
+        optimized_factor_count = optimized_stop < optimized_start ? 0 :
+            optimized_stop - optimized_start + 1,
+        original_span = (; start = original_start, stop = original_stop),
+        optimized_span = (; start = optimized_start, stop = optimized_stop),
+        metadata,
+    )
+end
+
+function _steinberg_adjacent_rewrite_optimization_certificate(factors)
+    original_context = _steinberg_sequence_context(factors, "original")
+    optimized_factors = Any[]
+    applied_rewrites = Any[]
+    records = original_context.records
+
+    index = 1
+    while index <= length(records)
+        record = records[index]
+
+        if record.kind == :identity
+            optimized_start = length(optimized_factors) + 1
+            push!(
+                applied_rewrites,
+                _steinberg_adjacent_rewrite_record(
+                    :identity_removal,
+                    index,
+                    index,
+                    optimized_start,
+                    optimized_start - 1,
+                    (; kind = :identity),
+                ),
+            )
+            index += 1
+            continue
+        end
+
+        run_stop = index
+        while run_stop < length(records) &&
+              _steinberg_same_elementary_position(record, records[run_stop + 1])
+            run_stop += 1
+        end
+
+        if run_stop > index
+            merged_coefficient = zero(record.ring)
+            for run_index in index:run_stop
+                merged_coefficient += records[run_index].coefficient
+            end
+
+            optimized_start = length(optimized_factors) + 1
+            optimized_stop = optimized_start - 1
+            rule_name = :same_position_merge
+            if !iszero(merged_coefficient)
+                merged_record = (;
+                    kind = :elementary,
+                    n = record.n,
+                    ring = record.ring,
+                    row = record.row,
+                    col = record.col,
+                    coefficient = merged_coefficient,
+                )
+                push!(optimized_factors, _elementary_factor_record_matrix(merged_record))
+                optimized_stop = optimized_start
+            elseif run_stop == index + 1
+                rule_name = :inverse_cancellation
+            end
+
+            push!(
+                applied_rewrites,
+                _steinberg_adjacent_rewrite_record(
+                    rule_name,
+                    index,
+                    run_stop,
+                    optimized_start,
+                    optimized_stop,
+                    (;
+                        row = record.row,
+                        col = record.col,
+                        original_indices = (; start = index, stop = run_stop),
+                        merged_coefficient,
+                    ),
+                ),
+            )
+            index = run_stop + 1
+            continue
+        end
+
+        push!(optimized_factors, _elementary_factor_record_matrix(record))
+        index += 1
+    end
+
+    return _steinberg_optimization_certificate(
+        original_context.factors,
+        optimized_factors,
+        applied_rewrites,
+    )
+end
