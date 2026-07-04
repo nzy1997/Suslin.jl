@@ -140,39 +140,51 @@ function _assert_issue187_acceptance_audit(text)
     @test occursin("Unsupported coefficient rings remain negative controls", squashed)
 end
 
+function _issue188_overclaim_reason(lower_squashed)
+    if occursin("enabled by default", lower_squashed) &&
+       !(
+           occursin("not enabled by default", lower_squashed) ||
+           occursin("does not optimize by default", lower_squashed) ||
+           occursin("does not enable optimization by default", lower_squashed)
+       )
+        return :default_enablement
+    end
+
+    if (
+        occursin("global minimum", lower_squashed) ||
+        occursin("globally minimal", lower_squashed) ||
+        occursin("global optimal", lower_squashed)
+    ) && !(
+        occursin("does not claim", lower_squashed) ||
+        occursin("not claim", lower_squashed) ||
+        occursin("no claim", lower_squashed)
+    )
+        return :global_optimality
+    end
+
+    if (
+        occursin("laurent", lower_squashed) || occursin("toricbuilder", lower_squashed)
+    ) && (
+        occursin("support", lower_squashed) || occursin("mainline", lower_squashed)
+    ) && !(
+        occursin("does not add", lower_squashed) ||
+        occursin("not add", lower_squashed) ||
+        occursin("does not claim", lower_squashed) ||
+        occursin("not claim", lower_squashed) ||
+        occursin("separate", lower_squashed) ||
+        occursin("out of scope", lower_squashed)
+    )
+        return :laurent_toricbuilder_scope
+    end
+
+    return nothing
+end
+
 function _assert_issue188_no_overclaims(text)
     for paragraph in _paragraphs(text)
         squashed = _squash_whitespace(paragraph)
         lower_squashed = lowercase(squashed)
-        mentions_issue188 =
-            occursin("#188", lower_squashed) || occursin("steinberg", lower_squashed)
-
-        if mentions_issue188 && occursin("enabled by default", lower_squashed)
-            @test occursin("not enabled by default", lower_squashed) ||
-                  occursin("does not optimize by default", lower_squashed) ||
-                  occursin("does not enable optimization by default", lower_squashed)
-        end
-
-        if mentions_issue188 && (
-            occursin("global minimum", lower_squashed) ||
-            occursin("globally minimal", lower_squashed) ||
-            occursin("global optimal", lower_squashed)
-        )
-            @test occursin("does not claim", lower_squashed) ||
-                  occursin("not claim", lower_squashed) ||
-                  occursin("no claim", lower_squashed)
-        end
-
-        if mentions_issue188 &&
-           (occursin("laurent", lower_squashed) || occursin("toricbuilder", lower_squashed)) &&
-           (occursin("support", lower_squashed) || occursin("mainline", lower_squashed))
-            @test occursin("does not add", lower_squashed) ||
-                  occursin("not add", lower_squashed) ||
-                  occursin("does not claim", lower_squashed) ||
-                  occursin("not claim", lower_squashed) ||
-                  occursin("separate", lower_squashed) ||
-                  occursin("out of scope", lower_squashed)
-        end
+        @test isnothing(_issue188_overclaim_reason(lower_squashed))
     end
 end
 
@@ -204,6 +216,25 @@ function _assert_issue188_optimizer_contract(text)
     @test occursin("does not claim global minimum factor counts", squashed)
     @test occursin("does not add Laurent `GL_n` or ToricBuilder support", squashed)
     _assert_issue188_no_overclaims(text)
+end
+
+function _assert_issue188_synthetic_overclaim_guardrails()
+    @testset "issue #188 overclaim guardrails" begin
+        @test isnothing(_issue188_overclaim_reason("the optional optimizer is not enabled by default"))
+        @test isnothing(_issue188_overclaim_reason("the optimizer does not claim global minimum factor counts"))
+        @test isnothing(
+            _issue188_overclaim_reason(
+                "laurent/toricbuilder mainline support remains separate from #188 and stays out of scope",
+            ),
+        )
+
+        @test _issue188_overclaim_reason("the optimizer is enabled by default") ===
+              :default_enablement
+        @test _issue188_overclaim_reason("this route achieves global minimum factor counts") ===
+              :global_optimality
+        @test _issue188_overclaim_reason("laurent toricbuilder support is now mainline") ===
+              :laurent_toricbuilder_scope
+    end
 end
 
 function _assert_issue188_acceptance_audit(text)
@@ -272,4 +303,6 @@ end
         _assert_issue188_optimizer_contract(_read_repo_text(README_PATH))
         _assert_issue188_optimizer_contract(_read_repo_text(DOCS_INDEX_PATH))
     end
+
+    _assert_issue188_synthetic_overclaim_guardrails()
 end
