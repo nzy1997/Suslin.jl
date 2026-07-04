@@ -287,13 +287,13 @@ function case008_d15_preconditioning_search(
                             bounds.column_index,
                         )
                         return (;
-                        status = :found,
-                        bounds,
-                        attempt_count,
-                        progress_summary = tuple(progress...),
-                        steps = (step,),
-                        transformed_column,
-                        reducer_diagnostic = diagnostic,
+                            status = :found,
+                            bounds,
+                            attempt_count,
+                            progress_summary = tuple(progress...),
+                            steps = (step,),
+                            transformed_column,
+                            reducer_diagnostic = diagnostic,
                         )
                     end
                 end
