@@ -102,6 +102,21 @@ function _case008_d15_tamper_stage_source_type(cert)
     )
 end
 
+function _case008_d15_tamper_stage_metadata(cert, replacement)
+    stages = collect(cert.stages)
+    stage_idx = findfirst(stage -> stage.kind == :laurent_elementary_row_preconditioning, stages)
+    stage_idx === nothing && error("missing row-preconditioning stage")
+    stages[stage_idx] = merge(stages[stage_idx], replacement)
+    return Suslin.ECPColumnReductionCertificate(
+        cert.original_column,
+        cert.ring,
+        tuple(stages...),
+        cert.factors,
+        cert.final_column,
+        cert.verification,
+    )
+end
+
 function _case008_d15_diagnostic_stage_detail(diagnostic, stage::Symbol)
     hasproperty(diagnostic, :stage_details) || return nothing
     idx = findfirst(detail -> detail.stage == stage, diagnostic.stage_details)
@@ -143,6 +158,40 @@ end
     )
 
     preconditioning_stage = certificate.stages[end]
+    @test !Suslin.verify_ecp_column_reduction(
+        _case008_d15_tamper_stage_metadata(certificate, (; source_index = 2.0)),
+    )
+    @test !Suslin.verify_ecp_column_reduction(
+        _case008_d15_tamper_stage_metadata(
+            certificate,
+            (; source_indices = collect(preconditioning_stage.source_indices)),
+        ),
+    )
+    @test !Suslin.verify_ecp_column_reduction(
+        _case008_d15_tamper_stage_metadata(certificate, (; source_indices = ())),
+    )
+    @test !Suslin.verify_ecp_column_reduction(
+        _case008_d15_tamper_stage_metadata(
+            certificate,
+            (; coefficients = (preconditioning_stage.coefficients[1], one(R))),
+        ),
+    )
+    @test !Suslin.verify_ecp_column_reduction(
+        _case008_d15_tamper_stage_metadata(certificate, (; source_index = 3)),
+    )
+    @test !Suslin.verify_ecp_column_reduction(
+        _case008_d15_tamper_stage_metadata(
+            certificate,
+            (; coefficient = preconditioning_stage.coefficient + one(R)),
+        ),
+    )
+    @test !Suslin.verify_ecp_column_reduction(
+        _case008_d15_tamper_stage_metadata(
+            certificate,
+            (; source_index = 1, source_indices = (1,)),
+        ),
+    )
+
     @test preconditioning_stage.kind == :laurent_elementary_row_preconditioning
     @test preconditioning_stage.target_index == 1
     @test preconditioning_stage.source_indices == Tuple(2:15)
@@ -181,5 +230,160 @@ end
     @test_throws ArgumentError Suslin.reduce_unimodular_column(
         negative.failing_column,
         negative.ring,
+    )
+end
+
+@testset "case_008 d=15 Laurent row-preconditioning guard coverage" begin
+    R, (u, _) = Suslin.suslin_laurent_polynomial_ring(GF(2), ["guard_u", "guard_v"])
+    column = [idx == 1 ? zero(R) : idx == 2 ? one(R) : zero(R) for idx in 1:15]
+    column16 = [idx == 1 ? zero(R) : idx == 10 ? one(R) : zero(R) for idx in 1:16]
+
+    @test Suslin._laurent_row_preconditioning_synthesis_coefficients(
+        column,
+        R,
+        1,
+        (),
+    ) === nothing
+
+    fixed_mismatch = (;
+        target_index = 1,
+        source_indices = (2, 3),
+        coefficient_strategy = :fixed_coefficients,
+        coefficients = (one(R),),
+        max_nonzero_coefficients = 2,
+    )
+    unknown_strategy = (;
+        target_index = 1,
+        source_indices = (2,),
+        coefficient_strategy = :unknown_strategy,
+        coefficients = (one(R),),
+        max_nonzero_coefficients = 1,
+    )
+    @test Suslin._laurent_row_preconditioning_coefficients(
+        column,
+        R,
+        fixed_mismatch,
+    ) === nothing
+    @test Suslin._laurent_row_preconditioning_coefficients(
+        column,
+        R,
+        unknown_strategy,
+    ) === nothing
+
+    @test !Suslin._laurent_row_preconditioning_source_order_ok((), Tuple(2:15))
+    @test !Suslin._laurent_row_preconditioning_source_order_ok((3, 2), Tuple(2:15))
+    @test Suslin._laurent_row_preconditioning_source_order_ok((2, 4), Tuple(2:15))
+
+    @test Suslin._laurent_row_preconditioning_target_unit_equation_ok(
+        column,
+        R,
+        1,
+        (2,),
+        (one(R),),
+    )
+    @test !Suslin._laurent_row_preconditioning_target_unit_equation_ok(
+        column,
+        R,
+        1,
+        (2,),
+        (u,),
+    )
+
+    @test Suslin._laurent_row_preconditioning_stage_spec_ok(
+        column,
+        R,
+        1,
+        (2,),
+        (one(R),),
+        :target_unit_laurent_linear_synthesis,
+    )
+    @test !Suslin._laurent_row_preconditioning_stage_spec_ok(
+        column,
+        R,
+        1,
+        (2,),
+        (one(R), one(R)),
+        :target_unit_laurent_linear_synthesis,
+    )
+    @test !Suslin._laurent_row_preconditioning_stage_spec_ok(
+        column,
+        R,
+        1,
+        (),
+        (),
+        :target_unit_laurent_linear_synthesis,
+    )
+    @test !Suslin._laurent_row_preconditioning_stage_spec_ok(
+        column,
+        R,
+        1,
+        (2,),
+        (zero(R),),
+        :target_unit_laurent_linear_synthesis,
+    )
+    @test !Suslin._laurent_row_preconditioning_stage_spec_ok(
+        column,
+        R,
+        2,
+        (3,),
+        (one(R),),
+        :target_unit_laurent_linear_synthesis,
+    )
+    @test !Suslin._laurent_row_preconditioning_stage_spec_ok(
+        column,
+        R,
+        1,
+        (2,),
+        (one(R),),
+        :fixed_coefficients,
+    )
+    @test !Suslin._laurent_row_preconditioning_stage_spec_ok(
+        column,
+        R,
+        1,
+        Tuple(2:16),
+        ntuple(_ -> one(R), 15),
+        :target_unit_laurent_linear_synthesis,
+    )
+    @test !Suslin._laurent_row_preconditioning_stage_spec_ok(
+        column,
+        R,
+        1,
+        (3, 2),
+        (one(R), one(R)),
+        :target_unit_laurent_linear_synthesis,
+    )
+    @test !Suslin._laurent_row_preconditioning_stage_spec_ok(
+        column,
+        R,
+        1,
+        (2,),
+        (u,),
+        :target_unit_laurent_linear_synthesis,
+    )
+
+    @test Suslin._laurent_row_preconditioning_stage_spec_ok(
+        column16,
+        R,
+        1,
+        (10,),
+        (one(R),),
+        :fixed_coefficients,
+    )
+    @test !Suslin._laurent_row_preconditioning_stage_spec_ok(
+        column16,
+        R,
+        1,
+        (9,),
+        (one(R),),
+        :fixed_coefficients,
+    )
+    @test !Suslin._laurent_row_preconditioning_stage_spec_ok(
+        column16,
+        R,
+        1,
+        (10,),
+        (u,),
+        :fixed_coefficients,
     )
 end
