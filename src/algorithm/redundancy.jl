@@ -337,6 +337,168 @@ function _steinberg_adjacent_rewrite_record(
     )
 end
 
+function _steinberg_commutator_inverse_tail_matches(first, second, third, fourth)::Bool
+    return third.row == first.row &&
+           third.col == first.col &&
+           third.coefficient == -first.coefficient &&
+           fourth.row == second.row &&
+           fourth.col == second.col &&
+           fourth.coefficient == -second.coefficient
+end
+
+function _steinberg_commutator_forward_candidate(first, second)
+    i = first.row
+    j = first.col
+    l = second.col
+    first.col == second.row || return nothing
+    i != l || return nothing
+
+    return (;
+        rule_name = :commutator_forward,
+        replacement_records = (;
+            kind = :elementary,
+            n = first.n,
+            ring = first.ring,
+            row = i,
+            col = l,
+            coefficient = first.coefficient * second.coefficient,
+        ),
+        metadata = (;
+            indices = (; i, j, l),
+            a = first.coefficient,
+            b = second.coefficient,
+        ),
+    )
+end
+
+function _steinberg_commutator_reverse_candidate(first, second)
+    l = second.row
+    i = first.row
+    j = first.col
+    second.col == i || return nothing
+    j != l || return nothing
+
+    return (;
+        rule_name = :commutator_reverse,
+        replacement_records = (;
+            kind = :elementary,
+            n = first.n,
+            ring = first.ring,
+            row = l,
+            col = j,
+            coefficient = -(first.coefficient * second.coefficient),
+        ),
+        metadata = (;
+            indices = (; l, i, j),
+            a = first.coefficient,
+            b = second.coefficient,
+        ),
+    )
+end
+
+function _steinberg_commutator_disjoint_candidate(first, second)
+    i = first.row
+    j = first.col
+    l = second.row
+    p = second.col
+    i != p || return nothing
+    j != l || return nothing
+
+    return (;
+        rule_name = :disjoint_commutator_identity,
+        replacement_records = (),
+        metadata = (;
+            indices = (; i, j, l, p),
+            a = first.coefficient,
+            b = second.coefficient,
+        ),
+    )
+end
+
+function _steinberg_commutator_window_candidate(window_records)
+    all(record -> record.kind == :elementary, window_records) || return nothing
+    first, second, third, fourth = window_records
+    _steinberg_commutator_inverse_tail_matches(first, second, third, fourth) ||
+        return nothing
+
+    candidate = _steinberg_commutator_forward_candidate(first, second)
+    candidate === nothing || return candidate
+    candidate = _steinberg_commutator_reverse_candidate(first, second)
+    candidate === nothing || return candidate
+    return _steinberg_commutator_disjoint_candidate(first, second)
+end
+
+function _steinberg_commutator_replacement_factors(candidate)
+    replacement_records = candidate.replacement_records
+    records = hasproperty(replacement_records, :kind) ?
+        (replacement_records,) :
+        replacement_records
+    return [_elementary_factor_record_matrix(record) for record in records]
+end
+
+function _steinberg_commutator_local_products_equal(
+    original_window_factors,
+    replacement_factors,
+    R,
+    n::Int,
+)::Bool
+    return _steinberg_factor_product(original_window_factors, R, n) ==
+           _steinberg_factor_product(replacement_factors, R, n)
+end
+
+function _steinberg_commutator_rewrite_optimization_certificate(factors)
+    original_context = _steinberg_sequence_context(factors, "original")
+    optimized_factors = Any[]
+    applied_rewrites = Any[]
+    records = original_context.records
+
+    index = 1
+    while index <= length(records)
+        if index + 3 <= length(records)
+            window_records = records[index:(index + 3)]
+            candidate = _steinberg_commutator_window_candidate(window_records)
+            if candidate !== nothing
+                original_window_factors = original_context.factors[index:(index + 3)]
+                replacement_factors = _steinberg_commutator_replacement_factors(candidate)
+                local_products_equal = _steinberg_commutator_local_products_equal(
+                    original_window_factors,
+                    replacement_factors,
+                    original_context.ring,
+                    original_context.n,
+                )
+
+                if local_products_equal
+                    optimized_start = length(optimized_factors) + 1
+                    append!(optimized_factors, replacement_factors)
+                    optimized_stop = optimized_start + length(replacement_factors) - 1
+                    push!(
+                        applied_rewrites,
+                        _steinberg_adjacent_rewrite_record(
+                            candidate.rule_name,
+                            index,
+                            index + 3,
+                            optimized_start,
+                            optimized_stop,
+                            merge(candidate.metadata, (; local_products_equal,)),
+                        ),
+                    )
+                    index += 4
+                    continue
+                end
+            end
+        end
+
+        push!(optimized_factors, original_context.factors[index])
+        index += 1
+    end
+
+    return _steinberg_optimization_certificate(
+        original_context.factors,
+        optimized_factors,
+        applied_rewrites,
+    )
+end
+
 function _steinberg_adjacent_rewrite_optimization_certificate(factors)
     original_context = _steinberg_sequence_context(factors, "original")
     optimized_factors = Any[]
