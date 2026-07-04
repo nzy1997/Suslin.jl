@@ -37,3 +37,76 @@ using Oscar
     @test_throws ArgumentError Suslin._canonical_elementary_factor_record(two_offdiagonal)
     @test_throws ArgumentError Suslin._elementary_factor_record_matrix((; kind = :unsupported, n = 3, ring = R))
 end
+
+const STEINBERG_OPTIMIZATION_FIXTURE_PATH =
+    joinpath(@__DIR__, "..", "fixtures", "steinberg_optimization_cases.jl")
+
+if !isdefined(Main, :SteinbergOptimizationFixtureCatalog)
+    include(STEINBERG_OPTIMIZATION_FIXTURE_PATH)
+end
+
+@testset "Steinberg optimization certificate replay" begin
+    entries = SteinbergOptimizationFixtureCatalog.cases_by_id()
+    entry = entries["steinberg-same-position-merge-qq"]
+    original_factors = collect(entry.factors)
+
+    certificate = Suslin._steinberg_optimization_certificate(original_factors, copy(original_factors), ())
+    summary = certificate.comparison_summary
+
+    @test certificate isa Suslin.SteinbergOptimizationCertificate
+    @test Suslin._verify_steinberg_optimization_certificate(certificate)
+    @test certificate.original_product == certificate.optimized_product
+    @test summary.original_product == certificate.original_product
+    @test summary.optimized_product == certificate.optimized_product
+    @test summary.products_equal
+    @test summary.verification_status
+    @test isempty(summary.applied_rewrites)
+    @test summary.original_factor_count == length(original_factors)
+    @test summary.optimized_factor_count == length(original_factors)
+    @test summary.factor_count_delta == 0
+    @test summary.original_metrics.max_elementary_factor_monomial_degree ==
+          max_elementary_factor_monomial_degree(original_factors)
+    @test summary.optimized_metrics.max_elementary_factor_monomial_degree ==
+          max_elementary_factor_monomial_degree(original_factors)
+    @test summary.original_metrics.total_elementary_factor_offdiagonal_monomials ==
+          total_elementary_factor_offdiagonal_monomials(original_factors)
+    @test summary.optimized_metrics.total_elementary_factor_offdiagonal_monomials ==
+          total_elementary_factor_offdiagonal_monomials(original_factors)
+    @test certificate.verification.products_equal
+    @test certificate.verification.overall_ok
+
+    R = base_ring(first(original_factors))
+    n = nrows(first(original_factors))
+    tampered_optimized = copy(original_factors)
+    tampered_optimized[1] = elementary_matrix(n, 1, 3, one(R), R)
+    tampered_certificate =
+        Suslin._steinberg_optimization_certificate(original_factors, tampered_optimized, ())
+    @test !Suslin._verify_steinberg_optimization_certificate(tampered_certificate)
+    @test !tampered_certificate.comparison_summary.products_equal
+    @test !tampered_certificate.comparison_summary.verification_status
+
+    stale_rule_log = [(
+        rule_name = :same_position_merge,
+        original_factor_count = length(original_factors),
+        optimized_factor_count = length(original_factors) + 1,
+    )]
+    stale_log_certificate = Suslin.SteinbergOptimizationCertificate(
+        certificate.original_factors,
+        certificate.optimized_factors,
+        stale_rule_log,
+        certificate.comparison_summary,
+        certificate.original_product,
+        certificate.optimized_product,
+        certificate.verification,
+    )
+    @test !Suslin._verify_steinberg_optimization_certificate(stale_log_certificate)
+
+    R_alt, (u, v) = Oscar.polynomial_ring(QQ, ["u", "v"])
+    mixed_ring_factors = copy(original_factors)
+    mixed_ring_factors[2] = elementary_matrix(n, 1, 2, u + one(R_alt), R_alt)
+    @test_throws ArgumentError Suslin._steinberg_optimization_certificate(
+        original_factors,
+        mixed_ring_factors,
+        (),
+    )
+end
