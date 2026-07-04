@@ -35,4 +35,5 @@ using Oscar
     @test_throws DimensionMismatch Suslin._canonical_elementary_factor_record(nonsquare_factor)
     @test_throws ArgumentError Suslin._canonical_elementary_factor_record(bad_diagonal)
     @test_throws ArgumentError Suslin._canonical_elementary_factor_record(two_offdiagonal)
+    @test_throws ArgumentError Suslin._elementary_factor_record_matrix((; kind = :unsupported, n = 3, ring = R))
 end
