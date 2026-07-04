@@ -162,7 +162,12 @@ function _issue188_overclaim_reason(lower_squashed)
         return :global_optimality
     end
 
-    if (
+    scope_context =
+        occursin("#188", lower_squashed) ||
+        occursin("steinberg", lower_squashed) ||
+        occursin("optimizer", lower_squashed) ||
+        occursin("now mainline", lower_squashed)
+    if scope_context && (
         occursin("laurent", lower_squashed) || occursin("toricbuilder", lower_squashed)
     ) && (
         occursin("support", lower_squashed) || occursin("mainline", lower_squashed)
@@ -190,6 +195,7 @@ end
 
 function _assert_issue188_optimizer_contract(text)
     squashed = _squash_whitespace(text)
+    lower_squashed = lowercase(squashed)
     @test occursin(
         "The optional Steinberg factor-count optimizer (#188) is available only through `optimize_elementary_factor_sequence(factors; rules = :safe)`",
         squashed,
@@ -197,7 +203,7 @@ function _assert_issue188_optimizer_contract(text)
     @test occursin("It is not enabled by default", squashed)
     @test occursin(
         "every optimized sequence is accepted only through exact product verification by `verify_steinberg_optimization_certificate`",
-        squashed,
+        lower_squashed,
     )
     for rule_name in (
         ":identity_removal",

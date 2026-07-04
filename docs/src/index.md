@@ -4,7 +4,7 @@ CurrentModule = Suslin
 
 # Suslin
 
-Constructive elementary-matrix factorizations for staged accepted slices over polynomial and Laurent polynomial rings.
+Constructive elementary-matrix factorizations for staged supported slices over polynomial and Laurent polynomial rings.
 
 ## Example
 
@@ -56,7 +56,7 @@ verify_factorization(A, factors)
   Park-Woodburn Section 6 subset covered by the #288 catalog:
   `:identity_removal`, `:same_position_merge`, `:inverse_cancellation`,
   `:commutator_forward`, `:commutator_reverse`, and
-  `:disjoint_commutator_identity`. every optimized sequence is accepted only
+  `:disjoint_commutator_identity`. Every optimized sequence is accepted only
   through exact product verification by
   `verify_steinberg_optimization_certificate`; #188 does not claim global
   minimum factor counts and does not add Laurent `GL_n` or ToricBuilder
