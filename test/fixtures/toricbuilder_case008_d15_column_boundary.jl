@@ -10,8 +10,14 @@ const SOURCE_MATRIX_DIMENSIONS = (30, 30)
 const SOURCE_COLUMN_TRANSFORMATION_DIMENSIONS = (60, 60)
 const EXPECTED_RING_DESCRIPTION = "GF(2)[u^+/-1, v^+/-1]"
 const EXPECTED_DIAGNOSTIC = (;
-    status = :unsupported,
-    failure_code = :unsupported_laurent_column_family,
+    status = :supported,
+    failure_code = nothing,
+    stage = :laurent_elementary_row_preconditioning,
+    target_index = 1,
+    source_indices = Tuple(2:15),
+    coefficient_strategy = :target_unit_laurent_linear_synthesis,
+    coefficient_count = 14,
+    transformed_stage = :unit_entry,
 )
 const REQUIRED_BOUNDARY_FIELDS = (
     :case_id,
@@ -141,11 +147,26 @@ function _has_required_boundary_fields(fixture)::Bool
     return all(field -> hasproperty(fixture, field), REQUIRED_BOUNDARY_FIELDS)
 end
 
+function _diagnostic_stage_detail(diagnostic, stage::Symbol)
+    idx = findfirst(detail -> detail.stage == stage, diagnostic.stage_details)
+    return idx === nothing ? nothing : diagnostic.stage_details[idx]
+end
+
 function _diagnostic_matches_expected(column, R, expected)::Bool
     diagnostic = Suslin.diagnose_unimodular_column_reduction(column, R)
-    return diagnostic.status == expected.status &&
+    diagnostic.status == expected.status &&
         diagnostic.failure_code == expected.failure_code &&
-        diagnostic.column_length == FIRST_FAILING_PEEL_DIMENSION
+        diagnostic.column_length == FIRST_FAILING_PEEL_DIMENSION ||
+        return false
+
+    detail = _diagnostic_stage_detail(diagnostic, expected.stage)
+    detail !== nothing || return false
+    return detail.outcome == :supported &&
+        detail.target_index == expected.target_index &&
+        detail.source_indices == expected.source_indices &&
+        detail.coefficient_strategy == expected.coefficient_strategy &&
+        detail.coefficient_count == expected.coefficient_count &&
+        detail.transformed_stage == expected.transformed_stage
 end
 
 function validate_boundary_fixture(fixture)::Symbol

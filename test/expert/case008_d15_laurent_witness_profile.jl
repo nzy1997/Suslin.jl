@@ -17,14 +17,14 @@ function _diagnostic_stage_detail(diagnostic, stage::Symbol)
     return idx === nothing ? nothing : diagnostic.stage_details[idx]
 end
 
-function _case008_d15_unsupported_profile(diagnostic)::Bool
-    diagnostic.status == :unsupported || return false
-    diagnostic.failure_code == :unsupported_laurent_column_family || return false
+function _case008_d15_supported_profile(diagnostic)::Bool
+    diagnostic.status == :supported || return false
+    diagnostic.failure_code === nothing || return false
     diagnostic.column_length == 15 || return false
     diagnostic.attempted_stages == CASE008_D15_EXPECTED_ATTEMPTED_STAGES || return false
     hasproperty(diagnostic, :stage_details) || return false
     length(diagnostic.stage_details) == length(CASE008_D15_EXPECTED_ATTEMPTED_STAGES) || return false
-    any(detail -> detail.outcome == :supported, diagnostic.stage_details) && return false
+    any(detail -> detail.outcome == :supported, diagnostic.stage_details) || return false
 
     unit_entry = _diagnostic_stage_detail(diagnostic, :unit_entry)
     unit_entry !== nothing || return false
@@ -50,11 +50,13 @@ function _case008_d15_unsupported_profile(diagnostic)::Bool
     row_preconditioning =
         _diagnostic_stage_detail(diagnostic, :laurent_elementary_row_preconditioning)
     row_preconditioning !== nothing || return false
-    row_preconditioning.outcome == :no_row_preconditioning_candidate || return false
-    row_preconditioning.target_index === nothing || return false
-    row_preconditioning.source_index === nothing || return false
-    row_preconditioning.coefficient === nothing || return false
-    row_preconditioning.transformed_stage === nothing || return false
+    row_preconditioning.outcome == :supported || return false
+    row_preconditioning.target_index == 1 || return false
+    row_preconditioning.source_indices == Tuple(2:15) || return false
+    row_preconditioning.coefficient_strategy == :target_unit_laurent_linear_synthesis ||
+        return false
+    row_preconditioning.coefficient_count == 14 || return false
+    row_preconditioning.transformed_stage == :unit_entry || return false
 
     return true
 end
@@ -68,8 +70,8 @@ end
         fixture.ring,
     )
 
-    @test diagnostic.status == :unsupported
-    @test diagnostic.failure_code == :unsupported_laurent_column_family
+    @test diagnostic.status == :supported
+    @test diagnostic.failure_code === nothing
     @test diagnostic.column_length == 15
     @test diagnostic.ring_profile.kind == :laurent_polynomial
     @test diagnostic.ring_profile.generators == ("u", "v")
@@ -78,7 +80,7 @@ end
     @test diagnostic.stage_details isa Tuple
     @test all(detail -> detail isa NamedTuple, diagnostic.stage_details)
     @test length(diagnostic.stage_details) == length(CASE008_D15_EXPECTED_ATTEMPTED_STAGES)
-    @test !any(detail -> detail.outcome == :supported, diagnostic.stage_details)
+    @test any(detail -> detail.outcome == :supported, diagnostic.stage_details)
 
     unit_entry = _diagnostic_stage_detail(diagnostic, :unit_entry)
     @test unit_entry !== nothing
@@ -105,13 +107,14 @@ end
     row_preconditioning =
         _diagnostic_stage_detail(diagnostic, :laurent_elementary_row_preconditioning)
     @test row_preconditioning !== nothing
-    @test row_preconditioning.outcome == :no_row_preconditioning_candidate
-    @test row_preconditioning.target_index === nothing
-    @test row_preconditioning.source_index === nothing
-    @test row_preconditioning.coefficient === nothing
-    @test row_preconditioning.transformed_stage === nothing
+    @test row_preconditioning.outcome == :supported
+    @test row_preconditioning.target_index == 1
+    @test row_preconditioning.source_indices == Tuple(2:15)
+    @test row_preconditioning.coefficient_strategy == :target_unit_laurent_linear_synthesis
+    @test row_preconditioning.coefficient_count == 14
+    @test row_preconditioning.transformed_stage == :unit_entry
 
-    @test _case008_d15_unsupported_profile(diagnostic)
+    @test _case008_d15_supported_profile(diagnostic)
 end
 
 @testset "synthetic direct-unit Laurent profile control" begin
@@ -124,10 +127,21 @@ end
     @test diagnostic.failure_code === nothing
     @test diagnostic.column_length == 3
     @test diagnostic.attempted_stages == (:unit_entry,)
-    @test !_case008_d15_unsupported_profile(diagnostic)
+    @test !_case008_d15_supported_profile(diagnostic)
 
     unit_entry = _diagnostic_stage_detail(diagnostic, :unit_entry)
     @test unit_entry !== nothing
     @test unit_entry.outcome == :supported
     @test unit_entry.pivot_index == 1
+end
+
+@testset "synthetic unsupported Laurent profile control" begin
+    R, (u, v) = Suslin.suslin_laurent_polynomial_ring(GF(2), ["u", "v"])
+    unsupported_column = [u * v + u, u^2 + u + one(R), u * v + v^2 + one(R)]
+
+    diagnostic = Suslin.diagnose_unimodular_column_reduction(unsupported_column, R)
+
+    @test diagnostic.status == :unsupported
+    @test diagnostic.failure_code == :unsupported_laurent_column_family
+    @test !_case008_d15_supported_profile(diagnostic)
 end

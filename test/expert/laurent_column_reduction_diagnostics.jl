@@ -4,6 +4,7 @@ using Oscar
 
 include(joinpath(@__DIR__, "..", "fixtures", "toricbuilder_case010_column_boundary.jl"))
 include(joinpath(@__DIR__, "..", "fixtures", "toricbuilder_case008_d21_column_boundary.jl"))
+include(joinpath(@__DIR__, "..", "fixtures", "toricbuilder_case008_d15_column_boundary.jl"))
 include(joinpath(@__DIR__, "..", "fixtures", "toricbuilder_case008_d16_column_boundary.jl"))
 
 function _diagnostic_stage_detail(diagnostic, stage::Symbol)
@@ -80,6 +81,34 @@ end
     @test case008_d21_witness !== nothing
     @test case008_d21_witness.outcome == :supported
     @test case008_d21_witness.witness_unit_index isa Integer
+
+    case008_d15_fixture = ToricBuilderCase008D15ColumnBoundary.boundary_fixture()
+    case008_d15 = Suslin.diagnose_unimodular_column_reduction(
+        case008_d15_fixture.failing_column,
+        case008_d15_fixture.ring,
+    )
+    @test case008_d15.status == :supported
+    @test case008_d15.failure_code === nothing
+    @test case008_d15.column_length == 15
+    @test case008_d15.ring_profile.kind == :laurent_polynomial
+    @test case008_d15.ring_profile.generators == ("u", "v")
+    @test :laurent_elementary_row_preconditioning in case008_d15.attempted_stages
+    @test !(:case008_special_case in case008_d15.attempted_stages)
+    case008_d15_preconditioned =
+        _diagnostic_stage_detail(case008_d15, :laurent_elementary_row_preconditioning)
+    @test case008_d15_preconditioned !== nothing
+    @test case008_d15_preconditioned.outcome == :supported
+    @test case008_d15_preconditioned.target_index == 1
+    @test case008_d15_preconditioned.source_indices == Tuple(2:15)
+    @test case008_d15_preconditioned.coefficient_strategy == :target_unit_laurent_linear_synthesis
+    @test case008_d15_preconditioned.coefficient_count == 14
+    @test case008_d15_preconditioned.transformed_stage == :unit_entry
+    case008_d15_cert = Suslin.ecp_column_reduction_certificate(
+        case008_d15_fixture.failing_column,
+        case008_d15_fixture.ring,
+    )
+    @test _diagnostic_supported_stage(case008_d15) == case008_d15_cert.stages[end].kind
+    @test _diagnostic_stage_detail(case008_d15, :case008_special_case) === nothing
 
     case008_d16_fixture = ToricBuilderCase008D16ColumnBoundary.boundary_fixture()
     case008_d16 = Suslin.diagnose_unimodular_column_reduction(

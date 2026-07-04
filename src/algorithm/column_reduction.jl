@@ -2193,9 +2193,29 @@ end
 
 function _laurent_row_preconditioning_specs(column::AbstractVector, R)
     _is_laurent_polynomial_ring(R) || return ()
-    length(column) == 16 || return ()
     length(gens(R)) == 2 || return ()
-    return ((; target_index = 1, source_index = 10, coefficient = one(R)),)
+
+    if length(column) == 16
+        return ((;
+            target_index = 1,
+            source_indices = (10,),
+            coefficient_strategy = :fixed_coefficients,
+            coefficients = (one(R),),
+            max_nonzero_coefficients = 1,
+        ),)
+    end
+
+    if length(column) == 15
+        return ((;
+            target_index = 1,
+            source_indices = Tuple(2:15),
+            coefficient_strategy = :target_unit_laurent_linear_synthesis,
+            coefficients = (),
+            max_nonzero_coefficients = 14,
+        ),)
+    end
+
+    return ()
 end
 
 function _reduce_laurent_unimodular_column_base_certificate(column::AbstractVector, R)
@@ -2250,15 +2270,166 @@ function _reduce_laurent_unimodular_column_base_certificate(column::AbstractVect
     return (; factors, stage)
 end
 
+function _laurent_row_preconditioning_solve_failure(err)::Bool
+    return _laurent_witness_solve_failure(err)
+end
+
+function _laurent_row_preconditioning_fixed_coefficients(spec, R)
+    return tuple((
+        _coerce_into_ring(R, coeff, "row preconditioning coefficient")
+        for coeff in spec.coefficients
+    )...)
+end
+
+function _laurent_row_preconditioning_synthesis_coefficients(
+    column::AbstractVector,
+    R,
+    target_idx::Int,
+    source_indices,
+)
+    isempty(source_indices) && return nothing
+
+    A = matrix(R, 1, length(source_indices), [column[idx] for idx in source_indices])
+    B = matrix(R, 1, 1, [one(R) - column[target_idx]])
+    solution = try
+        solve_laurent_linear(A, B)
+    catch err
+        err isa InterruptException && rethrow()
+        _laurent_row_preconditioning_solve_failure(err) && return nothing
+        rethrow()
+    end
+
+    A * solution == B || return nothing
+    return tuple((solution[idx, 1] for idx in 1:nrows(solution))...)
+end
+
+function _laurent_row_preconditioning_coefficients(column::AbstractVector, R, spec)
+    target_idx = Int(spec.target_index)
+    source_indices = tuple(spec.source_indices...)
+    strategy = spec.coefficient_strategy
+    if strategy == :fixed_coefficients
+        length(spec.coefficients) == length(source_indices) || return nothing
+        return _laurent_row_preconditioning_fixed_coefficients(spec, R)
+    elseif strategy == :target_unit_laurent_linear_synthesis
+        return _laurent_row_preconditioning_synthesis_coefficients(
+            column,
+            R,
+            target_idx,
+            source_indices,
+        )
+    end
+    return nothing
+end
+
+function _laurent_row_preconditioning_source_order_ok(source_indices, allowed_source_indices)::Bool
+    isempty(source_indices) && return false
+
+    next_allowed = 1
+    for source_idx in source_indices
+        found = false
+        for allowed_idx in next_allowed:length(allowed_source_indices)
+            if source_idx == allowed_source_indices[allowed_idx]
+                next_allowed = allowed_idx + 1
+                found = true
+                break
+            end
+        end
+        found || return false
+    end
+    return true
+end
+
+function _laurent_row_preconditioning_target_unit_equation_ok(
+    column::AbstractVector,
+    R,
+    target_idx::Int,
+    source_indices,
+    coefficients,
+)::Bool
+    total = zero(R)
+    for (source_idx, coeff) in zip(source_indices, coefficients)
+        total += coeff * column[source_idx]
+    end
+    return total == one(R) - column[target_idx]
+end
+
+function _laurent_row_preconditioning_stage_spec_ok(
+    column::AbstractVector,
+    R,
+    target_idx::Int,
+    source_indices,
+    coefficients,
+    coefficient_strategy::Symbol,
+)::Bool
+    length(source_indices) == length(coefficients) || return false
+    isempty(source_indices) && return false
+    any(coeff -> coeff == zero(R), coefficients) && return false
+
+    for spec in _laurent_row_preconditioning_specs(column, R)
+        spec.target_index == target_idx || continue
+        spec.coefficient_strategy == coefficient_strategy || continue
+        length(source_indices) <= spec.max_nonzero_coefficients || continue
+
+        allowed_source_indices = tuple(spec.source_indices...)
+        _laurent_row_preconditioning_source_order_ok(source_indices, allowed_source_indices) ||
+            continue
+
+        if coefficient_strategy == :fixed_coefficients
+            fixed = _laurent_row_preconditioning_fixed_coefficients(spec, R)
+            nonzero_pairs = [
+                (source_idx, coeff)
+                for (source_idx, coeff) in zip(allowed_source_indices, fixed)
+                if coeff != zero(R)
+            ]
+            tuple((pair[1] for pair in nonzero_pairs)...) == source_indices || continue
+            tuple((pair[2] for pair in nonzero_pairs)...) == coefficients || continue
+            return true
+        elseif coefficient_strategy == :target_unit_laurent_linear_synthesis
+            _laurent_row_preconditioning_target_unit_equation_ok(
+                column,
+                R,
+                target_idx,
+                source_indices,
+                coefficients,
+            ) || continue
+            return true
+        end
+    end
+
+    return false
+end
+
 function _laurent_row_preconditioning_candidate(column::AbstractVector, R)
     n = length(column)
     for spec in _laurent_row_preconditioning_specs(column, R)
-        target_idx = spec.target_index
-        source_idx = spec.source_index
-        coeff = spec.coefficient
-        coeff == zero(R) && continue
-        target_idx == source_idx && continue
-        precondition_factor = elementary_matrix(n, target_idx, source_idx, coeff, R)
+        spec.target_index isa Integer || continue
+        target_idx = Int(spec.target_index)
+        1 <= target_idx <= n || continue
+
+        source_indices = tuple((Int(source_idx) for source_idx in spec.source_indices)...)
+        all(source_idx -> 1 <= source_idx <= n && source_idx != target_idx, source_indices) ||
+            continue
+        length(unique(source_indices)) == length(source_indices) || continue
+
+        coefficients = _laurent_row_preconditioning_coefficients(column, R, spec)
+        coefficients === nothing && continue
+        length(coefficients) == length(source_indices) || continue
+
+        nonzero_pairs = [
+            (source_idx, coeff)
+            for (source_idx, coeff) in zip(source_indices, coefficients)
+            if coeff != zero(R)
+        ]
+        isempty(nonzero_pairs) && continue
+        length(nonzero_pairs) <= spec.max_nonzero_coefficients || continue
+
+        accepted_source_indices = tuple((pair[1] for pair in nonzero_pairs)...)
+        accepted_coefficients = tuple((pair[2] for pair in nonzero_pairs)...)
+        precondition_factors = [
+            elementary_matrix(n, target_idx, source_idx, coeff, R)
+            for (source_idx, coeff) in nonzero_pairs
+        ]
+        precondition_factor = _factor_sequence_product(precondition_factors, R, n)
         transformed_column = collect(_ecp_matrix_column_to_tuple(
             precondition_factor * matrix(R, n, 1, collect(column)),
         ))
@@ -2269,8 +2440,12 @@ function _laurent_row_preconditioning_candidate(column::AbstractVector, R)
             _ecp_certificate_from_stage(transformed_column, R, transformed_result.stage)
         return (;
             target_index = target_idx,
-            source_index = source_idx,
-            coefficient = coeff,
+            source_index = accepted_source_indices[1],
+            source_indices = accepted_source_indices,
+            coefficient = accepted_coefficients[1],
+            coefficients = accepted_coefficients,
+            coefficient_strategy = spec.coefficient_strategy,
+            precondition_factors,
             precondition_factor,
             transformed_column,
             transformed_certificate,
@@ -2285,7 +2460,7 @@ function _reduce_via_laurent_elementary_row_preconditioning_certificate(column::
     candidate === nothing && return nothing
 
     factors = _checked_reduction_factors(
-        vcat(candidate.transformed_certificate.factors, [candidate.precondition_factor]),
+        vcat(candidate.transformed_certificate.factors, candidate.precondition_factors),
         column,
         R,
         "Laurent elementary row-preconditioning reduction",
@@ -2295,7 +2470,11 @@ function _reduce_via_laurent_elementary_row_preconditioning_certificate(column::
         input_column = _ecp_column_tuple(column),
         target_index = candidate.target_index,
         source_index = candidate.source_index,
+        source_indices = candidate.source_indices,
         coefficient = candidate.coefficient,
+        coefficients = candidate.coefficients,
+        coefficient_strategy = candidate.coefficient_strategy,
+        precondition_factors = candidate.precondition_factors,
         precondition_factor = candidate.precondition_factor,
         transformed_column = tuple(candidate.transformed_column...),
         transformed_certificate = candidate.transformed_certificate,
@@ -4456,26 +4635,60 @@ function _ecp_replay_stage(stage, input_column, R)
         invalid_replay = (; ok = false, factors = Any[], output_column = matrix(R, length(input_column), 1, collect(input_column)))
         _ecp_stage_keys_ok(
             stage,
-            (:kind, :input_column, :target_index, :source_index, :coefficient, :precondition_factor, :transformed_column, :transformed_certificate, :factors, :output_column),
+            (
+                :kind,
+                :input_column,
+                :target_index,
+                :source_index,
+                :source_indices,
+                :coefficient,
+                :coefficients,
+                :coefficient_strategy,
+                :precondition_factors,
+                :precondition_factor,
+                :transformed_column,
+                :transformed_certificate,
+                :factors,
+                :output_column,
+            ),
         ) || return invalid_replay
         _is_laurent_polynomial_ring(R) || return invalid_replay
 
         n = length(input_column)
         target_idx = stage.target_index
-        source_idx = stage.source_index
-        target_idx isa Integer && source_idx isa Integer || return invalid_replay
+        target_idx isa Integer || return invalid_replay
         1 <= target_idx <= n || return invalid_replay
-        1 <= source_idx <= n || return invalid_replay
-        target_idx == source_idx && return invalid_replay
-        specs = _laurent_row_preconditioning_specs(input_column, R)
-        any(
-            spec -> spec.target_index == target_idx &&
-                spec.source_index == source_idx &&
-                spec.coefficient == stage.coefficient,
-            specs,
+
+        stage.source_index isa Integer || return invalid_replay
+        stage.source_indices isa Tuple || return invalid_replay
+        all(source_idx -> source_idx isa Integer, stage.source_indices) ||
+            return invalid_replay
+        source_indices = stage.source_indices
+        isempty(source_indices) && return invalid_replay
+        coefficients = tuple((
+            _coerce_into_ring(R, coeff, "row preconditioning coefficient")
+            for coeff in stage.coefficients
+        )...)
+        length(source_indices) == length(coefficients) || return invalid_replay
+        stage.source_index == source_indices[1] || return invalid_replay
+        stage.coefficient == coefficients[1] || return invalid_replay
+        all(source_idx -> 1 <= source_idx <= n && source_idx != target_idx, source_indices) ||
+            return invalid_replay
+        length(unique(source_indices)) == length(source_indices) || return invalid_replay
+        _laurent_row_preconditioning_stage_spec_ok(
+            input_column,
+            R,
+            target_idx,
+            source_indices,
+            coefficients,
+            stage.coefficient_strategy,
         ) || return invalid_replay
 
-        precondition_factor = elementary_matrix(n, target_idx, source_idx, stage.coefficient, R)
+        precondition_factors = [
+            elementary_matrix(n, target_idx, source_idx, coeff, R)
+            for (source_idx, coeff) in zip(source_indices, coefficients)
+        ]
+        precondition_factor = _factor_sequence_product(precondition_factors, R, n)
         transformed_matrix = precondition_factor * matrix(R, n, 1, collect(input_column))
         transformed_column = collect(_ecp_matrix_column_to_tuple(transformed_matrix))
         transformed_certificate_ok =
@@ -4483,12 +4696,16 @@ function _ecp_replay_stage(stage, input_column, R)
             stage.transformed_certificate.original_column == transformed_column &&
             stage.transformed_certificate.ring == R
         expected_factors = transformed_certificate_ok ?
-            vcat(stage.transformed_certificate.factors, [precondition_factor]) :
+            vcat(stage.transformed_certificate.factors, precondition_factors) :
             Any[]
         expected_output = transformed_certificate_ok ?
             _apply_reduction_factors(expected_factors, input_column, R) :
             matrix(R, n, 1, collect(input_column))
         ok = stage.input_column == _ecp_column_tuple(input_column) &&
+            _ecp_factor_sequences_equal(
+                stage.precondition_factors,
+                precondition_factors,
+            ) &&
             stage.precondition_factor == precondition_factor &&
             stage.transformed_column == tuple(transformed_column...) &&
             transformed_certificate_ok &&
@@ -4749,7 +4966,11 @@ function _diagnose_laurent_row_preconditioning(
                 :supported;
                 target_index = row_preconditioning.target_index,
                 source_index = row_preconditioning.source_index,
+                source_indices = row_preconditioning.source_indices,
                 coefficient = row_preconditioning.coefficient,
+                coefficients = row_preconditioning.coefficients,
+                coefficient_strategy = row_preconditioning.coefficient_strategy,
+                coefficient_count = length(row_preconditioning.coefficients),
                 transformed_stage,
             ),
         )
@@ -4763,7 +4984,11 @@ function _diagnose_laurent_row_preconditioning(
             :no_row_preconditioning_candidate;
             target_index = nothing,
             source_index = nothing,
+            source_indices = (),
             coefficient = nothing,
+            coefficients = (),
+            coefficient_strategy = nothing,
+            coefficient_count = 0,
             transformed_stage = nothing,
         ),
     )

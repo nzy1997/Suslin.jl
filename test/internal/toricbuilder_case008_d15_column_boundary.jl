@@ -5,6 +5,11 @@ using Oscar
 const TORICBUILDER_CASE008_D15_COLUMN_BOUNDARY_PATH =
     joinpath(@__DIR__, "..", "fixtures", "toricbuilder_case008_d15_column_boundary.jl")
 
+function _case008_d15_stage_detail(diagnostic, stage::Symbol)
+    idx = findfirst(detail -> detail.stage == stage, diagnostic.stage_details)
+    return idx === nothing ? nothing : diagnostic.stage_details[idx]
+end
+
 @testset "ToricBuilder case_008 d=15 Laurent column boundary" begin
     @test isfile(TORICBUILDER_CASE008_D15_COLUMN_BOUNDARY_PATH)
 
@@ -26,16 +31,22 @@ const TORICBUILDER_CASE008_D15_COLUMN_BOUNDARY_PATH =
         fixture.failing_column,
         fixture.ring,
     )
-    @test diagnostic.status == :unsupported
-    @test diagnostic.failure_code == :unsupported_laurent_column_family
+    @test diagnostic.status == :supported
+    @test diagnostic.failure_code === nothing
     @test diagnostic.column_length == 15
     @test diagnostic.ring_profile.kind == :laurent_polynomial
     @test diagnostic.ring_profile.generators == ("u", "v")
+    @test :laurent_elementary_row_preconditioning in diagnostic.attempted_stages
+    preconditioning_detail =
+        _case008_d15_stage_detail(diagnostic, :laurent_elementary_row_preconditioning)
+    @test preconditioning_detail !== nothing
+    @test preconditioning_detail.outcome == :supported
+    @test preconditioning_detail.target_index == 1
+    @test preconditioning_detail.source_indices == Tuple(2:15)
+    @test preconditioning_detail.coefficient_strategy == :target_unit_laurent_linear_synthesis
+    @test preconditioning_detail.coefficient_count == 14
+    @test preconditioning_detail.transformed_stage == :unit_entry
     @test ToricBuilderCase008D15ColumnBoundary.validate_boundary_fixture(fixture) == :ok
-    @test_throws ArgumentError Suslin.reduce_unimodular_column(
-        fixture.failing_column,
-        fixture.ring,
-    )
 
     corrupted = ToricBuilderCase008D15ColumnBoundary.non_unimodular_negative_control(fixture)
     @test !Suslin.is_unimodular_column(corrupted.failing_column, corrupted.ring)
