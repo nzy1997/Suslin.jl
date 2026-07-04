@@ -273,11 +273,19 @@ function case008_d15_preconditioning_search(
                     ))
 
                     if diagnostic !== nothing && diagnostic.status == :supported
+                        final_matrix = Suslin.replay_elementary_preconditioning(
+                            original_matrix,
+                            (step,),
+                        )
                         Suslin.verify_elementary_preconditioning(
                             original_matrix,
                             (step,),
-                            step.transformed_matrix,
+                            final_matrix,
                         ) || error("internal preconditioning replay invariant failed")
+                        transformed_column = _case008_d15_column(
+                            final_matrix,
+                            bounds.column_index,
+                        )
                         return (;
                         status = :found,
                         bounds,
