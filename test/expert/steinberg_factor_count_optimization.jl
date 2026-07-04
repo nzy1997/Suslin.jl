@@ -2,6 +2,13 @@ using Test
 using Suslin
 using Oscar
 
+const STEINBERG_OPTIMIZATION_FIXTURE_PATH =
+    joinpath(@__DIR__, "..", "fixtures", "steinberg_optimization_cases.jl")
+
+if !isdefined(Main, :SteinbergOptimizationFixtureCatalog)
+    include(STEINBERG_OPTIMIZATION_FIXTURE_PATH)
+end
+
 @testset "Steinberg canonical elementary factor records" begin
     R, (x, y) = Oscar.polynomial_ring(QQ, ["x", "y"])
     coefficient = x + y + one(R)
@@ -205,13 +212,6 @@ end
         invalid_disjoint_indices,
         Symbol[],
     )
-end
-
-const STEINBERG_OPTIMIZATION_FIXTURE_PATH =
-    joinpath(@__DIR__, "..", "fixtures", "steinberg_optimization_cases.jl")
-
-if !isdefined(Main, :SteinbergOptimizationFixtureCatalog)
-    include(STEINBERG_OPTIMIZATION_FIXTURE_PATH)
 end
 
 @testset "Steinberg optimization certificate replay" begin
