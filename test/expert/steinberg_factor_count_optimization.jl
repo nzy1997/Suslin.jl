@@ -199,10 +199,10 @@ end
     )
 
     invalid_disjoint_indices = [
-        elementary_matrix(3, 1, 2, a, R),
-        elementary_matrix(3, 2, 1, b, R),
-        elementary_matrix(3, 1, 2, -a, R),
-        elementary_matrix(3, 2, 1, -b, R),
+        elementary_matrix(3, 1, 3, a, R),
+        elementary_matrix(3, 3, 1, b, R),
+        elementary_matrix(3, 1, 3, -a, R),
+        elementary_matrix(3, 3, 1, -b, R),
     ]
     invalid_disjoint_certificate =
         Suslin._steinberg_commutator_rewrite_optimization_certificate(invalid_disjoint_indices)
