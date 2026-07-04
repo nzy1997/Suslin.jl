@@ -166,6 +166,38 @@ function _same_base_ring(left, right)::Bool
     return left == right || left === right
 end
 
+function _canonical_elementary_factor_record(factor)
+    n = _require_square_matrix(factor, "elementary factor")
+    R = base_ring(factor)
+    row = 0
+    col = 0
+    coefficient = zero(R)
+
+    for i in 1:n, j in 1:n
+        entry = factor[i, j]
+        if i == j
+            entry == one(R) || throw(ArgumentError("elementary factor diagonal must be one"))
+            continue
+        end
+
+        entry == zero(R) && continue
+        row == 0 || throw(ArgumentError("elementary factor must have at most one nonzero off-diagonal entry"))
+        row = i
+        col = j
+        coefficient = entry
+    end
+
+    row == 0 && return (; kind = :identity, n, ring = R)
+    return (; kind = :elementary, n, ring = R, row, col, coefficient)
+end
+
+function _elementary_factor_record_matrix(record)
+    record.kind == :identity && return identity_matrix(record.ring, record.n)
+    record.kind == :elementary &&
+        return elementary_matrix(record.n, record.row, record.col, record.coefficient, record.ring)
+    throw(ArgumentError("unknown elementary factor record kind"))
+end
+
 function _embedding_indices(n::Int, block_size::Int, indices)
     block_size <= n || throw(DimensionMismatch("target size must be at least the block size"))
     length(indices) == block_size || throw(DimensionMismatch("number of indices must match the block size"))
