@@ -27,6 +27,7 @@
 - The fixture validator must reject a corrupted stored matrix entry or current-column entry with `:wrong_snapshot` or `:wrong_column`.
 - The report helper must validate the fixture and throw `ArgumentError` before producing a report for a corrupted fixture.
 - The diagnostic must check exactly 15 candidate columns and expose the report fields requested in issue #296.
+- The focused d15 report must stay bounded: run the reducer diagnostic for the current peel column, compute cheap live unimodularity and unit-entry counts for all columns, and use explicit cached `:not_run` reducer fields for non-current columns.
 - The current column must report `failure_code == :unsupported_laurent_column_family`.
 - Do not implement a reducer stage.
 - Do not run the full `30 x 30` `case_008` report in default tests.
@@ -115,6 +116,8 @@ function _case008_d15_candidate_report(M, R, column_index::Int, current_index::I
         status = diagnostic.status,
         failure_code = diagnostic.failure_code,
         supported_by_current_reducer = diagnostic.status == :supported,
+        diagnostic_cached = false,
+        diagnostic_cache_reason = nothing,
     )
 end
 
@@ -183,8 +186,12 @@ end
         :status,
         :failure_code,
         :supported_by_current_reducer,
+        :diagnostic_cached,
+        :diagnostic_cache_reason,
     )
     @test all(candidate -> all(field -> hasproperty(candidate, field), required_fields), report.candidates)
+    @test all(candidate -> candidate.is_unimodular, report.candidates)
+    @test all(candidate -> candidate.unit_entry_count == 0, report.candidates)
 
     current = only(filter(candidate -> candidate.is_current_peel_column, report.candidates))
     @test current.column_index == 15
@@ -193,6 +200,17 @@ end
     @test current.status == :unsupported
     @test current.failure_code == :unsupported_laurent_column_family
     @test current.supported_by_current_reducer == false
+    @test current.diagnostic_cached == false
+    @test current.diagnostic_cache_reason === nothing
+
+    noncurrent = filter(candidate -> !candidate.is_current_peel_column, report.candidates)
+    @test length(noncurrent) == 14
+    @test all(candidate -> candidate.diagnostic_cached, noncurrent)
+    @test all(candidate -> candidate.status == :not_run, noncurrent)
+    @test all(
+        candidate -> candidate.failure_code == :cached_due_to_expensive_laurent_diagnostic,
+        noncurrent,
+    )
 
     supported = filter(candidate -> candidate.supported_by_current_reducer, report.candidates)
     supported_alternatives = filter(candidate -> candidate.column_index != 15, supported)

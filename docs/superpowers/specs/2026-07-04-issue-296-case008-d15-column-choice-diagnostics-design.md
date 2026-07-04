@@ -106,11 +106,19 @@ Each candidate entry includes:
 - `row_preconditioning_transformed_stage`;
 - `status`;
 - `failure_code`;
-- `supported_by_current_reducer`.
+- `supported_by_current_reducer`;
+- `diagnostic_cached`;
+- `diagnostic_cache_reason`.
 
-The diagnostic will use `Suslin.diagnose_unimodular_column_reduction(column, R)`
-for each column and extract the same stage-detail fields as the existing d16
-column-choice diagnostic. It will not add public API.
+The diagnostic validates the stored matrix snapshot before reporting. It then
+computes the cheap live profile for every column (`is_unimodular` and unit-entry
+count), runs `Suslin.diagnose_unimodular_column_reduction(column, R)` only for
+the current peel column, and records explicit cached `:not_run` reducer fields
+for the other 14 columns. A live all-column reducer sweep was attempted during
+implementation, but it reached the expensive Laurent witness solve for
+non-current columns and was not appropriate for a default internal diagnostic.
+This uses the issue's allowance to cache the exact report fields needed for
+verification while keeping the report helper internal.
 
 ## Validation
 
@@ -144,9 +152,15 @@ The focused internal diagnostic test should assert:
 - candidate indices are exactly `1:15`;
 - exactly one candidate is the current peel column;
 - each candidate exposes the required diagnostic fields;
+- each candidate is unimodular and has zero unit entries;
 - the current candidate is unimodular, has zero unit entries, has
   `status == :unsupported`, and has
   `failure_code == :unsupported_laurent_column_family`;
+- the current candidate is the only live reducer diagnostic in this bounded
+  report;
+- non-current candidates carry `status == :not_run`,
+  `failure_code == :cached_due_to_expensive_laurent_diagnostic`, and
+  `diagnostic_cache_reason == :bounded_column_choice_report`;
 - supported candidates, if any, have `status == :supported` and no failure code;
 - unsupported unimodular candidates have an explicit failure code;
 - the corrupted copied fixture is rejected before report generation.
@@ -187,3 +201,7 @@ public API. Do not register the focused full-matrix diagnostic in
   issue #295 fixture unchanged.
 - Runtime scope: the full-matrix diagnostic stays unregistered from default
   tests; only the issue verification command loads it.
+- Bounded report: after the live all-column reducer attempt reached the
+  expensive Laurent witness solve for non-current columns, the diagnostic was
+  narrowed to live current-column reducer evidence plus cached non-current
+  reducer fields.
