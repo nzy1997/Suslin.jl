@@ -113,6 +113,131 @@ end
     )
     @test !Suslin._verify_steinberg_optimization_certificate(impossible_same_delta_certificate)
 
+    span_rule_log = [(
+        rule_name = :span_replay_probe,
+        original_factor_count = 1,
+        optimized_factor_count = 1,
+        original_span = (start = 1, stop = 1),
+        optimized_span = (start = 1, stop = 1),
+        metadata = (source = :test,),
+    )]
+    span_certificate = Suslin._steinberg_optimization_certificate(
+        original_factors,
+        copy(original_factors),
+        span_rule_log,
+    )
+    @test Suslin._verify_steinberg_optimization_certificate(span_certificate)
+    @test span_certificate.applied_rewrites[1].metadata.source == :test
+
+    empty_optimized_rule_log = [(
+        rule_name = :empty_optimized_probe,
+        original_factor_count = length(original_factors),
+        optimized_factor_count = 0,
+        original_span = (start = 1, stop = length(original_factors)),
+        optimized_span = (start = 1, stop = 0),
+    )]
+    empty_optimized_certificate = Suslin._steinberg_optimization_certificate(
+        original_factors,
+        original_factors[1:0],
+        empty_optimized_rule_log,
+    )
+    @test !Suslin._verify_steinberg_optimization_certificate(empty_optimized_certificate)
+    @test empty_optimized_certificate.comparison_summary.optimized_factor_count == 0
+
+    malformed_certificate = Suslin.SteinbergOptimizationCertificate(
+        Any[],
+        Any[],
+        Any[],
+        nothing,
+        nothing,
+        nothing,
+        nothing,
+    )
+    @test !Suslin._verify_steinberg_optimization_certificate(malformed_certificate)
+
+    @test_throws ArgumentError Suslin._steinberg_optimization_certificate(
+        original_factors,
+        copy(original_factors),
+        [(original_factor_count = 1, optimized_factor_count = 1)],
+    )
+    @test_throws ArgumentError Suslin._steinberg_optimization_certificate(
+        original_factors,
+        copy(original_factors),
+        [(
+            rule_name = "span_replay_probe",
+            original_factor_count = 1,
+            optimized_factor_count = 1,
+        )],
+    )
+    @test_throws ArgumentError Suslin._steinberg_optimization_certificate(
+        original_factors,
+        copy(original_factors),
+        [(
+            rule_name = :span_replay_probe,
+            original_factor_count = 1.0,
+            optimized_factor_count = 1,
+        )],
+    )
+    @test_throws ArgumentError Suslin._steinberg_optimization_certificate(
+        original_factors,
+        copy(original_factors),
+        [(
+            rule_name = :span_replay_probe,
+            original_factor_count = -1,
+            optimized_factor_count = 1,
+        )],
+    )
+    @test_throws ArgumentError Suslin._steinberg_optimization_certificate(
+        original_factors,
+        copy(original_factors),
+        [(
+            rule_name = :span_replay_probe,
+            original_factor_count = 1,
+            optimized_factor_count = 1,
+            original_span = (start = 1,),
+        )],
+    )
+    @test_throws ArgumentError Suslin._steinberg_optimization_certificate(
+        original_factors,
+        copy(original_factors),
+        [(
+            rule_name = :span_replay_probe,
+            original_factor_count = 1,
+            optimized_factor_count = 1,
+            original_span = (start = 1.0, stop = 1),
+        )],
+    )
+    @test_throws ArgumentError Suslin._steinberg_optimization_certificate(
+        original_factors,
+        copy(original_factors),
+        [(
+            rule_name = :span_replay_probe,
+            original_factor_count = 1,
+            optimized_factor_count = 1,
+            original_span = (start = 0, stop = 0),
+        )],
+    )
+    @test_throws ArgumentError Suslin._steinberg_optimization_certificate(
+        original_factors,
+        copy(original_factors),
+        [(
+            rule_name = :span_replay_probe,
+            original_factor_count = 1,
+            optimized_factor_count = 1,
+            original_span = (start = 1, stop = 2),
+        )],
+    )
+    @test_throws ArgumentError Suslin._steinberg_optimization_certificate(
+        original_factors,
+        copy(original_factors),
+        [(
+            rule_name = :span_replay_probe,
+            original_factor_count = 1,
+            optimized_factor_count = 1,
+            optimized_span = (start = 1, stop = 2),
+        )],
+    )
+
     R_alt, (u, v) = Oscar.polynomial_ring(QQ, ["u", "v"])
     mixed_ring_factors = copy(original_factors)
     mixed_ring_factors[2] = elementary_matrix(n, 1, 2, u + one(R_alt), R_alt)
