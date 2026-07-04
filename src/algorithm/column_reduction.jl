@@ -2286,13 +2286,15 @@ function _laurent_row_preconditioning_synthesis_coefficients(
     R,
     target_idx::Int,
     source_indices,
+    ;
+    solver = solve_laurent_linear,
 )
     isempty(source_indices) && return nothing
 
     A = matrix(R, 1, length(source_indices), [column[idx] for idx in source_indices])
     B = matrix(R, 1, 1, [one(R) - column[target_idx]])
     solution = try
-        solve_laurent_linear(A, B)
+        solver(A, B)
     catch err
         err isa InterruptException && rethrow()
         _laurent_row_preconditioning_solve_failure(err) && return nothing

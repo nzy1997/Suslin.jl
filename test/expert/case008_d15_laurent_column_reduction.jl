@@ -244,6 +244,20 @@ end
         1,
         (),
     ) === nothing
+    @test Suslin._laurent_row_preconditioning_synthesis_coefficients(
+        column,
+        R,
+        1,
+        (2,);
+        solver = (A, B) -> error("No exact solution exists for A * U = B"),
+    ) === nothing
+    @test_throws ErrorException Suslin._laurent_row_preconditioning_synthesis_coefficients(
+        column,
+        R,
+        1,
+        (2,);
+        solver = (A, B) -> error("unexpected row-preconditioning solve failure"),
+    )
 
     fixed_mismatch = (;
         target_index = 1,
