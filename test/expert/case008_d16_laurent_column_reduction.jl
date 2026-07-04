@@ -61,6 +61,27 @@ function _case008_d16_tamper_stage_coefficient(cert)
     )
 end
 
+function _case008_d16_tamper_stage_source_type(cert)
+    stages = collect(cert.stages)
+    stage_idx = findfirst(stage -> stage.kind == :laurent_elementary_row_preconditioning, stages)
+    stage_idx === nothing && error("missing row-preconditioning stage")
+    stage = stages[stage_idx]
+    source_indices = collect(stage.source_indices)
+    source_indices[1] = Float64(source_indices[1])
+    stages[stage_idx] = merge(
+        stage,
+        (; source_index = Float64(stage.source_index), source_indices = tuple(source_indices...)),
+    )
+    return Suslin.ECPColumnReductionCertificate(
+        cert.original_column,
+        cert.ring,
+        tuple(stages...),
+        cert.factors,
+        cert.final_column,
+        cert.verification,
+    )
+end
+
 function _case008_d16_diagnostic_stage_detail(diagnostic, stage::Symbol)
     hasproperty(diagnostic, :stage_details) || return nothing
     idx = findfirst(detail -> detail.stage == stage, diagnostic.stage_details)
@@ -93,6 +114,9 @@ end
     )
     @test !Suslin.verify_ecp_column_reduction(
         _case008_d16_tamper_stage_coefficient(certificate),
+    )
+    @test !Suslin.verify_ecp_column_reduction(
+        _case008_d16_tamper_stage_source_type(certificate),
     )
 
     diagnostic = Suslin.diagnose_unimodular_column_reduction(column, R)

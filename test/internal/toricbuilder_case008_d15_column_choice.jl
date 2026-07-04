@@ -61,6 +61,14 @@ function _case008_d15_candidate_report(M, R, column_index::Int, current_index::I
         normalized_precondition_status = _case008_d15_detail_property(normalization, :normalized_status),
         normalized_failure_code = _case008_d15_detail_property(normalization, :normalized_failure_code),
         row_preconditioning_outcome = _case008_d15_detail_property(row_preconditioning, :outcome),
+        row_preconditioning_target_index =
+            _case008_d15_detail_property(row_preconditioning, :target_index),
+        row_preconditioning_source_indices =
+            _case008_d15_detail_property(row_preconditioning, :source_indices),
+        row_preconditioning_coefficient_strategy =
+            _case008_d15_detail_property(row_preconditioning, :coefficient_strategy),
+        row_preconditioning_coefficient_count =
+            _case008_d15_detail_property(row_preconditioning, :coefficient_count),
         row_preconditioning_transformed_stage =
             _case008_d15_detail_property(row_preconditioning, :transformed_stage),
         status,
@@ -134,6 +142,10 @@ end
         :normalized_precondition_status,
         :normalized_failure_code,
         :row_preconditioning_outcome,
+        :row_preconditioning_target_index,
+        :row_preconditioning_source_indices,
+        :row_preconditioning_coefficient_strategy,
+        :row_preconditioning_coefficient_count,
         :row_preconditioning_transformed_stage,
         :status,
         :failure_code,
@@ -149,9 +161,16 @@ end
     @test current.column_index == 15
     @test current.is_unimodular
     @test current.unit_entry_count == 0
-    @test current.status == :unsupported
-    @test current.failure_code == :unsupported_laurent_column_family
-    @test current.supported_by_current_reducer == false
+    @test current.status == :supported
+    @test current.failure_code === nothing
+    @test current.row_preconditioning_outcome == :supported
+    @test current.row_preconditioning_target_index == 1
+    @test current.row_preconditioning_source_indices == Tuple(2:15)
+    @test current.row_preconditioning_coefficient_strategy ==
+          :target_unit_laurent_linear_synthesis
+    @test current.row_preconditioning_coefficient_count == 14
+    @test current.row_preconditioning_transformed_stage == :unit_entry
+    @test current.supported_by_current_reducer
     @test current.diagnostic_cached == false
     @test current.diagnostic_cache_reason === nothing
 
