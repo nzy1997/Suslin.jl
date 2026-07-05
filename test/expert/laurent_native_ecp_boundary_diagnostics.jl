@@ -5,6 +5,10 @@ using Oscar
 include(joinpath(@__DIR__, "..", "fixtures", "toricbuilder_case008_d14_column_boundary.jl"))
 include(joinpath(@__DIR__, "..", "fixtures", "toricbuilder_case008_d15_column_boundary.jl"))
 
+struct _EntryWithoutCoefficientIterator end
+
+Base.iszero(::_EntryWithoutCoefficientIterator) = false
+
 function _diagnostic_stage_detail(diagnostic, stage::Symbol)
     idx = findfirst(detail -> detail.stage == stage, diagnostic.stage_details)
     return idx === nothing ? nothing : diagnostic.stage_details[idx]
@@ -28,6 +32,11 @@ end
         "\"expert/laurent_native_ecp_boundary_diagnostics.jl\"",
         runtests,
     )
+
+    coefficient_failure_entry = _EntryWithoutCoefficientIterator()
+    @test Suslin._column_reduction_entry_term_count(coefficient_failure_entry) === nothing
+    @test Suslin._column_reduction_max_entry_term_count([coefficient_failure_entry]) === nothing
+    @test Suslin._laurent_diagnostic_large_support_decline([coefficient_failure_entry]) === nothing
 
     d14_fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture()
     @test ToricBuilderCase008D14ColumnBoundary.validate_boundary_fixture(d14_fixture) == :ok
