@@ -129,6 +129,11 @@ end
     column = fixture.failing_column
     target = _case008_d15_target_column(R, length(column))
 
+    @test Suslin._prefer_laurent_row_preconditioning_before_base(column, R)
+
+    peel_left_factors = Suslin._laurent_column_peel_left_factors(column, R)
+    @test _case008_d15_apply_factors(peel_left_factors, column, R) == target
+
     factors = Suslin.reduce_unimodular_column(column, R)
     @test _case008_d15_apply_factors(factors, column, R) == target
 
@@ -237,6 +242,10 @@ end
     R, (u, _) = Suslin.suslin_laurent_polynomial_ring(GF(2), ["guard_u", "guard_v"])
     column = [idx == 1 ? zero(R) : idx == 2 ? one(R) : zero(R) for idx in 1:15]
     column16 = [idx == 1 ? zero(R) : idx == 10 ? one(R) : zero(R) for idx in 1:16]
+    direct_unit_column = [idx == 1 ? one(R) : idx == 2 ? u : zero(R) for idx in 1:15]
+
+    @test !Suslin._prefer_laurent_row_preconditioning_before_base(direct_unit_column, R)
+    @test !Suslin._prefer_laurent_row_preconditioning_before_base(column16, R)
 
     @test Suslin._laurent_row_preconditioning_synthesis_coefficients(
         column,

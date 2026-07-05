@@ -2218,6 +2218,13 @@ function _laurent_row_preconditioning_specs(column::AbstractVector, R)
     return ()
 end
 
+function _prefer_laurent_row_preconditioning_before_base(column::AbstractVector, R)::Bool
+    _is_laurent_polynomial_ring(R) || return false
+    findfirst(is_unit, column) === nothing || return false
+    specs = _laurent_row_preconditioning_specs(column, R)
+    return any(spec -> spec.coefficient_strategy == :target_unit_laurent_linear_synthesis, specs)
+end
+
 function _reduce_laurent_unimodular_column_base_certificate(column::AbstractVector, R)
     unit_idx = findfirst(is_unit, column)
     unit_idx !== nothing && return _unit_entry_reduction_certificate_stage(column, unit_idx, R)
@@ -2487,11 +2494,19 @@ function _reduce_via_laurent_elementary_row_preconditioning_certificate(column::
 end
 
 function _reduce_laurent_unimodular_column_certificate(column::AbstractVector, R)
+    prefer_row_preconditioning = _prefer_laurent_row_preconditioning_before_base(column, R)
+    if prefer_row_preconditioning
+        row_preconditioned = _reduce_via_laurent_elementary_row_preconditioning_certificate(column, R)
+        row_preconditioned !== nothing && return row_preconditioned
+    end
+
     base = _reduce_laurent_unimodular_column_base_certificate(column, R)
     base !== nothing && return base
 
-    row_preconditioned = _reduce_via_laurent_elementary_row_preconditioning_certificate(column, R)
-    row_preconditioned !== nothing && return row_preconditioned
+    if !prefer_row_preconditioning
+        row_preconditioned = _reduce_via_laurent_elementary_row_preconditioning_certificate(column, R)
+        row_preconditioned !== nothing && return row_preconditioned
+    end
 
     return nothing
 end
