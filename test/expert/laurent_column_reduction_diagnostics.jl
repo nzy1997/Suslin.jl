@@ -93,6 +93,8 @@ end
     @test case008_d15.ring_profile.kind == :laurent_polynomial
     @test case008_d15.ring_profile.generators == ("u", "v")
     @test :laurent_elementary_row_preconditioning in case008_d15.attempted_stages
+    @test !(:laurent_native_ecp_boundary in case008_d15.attempted_stages)
+    @test _diagnostic_stage_detail(case008_d15, :laurent_native_ecp_boundary) === nothing
     @test !(:case008_special_case in case008_d15.attempted_stages)
     case008_d15_preconditioned =
         _diagnostic_stage_detail(case008_d15, :laurent_elementary_row_preconditioning)
@@ -119,6 +121,8 @@ end
     @test case008_d16.failure_code === nothing
     @test case008_d16.column_length == 16
     @test :laurent_elementary_row_preconditioning in case008_d16.attempted_stages
+    @test !(:laurent_native_ecp_boundary in case008_d16.attempted_stages)
+    @test _diagnostic_stage_detail(case008_d16, :laurent_native_ecp_boundary) === nothing
     @test !(:case008_special_case in case008_d16.attempted_stages)
     case008_d16_preconditioned =
         _diagnostic_stage_detail(case008_d16, :laurent_elementary_row_preconditioning)
@@ -168,13 +172,23 @@ end
     @test unsupported.ring_profile.kind == :laurent_polynomial
     @test unsupported.ring_profile.generators == ("x", "y")
     @test occursin("unsupported exact unimodular column reduction", unsupported.message)
-    for stage in (:unit_entry, :laurent_unit_creation, :laurent_witness_unit, :laurent_normalization, :witness_unit, :monicity_normalization)
+    for stage in (:unit_entry, :laurent_unit_creation, :laurent_witness_unit, :laurent_normalization, :witness_unit, :monicity_normalization, :laurent_elementary_row_preconditioning, :laurent_native_ecp_boundary)
         @test stage in unsupported.attempted_stages
     end
     @test hasproperty(unsupported, :stage_details)
     _test_diagnostic_stage_details_shape(unsupported)
     @test length(unsupported.stage_details) == length(unsupported.attempted_stages)
     @test !any(detail -> detail.outcome == :supported, unsupported.stage_details)
+    unsupported_boundary = _diagnostic_stage_detail(unsupported, :laurent_native_ecp_boundary)
+    @test unsupported_boundary !== nothing
+    @test unsupported_boundary.outcome == :staged_boundary
+    @test unsupported_boundary.boundary == :laurent_native_ecp
+    @test unsupported_boundary.requires_descent_measure == true
+    @test unsupported_boundary.requires_link_witness == true
+    @test unsupported_boundary.requires_endpoint_reduction == true
+    @test unsupported_boundary.requires_laurent_normality_replay == true
+    @test unsupported_boundary.requires_recursive_peel_integration == true
+    @test unsupported_boundary.fallback_policy == :diagnostic_only
 
     d = nrows(fixture.normalized_matrix)
     supported_column = [fixture.normalized_matrix[row, d] for row in 1:d]

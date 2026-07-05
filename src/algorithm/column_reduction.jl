@@ -216,10 +216,18 @@ function diagnose_unimodular_column_reduction(
     v::AbstractVector,
     R;
     allow_general_ecp_pipeline::Bool = true,
+    assume_unimodular::Bool = false,
+    laurent_large_support_diagnostic_decline::Bool = false,
 )
     ring_profile = _column_reduction_ring_profile(R)
     column_length = length(v)
-    validation = _diagnose_unimodular_column_preconditions(v, R, ring_profile, column_length)
+    validation = _diagnose_unimodular_column_preconditions(
+        v,
+        R,
+        ring_profile,
+        column_length;
+        check_unimodularity = !assume_unimodular,
+    )
     validation.status == :ok || return validation.diagnostic
     return _diagnose_unimodular_column_reduction_validated(
         validation.column,
@@ -227,6 +235,7 @@ function diagnose_unimodular_column_reduction(
         ring_profile,
         column_length,
         allow_general_ecp_pipeline = allow_general_ecp_pipeline,
+        laurent_large_support_diagnostic_decline = laurent_large_support_diagnostic_decline,
     )
 end
 
@@ -480,7 +489,60 @@ function _column_reduction_stage_detail(stage::Symbol, R, outcome::Symbol; kwarg
     )
 end
 
-function _diagnose_unimodular_column_preconditions(v::AbstractVector, R, ring_profile, column_length::Int)
+const _LAURENT_DIAGNOSTIC_SUPPORT_TERM_LIMIT = 1000
+
+function _column_reduction_entry_term_count(entry)
+    try
+        iszero(entry) && return 0
+        return length(collect(coefficients(entry)))
+    catch err
+        err isa InterruptException && rethrow()
+        return nothing
+    end
+end
+
+function _column_reduction_max_entry_term_count(column::AbstractVector)
+    max_terms = 0
+    for entry in column
+        term_count = _column_reduction_entry_term_count(entry)
+        term_count === nothing && return nothing
+        max_terms = max(max_terms, term_count)
+    end
+    return max_terms
+end
+
+function _laurent_diagnostic_large_support_decline(column::AbstractVector)
+    max_entry_term_count = _column_reduction_max_entry_term_count(column)
+    max_entry_term_count === nothing && return nothing
+    max_entry_term_count <= _LAURENT_DIAGNOSTIC_SUPPORT_TERM_LIMIT && return nothing
+    return (;
+        max_entry_term_count,
+        support_term_limit = _LAURENT_DIAGNOSTIC_SUPPORT_TERM_LIMIT,
+    )
+end
+
+function _laurent_native_ecp_boundary_stage_detail(R)
+    return _column_reduction_stage_detail(
+        :laurent_native_ecp_boundary,
+        R,
+        :staged_boundary;
+        boundary = :laurent_native_ecp,
+        requires_descent_measure = true,
+        requires_link_witness = true,
+        requires_endpoint_reduction = true,
+        requires_laurent_normality_replay = true,
+        requires_recursive_peel_integration = true,
+        fallback_policy = :diagnostic_only,
+    )
+end
+
+function _diagnose_unimodular_column_preconditions(
+    v::AbstractVector,
+    R,
+    ring_profile,
+    column_length::Int;
+    check_unimodularity::Bool = true,
+)
     try
         Base.require_one_based_indexing(v)
     catch err
@@ -529,6 +591,8 @@ function _diagnose_unimodular_column_preconditions(v::AbstractVector, R, ring_pr
         )
     end
 
+    check_unimodularity || return (; status = :ok, column)
+
     is_unimodular = try
         is_unimodular_column(column, R)
     catch err
@@ -566,11 +630,18 @@ function _diagnose_unimodular_column_reduction_validated(
     ring_profile,
     column_length::Int;
     allow_general_ecp_pipeline::Bool = true,
+    laurent_large_support_diagnostic_decline::Bool = false,
 )
     attempted = Symbol[]
     details = Any[]
     result = _is_laurent_polynomial_ring(R) ?
-        _diagnose_laurent_unimodular_column_reduction(column, R, attempted, details) :
+        _diagnose_laurent_unimodular_column_reduction(
+            column,
+            R,
+            attempted,
+            details;
+            laurent_large_support_diagnostic_decline,
+        ) :
         _diagnose_polynomial_unimodular_column_reduction(
             column,
             R,
@@ -4828,7 +4899,8 @@ function _diagnose_laurent_unimodular_column_reduction(
     column::AbstractVector,
     R,
     attempted::Vector{Symbol},
-    details::Vector,
+    details::Vector;
+    laurent_large_support_diagnostic_decline::Bool = false,
 )
     push!(attempted, :unit_entry)
     unit_idx = findfirst(is_unit, column)
@@ -4856,15 +4928,27 @@ function _diagnose_laurent_unimodular_column_reduction(
     push!(details, _column_reduction_stage_detail(:laurent_unit_creation, R, :no_unit_creation_candidate))
 
     push!(attempted, :laurent_witness_unit)
-    witness = _laurent_unimodular_witness(column, R)
+    witness_decline = laurent_large_support_diagnostic_decline ?
+        _laurent_diagnostic_large_support_decline(column) :
+        nothing
+    witness = if witness_decline === nothing
+        _laurent_unimodular_witness(column, R)
+    else
+        nothing
+    end
     if witness === nothing
+        outcome = witness_decline === nothing ?
+            :witness_unavailable :
+            :witness_support_too_large
+        witness_decline_detail = witness_decline === nothing ? (;) : witness_decline
         push!(
             details,
             _column_reduction_stage_detail(
                 :laurent_witness_unit,
                 R,
-                :witness_unavailable;
+                outcome;
                 witness_unit_index = nothing,
+                witness_decline_detail...,
             ),
         )
     else
@@ -4898,6 +4982,26 @@ function _diagnose_laurent_unimodular_column_reduction(
     normalization = normalize_laurent_object(column)
     poly_column = normalization.normalized_object
     P = normalization.metadata.polynomial_ring
+
+    normalized_decline = laurent_large_support_diagnostic_decline ?
+        _laurent_diagnostic_large_support_decline(poly_column) :
+        nothing
+    if normalized_decline !== nothing
+        push!(
+            details,
+            _column_reduction_stage_detail(
+                :laurent_normalization,
+                R,
+                :delegation_declined_large_support;
+                normalized_column_length = length(poly_column),
+                normalized_ring_kind = _column_reduction_ring_kind(P),
+                normalized_status = :declined,
+                normalized_failure_code = :support_too_large,
+                normalized_decline...,
+            ),
+        )
+        return _diagnose_laurent_row_preconditioning(column, R, attempted, details)
+    end
 
     normalized_unimodular = try
         is_unimodular_column(poly_column, P)
@@ -5009,7 +5113,9 @@ function _diagnose_laurent_row_preconditioning(
             transformed_stage = nothing,
         ),
     )
-    return (; supported = false, stage = nothing)
+    push!(attempted, :laurent_native_ecp_boundary)
+    push!(details, _laurent_native_ecp_boundary_stage_detail(R))
+    return (; supported = false, stage = :laurent_native_ecp_boundary)
 end
 
 function _diagnose_polynomial_unimodular_column_reduction(
