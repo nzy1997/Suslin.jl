@@ -562,14 +562,24 @@ function _laurent_column_peel_recursive(
         final_2x2
 end
 
+function _laurent_column_peel_left_factors(last_column::AbstractVector, R)
+    Base.require_one_based_indexing(last_column)
+    d = length(last_column)
+    target_column = _column_peel_target_column(R, d)
+    matrix(R, d, 1, collect(last_column)) == target_column &&
+        return typeof(identity_matrix(R, d))[]
+
+    result = _reduce_laurent_unimodular_column_certificate(last_column, R)
+    result !== nothing || _throw_unsupported_unimodular_column_reduction(last_column, R)
+    return result.factors
+end
+
 function _laurent_column_peel_step(current)
     R = base_ring(current)
     d = nrows(current)
     last_column = [current[row, d] for row in 1:d]
     target_column = _column_peel_target_column(R, d)
-    left_factors = matrix(R, d, 1, last_column) == target_column ?
-        typeof(identity_matrix(R, d))[] :
-        reduce_unimodular_column(last_column, R)
+    left_factors = _laurent_column_peel_left_factors(last_column, R)
     left_product = _factor_product(left_factors, R, d)
     after_left = left_product * current
     recorded_column = matrix(R, d, 1, last_column)
