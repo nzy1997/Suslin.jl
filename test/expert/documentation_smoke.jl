@@ -162,6 +162,13 @@ function _issue188_overclaim_reason(lower_squashed)
         return :global_optimality
     end
 
+    has_issue188_context =
+        occursin("#188", lower_squashed) ||
+        occursin("issue 188", lower_squashed) ||
+        occursin("steinberg", lower_squashed) ||
+        occursin("optimizer", lower_squashed) ||
+        occursin("optimize_elementary_factor_sequence", lower_squashed)
+
     if (
         occursin("laurent", lower_squashed) || occursin("toricbuilder", lower_squashed)
     ) && (
@@ -173,6 +180,10 @@ function _issue188_overclaim_reason(lower_squashed)
         occursin("not claim", lower_squashed) ||
         occursin("separate", lower_squashed) ||
         occursin("out of scope", lower_squashed)
+    ) && (
+        has_issue188_context ||
+        occursin("support is now mainline", lower_squashed) ||
+        occursin("mainline support is now", lower_squashed)
     )
         return :laurent_toricbuilder_scope
     end
@@ -190,6 +201,7 @@ end
 
 function _assert_issue188_optimizer_contract(text)
     squashed = _squash_whitespace(text)
+    lower_squashed = lowercase(squashed)
     @test occursin(
         "The optional Steinberg factor-count optimizer (#188) is available only through `optimize_elementary_factor_sequence(factors; rules = :safe)`",
         squashed,
@@ -197,7 +209,7 @@ function _assert_issue188_optimizer_contract(text)
     @test occursin("It is not enabled by default", squashed)
     @test occursin(
         "every optimized sequence is accepted only through exact product verification by `verify_steinberg_optimization_certificate`",
-        squashed,
+        lower_squashed,
     )
     for rule_name in (
         ":identity_removal",
@@ -222,6 +234,11 @@ function _assert_issue188_synthetic_overclaim_guardrails()
     @testset "issue #188 overclaim guardrails" begin
         @test isnothing(_issue188_overclaim_reason("the optional optimizer is not enabled by default"))
         @test isnothing(_issue188_overclaim_reason("the optimizer does not claim global minimum factor counts"))
+        @test isnothing(
+            _issue188_overclaim_reason(
+                "the laurent determinant support note for issue #38 remains separate from #188",
+            ),
+        )
         @test isnothing(
             _issue188_overclaim_reason(
                 "laurent/toricbuilder mainline support remains separate from #188 and stays out of scope",
