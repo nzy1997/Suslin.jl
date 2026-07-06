@@ -82,6 +82,7 @@ const TEST_GROUP_FILES = Dict(
         "expert/laurent_column_reduction_diagnostics.jl",
         "expert/laurent_native_ecp_boundary_diagnostics.jl",
         "expert/case008_d14_laurent_descent_profile.jl",
+        "expert/case008_d14_laurent_descent_measure_contract.jl",
         "expert/case008_d21_laurent_column_reduction.jl",
         "expert/case008_d15_laurent_column_reduction.jl",
         "expert/case008_d16_laurent_column_reduction.jl",
