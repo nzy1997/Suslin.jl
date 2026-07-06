@@ -11,8 +11,6 @@ const LAURENT_DESCENT_STEP_CERTIFICATE_FIELDS = (
     :dimension,
     :ring_generators,
     :operation,
-    :before_profile,
-    :after_profile,
     :before_measure,
     :after_measure,
     :status,
@@ -187,18 +185,6 @@ function validate_laurent_descent_step_certificate(cert, column, R)::Symbol
         )
         operation_status == :ok || return operation_status
 
-        hasproperty(cert.before_profile, :case_id) ||
-            return :missing_profile_fields
-        cert.case_id == cert.before_profile.case_id || return :wrong_case
-
-        expected_before_profile = laurent_descent_step_profile(
-            column,
-            R;
-            case_id = cert.case_id,
-        )
-        cert.before_profile == expected_before_profile ||
-            return :stale_before_profile
-
         expected_before_measure = _case008_d14_measure_from_column(
             column,
             R;
@@ -212,13 +198,33 @@ function validate_laurent_descent_step_certificate(cert, column, R)::Symbol
             R,
             cert.operation,
         )
-        expected_after_profile = laurent_descent_step_profile(
-            after_column,
-            R;
-            case_id = cert.case_id,
-        )
-        cert.after_profile == expected_after_profile ||
-            return :stale_after_profile
+        if hasproperty(cert, :before_profile)
+            hasproperty(cert.before_profile, :case_id) ||
+                return :missing_profile_fields
+            cert.case_id == cert.before_profile.case_id || return :wrong_case
+
+            expected_before_profile = laurent_descent_step_profile(
+                column,
+                R;
+                case_id = cert.case_id,
+            )
+            cert.before_profile == expected_before_profile ||
+                return :stale_before_profile
+        end
+
+        if hasproperty(cert, :after_profile)
+            hasproperty(cert.after_profile, :case_id) ||
+                return :missing_profile_fields
+            cert.case_id == cert.after_profile.case_id || return :wrong_case
+
+            expected_after_profile = laurent_descent_step_profile(
+                after_column,
+                R;
+                case_id = cert.case_id,
+            )
+            cert.after_profile == expected_after_profile ||
+                return :stale_after_profile
+        end
 
         expected_after_measure = _case008_d14_measure_from_column(
             after_column,
@@ -268,6 +274,22 @@ end
         before_profile,
         operation,
     )
+    minimal_cert = (;
+        case_id = cert.case_id,
+        dimension = cert.dimension,
+        ring_generators = cert.ring_generators,
+        operation = cert.operation,
+        before_measure = cert.before_measure,
+        after_measure = cert.after_measure,
+        status = cert.status,
+        replay_status = cert.replay_status,
+        measure_relation = cert.measure_relation,
+    )
+    @test validate_laurent_descent_step_certificate(
+        minimal_cert,
+        column,
+        R,
+    ) == :ok
 
     @test cert.case_id == "synthetic"
     @test cert.dimension == 2
