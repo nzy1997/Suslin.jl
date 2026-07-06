@@ -100,6 +100,33 @@ end
         fixture.ring,
     ) == :wrong_ring_generators
 
+    missing_ring_generators_operation = Base.structdiff(
+        INTERNAL_D14_OPERATION,
+        (; ring_generators = INTERNAL_D14_OPERATION.ring_generators),
+    )
+    missing_ring_generators_cert = merge(
+        cert,
+        (; operation = missing_ring_generators_operation),
+    )
+    @test Suslin._validate_laurent_descent_step_certificate(
+        missing_ring_generators_cert,
+        fixture.failing_column,
+        fixture.ring,
+    ) == :malformed_operation
+
+    bad_target = merge(INTERNAL_D14_OPERATION, (; target_index = 0))
+    @test_throws ArgumentError Suslin._replay_laurent_elementary_entry_addition(
+        fixture.failing_column,
+        fixture.ring,
+        bad_target,
+    )
+    bad_target_cert = merge(cert, (; operation = bad_target))
+    @test Suslin._validate_laurent_descent_step_certificate(
+        bad_target_cert,
+        fixture.failing_column,
+        fixture.ring,
+    ) == :malformed_operation
+
     bad_source = merge(INTERNAL_D14_OPERATION, (; source_index = 0))
     @test_throws ArgumentError Suslin._replay_laurent_elementary_entry_addition(
         fixture.failing_column,

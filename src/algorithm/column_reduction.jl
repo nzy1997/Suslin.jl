@@ -503,6 +503,7 @@ const _LAURENT_DESCENT_OPERATION_FIELDS = (
     :source_index,
     :coefficient,
     :exponent,
+    :ring_generators,
 )
 const _LAURENT_DESCENT_CERTIFICATE_FIELDS = (
     :case_id,
@@ -662,10 +663,8 @@ function _laurent_descent_operation_status(operation, n::Int, R)::Symbol
     _laurent_descent_has_fields(operation, _LAURENT_DESCENT_OPERATION_FIELDS) ||
         return :malformed_operation
     operation.family == :entry_addition || return :malformed_operation
-    if hasproperty(operation, :ring_generators)
-        operation.ring_generators == _laurent_descent_ring_generators(R) ||
-            return :wrong_ring_generators
-    end
+    operation.ring_generators == _laurent_descent_ring_generators(R) ||
+        return :wrong_ring_generators
     try
         target = _laurent_descent_checked_entry_index(
             operation.target_index,
