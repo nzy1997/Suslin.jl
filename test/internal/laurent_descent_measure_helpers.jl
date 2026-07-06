@@ -189,4 +189,12 @@ end
         fixture.failing_column,
         fixture.ring,
     ) == :stale_after_measure
+
+    bad_replay_column = Any[fixture.failing_column...]
+    bad_replay_column[1] = nothing
+    @test Suslin._validate_laurent_descent_step_certificate(
+        cert,
+        bad_replay_column,
+        fixture.ring,
+    ) == :operation_replay_failed
 end
