@@ -14,11 +14,16 @@ function _diagnostic_stage_detail(diagnostic, stage::Symbol)
     return idx === nothing ? nothing : diagnostic.stage_details[idx]
 end
 
-function _assert_laurent_native_ecp_boundary_detail(detail)
+function _assert_laurent_native_ecp_boundary_detail(
+    detail;
+    requires_descent_measure::Bool = true,
+    certified_descent_scope = nothing,
+)
     @test detail !== nothing
     @test detail.outcome == :staged_boundary
     @test detail.boundary == :laurent_native_ecp
-    @test detail.requires_descent_measure == true
+    @test detail.requires_descent_measure == requires_descent_measure
+    @test detail.certified_descent_scope == certified_descent_scope
     @test detail.requires_link_witness == true
     @test detail.requires_endpoint_reduction == true
     @test detail.requires_laurent_normality_replay == true
@@ -54,9 +59,12 @@ end
     @test :laurent_native_ecp_boundary in d14.attempted_stages
     preconditioning_idx = findfirst(==(:laurent_elementary_row_preconditioning), d14.attempted_stages)
     boundary_idx = findfirst(==(:laurent_native_ecp_boundary), d14.attempted_stages)
+    descent_idx = findfirst(==(:laurent_descent_step_certificate), d14.attempted_stages)
     @test preconditioning_idx !== nothing
     @test boundary_idx !== nothing
+    @test descent_idx !== nothing
     @test boundary_idx > preconditioning_idx
+    @test boundary_idx > descent_idx
     @test length(d14.stage_details) == length(d14.attempted_stages)
     d14_witness = _diagnostic_stage_detail(d14, :laurent_witness_unit)
     @test d14_witness !== nothing
@@ -68,8 +76,25 @@ end
     @test d14_normalization.normalized_status == :declined
     @test d14_normalization.normalized_failure_code == :support_too_large
     @test d14_normalization.max_entry_term_count == 3734
+    descent = _diagnostic_stage_detail(d14, :laurent_descent_step_certificate)
+    @test descent.outcome == :certified_descent_step
+    @test descent.descent_scope == :single_certified_step
+    @test descent.operation_family == :entry_addition
+    @test descent.target_index == 1
+    @test descent.source_index == 2
+    @test descent.coefficient == 1
+    @test descent.exponent == (-1, 1)
+    @test descent.measure_relation == :strict_decrease
+    @test descent.replay_status == :ok
+    @test descent.next_boundary == :laurent_link_witness
+    @test Suslin._strictly_decreases_laurent_measure(
+        descent.before_measure,
+        descent.after_measure,
+    )
     _assert_laurent_native_ecp_boundary_detail(
-        _diagnostic_stage_detail(d14, :laurent_native_ecp_boundary),
+        _diagnostic_stage_detail(d14, :laurent_native_ecp_boundary);
+        requires_descent_measure = false,
+        certified_descent_scope = :single_certified_step,
     )
 
     d15_fixture = ToricBuilderCase008D15ColumnBoundary.boundary_fixture()
@@ -80,6 +105,7 @@ end
     @test d15.status == :supported
     @test d15.failure_code === nothing
     @test :laurent_elementary_row_preconditioning in d15.attempted_stages
+    @test !(:laurent_descent_step_certificate in d15.attempted_stages)
     @test !(:laurent_native_ecp_boundary in d15.attempted_stages)
     @test _diagnostic_stage_detail(d15, :laurent_native_ecp_boundary) === nothing
     d15_preconditioned =
@@ -118,5 +144,19 @@ end
     @test non_unimodular_diagnostic.failure_code == :not_unimodular
     @test isempty(non_unimodular_diagnostic.attempted_stages)
     @test isempty(non_unimodular_diagnostic.stage_details)
+    @test !(:laurent_descent_step_certificate in non_unimodular_diagnostic.attempted_stages)
     @test !(:laurent_native_ecp_boundary in non_unimodular_diagnostic.attempted_stages)
+
+    tampered_column = copy(d14_fixture.failing_column)
+    tampered_column[1] = tampered_column[1] + one(d14_fixture.ring)
+    tampered = Suslin.diagnose_unimodular_column_reduction(
+        tampered_column,
+        d14_fixture.ring;
+        assume_unimodular = true,
+        laurent_large_support_diagnostic_decline = true,
+    )
+    @test tampered.status == :unsupported
+    @test !(:laurent_descent_step_certificate in tampered.attempted_stages)
+    tampered_boundary = _diagnostic_stage_detail(tampered, :laurent_native_ecp_boundary)
+    @test tampered_boundary.requires_descent_measure == true
 end

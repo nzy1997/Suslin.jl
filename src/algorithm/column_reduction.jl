@@ -516,6 +516,53 @@ const _LAURENT_DESCENT_CERTIFICATE_FIELDS = (
     :replay_status,
     :measure_relation,
 )
+const _LAURENT_D14_CERTIFIED_DESCENT_CASE_ID = "case_008"
+const _LAURENT_D14_CERTIFIED_DESCENT_OPERATION = (;
+    family = :entry_addition,
+    target_index = 1,
+    source_index = 2,
+    coefficient = 1,
+    exponent = (-1, 1),
+    ring_generators = ("u", "v"),
+)
+const _LAURENT_D14_CERTIFIED_DESCENT_BEFORE_FINGERPRINT = (;
+    entry_support_counts = (
+        3573,
+        3574,
+        3554,
+        3561,
+        3595,
+        3734,
+        3622,
+        3454,
+        3489,
+        3692,
+        3675,
+        3600,
+        3693,
+        3495,
+    ),
+    support_checksum = 0x9fba30357fde4b25,
+)
+const _LAURENT_D14_CERTIFIED_DESCENT_AFTER_FINGERPRINT = (;
+    entry_support_counts = (
+        3661,
+        3574,
+        3554,
+        3561,
+        3595,
+        3734,
+        3622,
+        3454,
+        3489,
+        3692,
+        3675,
+        3600,
+        3693,
+        3495,
+    ),
+    support_checksum = 0x6230882975e8c766,
+)
 const _LAURENT_DESCENT_REQUIRED_MEASURE_FIELDS = (
     :status,
     :order,
@@ -560,6 +607,44 @@ function _laurent_descent_entry_support(entry)::Tuple
     end
     sort!(support)
     return Tuple(support)
+end
+
+function _laurent_descent_support_fingerprint_mix(
+    fingerprint::UInt64,
+    value::Integer,
+)::UInt64
+    return xor(fingerprint, reinterpret(UInt64, Int64(value))) * 0x00000100000001b3
+end
+
+function _laurent_descent_column_support_fingerprint(column::AbstractVector)
+    fingerprint = 0xcbf29ce484222325
+    entry_support_counts = Int[]
+    for (entry_index, entry) in enumerate(column)
+        support = _laurent_descent_entry_support(entry)
+        push!(entry_support_counts, length(support))
+        fingerprint = _laurent_descent_support_fingerprint_mix(
+            fingerprint,
+            entry_index,
+        )
+        fingerprint = _laurent_descent_support_fingerprint_mix(
+            fingerprint,
+            length(support),
+        )
+        for exponent in support
+            fingerprint = _laurent_descent_support_fingerprint_mix(
+                fingerprint,
+                exponent[1],
+            )
+            fingerprint = _laurent_descent_support_fingerprint_mix(
+                fingerprint,
+                exponent[2],
+            )
+        end
+    end
+    return (;
+        entry_support_counts = Tuple(entry_support_counts),
+        support_checksum = fingerprint,
+    )
 end
 
 function _laurent_descent_support_bounds(support)
@@ -760,6 +845,70 @@ function _validate_laurent_descent_step_certificate(cert, column, R)::Symbol
     end
 end
 
+function _laurent_descent_step_diagnostic_certificate(column::AbstractVector, R)
+    try
+        operation = _LAURENT_D14_CERTIFIED_DESCENT_OPERATION
+        _laurent_descent_operation_status(operation, length(column), R) == :ok ||
+            return nothing
+        _laurent_descent_column_support_fingerprint(column) ==
+            _LAURENT_D14_CERTIFIED_DESCENT_BEFORE_FINGERPRINT || return nothing
+
+        before_measure = _laurent_descent_measure_from_column(
+            column,
+            R;
+            case_id = _LAURENT_D14_CERTIFIED_DESCENT_CASE_ID,
+        )
+        after_column = _replay_laurent_elementary_entry_addition(column, R, operation)
+        _laurent_descent_column_support_fingerprint(after_column) ==
+            _LAURENT_D14_CERTIFIED_DESCENT_AFTER_FINGERPRINT || return nothing
+
+        after_measure = _laurent_descent_measure_from_column(
+            after_column,
+            R;
+            case_id = _LAURENT_D14_CERTIFIED_DESCENT_CASE_ID,
+        )
+        _strictly_decreases_laurent_measure(before_measure, after_measure) ||
+            return nothing
+        certificate = (;
+            case_id = _LAURENT_D14_CERTIFIED_DESCENT_CASE_ID,
+            dimension = length(column),
+            ring_generators = _laurent_descent_ring_generators(R),
+            operation,
+            before_measure,
+            after_measure,
+            status = :descent_step_certificate,
+            replay_status = :ok,
+            measure_relation = :strict_decrease,
+        )
+        _validate_laurent_descent_step_certificate(certificate, column, R) == :ok ||
+            return nothing
+        return certificate
+    catch err
+        err isa InterruptException && rethrow()
+        return nothing
+    end
+end
+
+function _laurent_descent_step_certificate_stage_detail(R, certificate)
+    operation = certificate.operation
+    return _column_reduction_stage_detail(
+        :laurent_descent_step_certificate,
+        R,
+        :certified_descent_step;
+        descent_scope = :single_certified_step,
+        operation_family = operation.family,
+        target_index = operation.target_index,
+        source_index = operation.source_index,
+        coefficient = operation.coefficient,
+        exponent = operation.exponent,
+        before_measure = certificate.before_measure,
+        after_measure = certificate.after_measure,
+        measure_relation = certificate.measure_relation,
+        replay_status = certificate.replay_status,
+        next_boundary = :laurent_link_witness,
+    )
+end
+
 function _column_reduction_entry_term_count(entry)
     try
         iszero(entry) && return 0
@@ -790,13 +939,15 @@ function _laurent_diagnostic_large_support_decline(column::AbstractVector)
     )
 end
 
-function _laurent_native_ecp_boundary_stage_detail(R)
+function _laurent_native_ecp_boundary_stage_detail(R; certified_descent_step::Bool = false)
     return _column_reduction_stage_detail(
         :laurent_native_ecp_boundary,
         R,
         :staged_boundary;
         boundary = :laurent_native_ecp,
-        requires_descent_measure = true,
+        requires_descent_measure = !certified_descent_step,
+        certified_descent_scope = certified_descent_step ? :single_certified_step : nothing,
+        next_boundary = certified_descent_step ? :laurent_link_witness : nothing,
         requires_link_witness = true,
         requires_endpoint_reduction = true,
         requires_laurent_normality_replay = true,
@@ -5382,8 +5533,20 @@ function _diagnose_laurent_row_preconditioning(
             transformed_stage = nothing,
         ),
     )
+    descent_certificate = _laurent_descent_step_diagnostic_certificate(column, R)
+    certified_descent_step = descent_certificate !== nothing
+    if certified_descent_step
+        push!(attempted, :laurent_descent_step_certificate)
+        push!(
+            details,
+            _laurent_descent_step_certificate_stage_detail(R, descent_certificate),
+        )
+    end
     push!(attempted, :laurent_native_ecp_boundary)
-    push!(details, _laurent_native_ecp_boundary_stage_detail(R))
+    push!(
+        details,
+        _laurent_native_ecp_boundary_stage_detail(R; certified_descent_step),
+    )
     return (; supported = false, stage = :laurent_native_ecp_boundary)
 end
 
