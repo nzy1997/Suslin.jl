@@ -4,13 +4,7 @@ if !(@isdefined case008_d14_laurent_descent_profile)
     include(joinpath(@__DIR__, "case008_d14_laurent_descent_profile.jl"))
 end
 
-const CASE008_D14_MEASURE_COMPONENTS = (
-    :whole_support_count,
-    :max_entry_terms,
-    :valuation_span,
-    :leading_exponent,
-    :leading_entry_index,
-)
+const CASE008_D14_MEASURE_COMPONENTS = Suslin._LAURENT_DESCENT_MEASURE_COMPONENTS
 
 const CASE008_D14_REQUIRED_MEASURE_FIELDS = (
     :status,
@@ -26,62 +20,20 @@ function _case008_d14_validated_measure_profile(profile, fixture)
     return profile
 end
 
-function _case008_d14_valuation_span(profile)
-    names = Tuple(Symbol.(profile.ring_generators))
-    return ntuple(
-        idx -> begin
-            range = getproperty(profile.valuation_ranges, names[idx])
-            range.max - range.min
-        end,
-        length(names),
-    )
-end
-
 function case008_d14_laurent_descent_measure(
     profile;
     fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture(),
 )
     checked = _case008_d14_validated_measure_profile(profile, fixture)
-    leading = first(checked.leading_monomial_candidates.candidates)
-    return (;
+    return Suslin._laurent_descent_measure_from_column(
+        fixture.failing_column,
+        fixture.ring;
         case_id = checked.case_id,
-        dimension = checked.dimension,
-        ring_generators = checked.ring_generators,
-        status = :measure_contract,
-        order = :lexicographic_minimize,
-        components = CASE008_D14_MEASURE_COMPONENTS,
-        whole_support_count =
-            checked.newton_support_summary.whole_column_support_count,
-        max_entry_terms = checked.max_entry_terms,
-        valuation_span = _case008_d14_valuation_span(checked),
-        leading_exponent = leading.leading_exponent,
-        leading_entry_index = leading.entry_index,
     )
 end
 
-function _has_laurent_measure_fields(measure)::Bool
-    return all(field -> hasproperty(measure, field), CASE008_D14_REQUIRED_MEASURE_FIELDS)
-end
-
-function _laurent_measure_component_values(measure)
-    return Tuple(getproperty(measure, component) for component in measure.components)
-end
-
-function strictly_decreases_laurent_measure(before, after)::Bool
-    _has_laurent_measure_fields(before) || return false
-    _has_laurent_measure_fields(after) || return false
-    before.status == :measure_contract || return false
-    after.status == :measure_contract || return false
-    before.order == :lexicographic_minimize || return false
-    after.order == before.order || return false
-    before.components == CASE008_D14_MEASURE_COMPONENTS || return false
-    after.components == CASE008_D14_MEASURE_COMPONENTS || return false
-    after.components == before.components || return false
-    return isless(
-        _laurent_measure_component_values(after),
-        _laurent_measure_component_values(before),
-    )
-end
+strictly_decreases_laurent_measure(before, after) =
+    Suslin._strictly_decreases_laurent_measure(before, after)
 
 @testset "case_008 d=14 Laurent descent measure contract" begin
     runtests = read(joinpath(@__DIR__, "..", "runtests.jl"), String)

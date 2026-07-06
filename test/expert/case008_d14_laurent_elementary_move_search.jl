@@ -10,13 +10,8 @@ const CASE008_D14_ELEMENTARY_OPERATION_FAMILIES = (:entry_addition,)
 const CASE008_D14_ELEMENTARY_EXPONENT_RADIUS = 1
 const CASE008_D14_ELEMENTARY_COEFFICIENT_FAMILY = (1,)
 
-const CASE008_D14_ELEMENTARY_OPERATION_FIELDS = (
-    :family,
-    :target_index,
-    :source_index,
-    :coefficient,
-    :exponent,
-)
+const CASE008_D14_ELEMENTARY_OPERATION_FIELDS =
+    Suslin._LAURENT_DESCENT_OPERATION_FIELDS
 
 const CASE008_D14_ELEMENTARY_CANDIDATE_FIELDS = (
     :operation,
@@ -49,22 +44,8 @@ function _has_required_fields(value, fields)::Bool
     return all(field -> hasproperty(value, field), fields)
 end
 
-function replay_laurent_elementary_entry_addition(column, R, operation)
-    operation.family == :entry_addition ||
-        throw(ArgumentError("unsupported operation family $(repr(operation.family))"))
-    n = length(column)
-    target = _checked_entry_index(operation.target_index, n, "target_index")
-    source = _checked_entry_index(operation.source_index, n, "source_index")
-    target != source ||
-        throw(ArgumentError("target_index and source_index must differ"))
-    exponent = _checked_exponent_pair(operation.exponent)
-    coefficient = R(operation.coefficient)
-    generators = gens(R)
-    monomial = coefficient * generators[1]^exponent[1] * generators[2]^exponent[2]
-    transformed = copy(column)
-    transformed[target] = transformed[target] + monomial * column[source]
-    return transformed
-end
+replay_laurent_elementary_entry_addition(column, R, operation) =
+    Suslin._replay_laurent_elementary_entry_addition(column, R, operation)
 
 function _case008_d14_entry_support_set(entry)::Set{Tuple{Int, Int}}
     support = Set{Tuple{Int, Int}}()
@@ -213,18 +194,8 @@ function _case008_d14_measure_from_supports(
     )
 end
 
-function _case008_d14_measure_from_column(
-    column,
-    R;
-    case_id = "case_008",
-)
-    supports = _case008_d14_column_support_sets(column)
-    return _case008_d14_measure_from_supports(
-        supports,
-        _ring_generator_names(R);
-        case_id,
-    )
-end
+_case008_d14_measure_from_column(column, R; case_id = "case_008") =
+    Suslin._laurent_descent_measure_from_column(column, R; case_id)
 
 function _case008_d14_candidate_case_id(candidate)
     hasproperty(candidate.before_measure, :case_id) ||
