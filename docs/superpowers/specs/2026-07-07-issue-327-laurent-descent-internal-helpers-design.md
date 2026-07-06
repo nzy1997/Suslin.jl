@@ -37,7 +37,7 @@ The measure is a `NamedTuple` with stable fields:
 - `ring_generators`
 - `case_id` when supplied
 
-The replay helper accepts an operation with fields `family`, `target_index`, `source_index`, `coefficient`, `exponent`, and optional `ring_generators`. It rejects malformed indices, equal target/source entries, wrong generator metadata, unsupported families, and exponent vectors whose length does not match the two-generator ring.
+The replay helper accepts an operation with fields `family`, `target_index`, `source_index`, `coefficient`, `exponent`, and `ring_generators`. It rejects missing generator metadata, malformed indices, equal target/source entries, wrong generator metadata, unsupported families, and exponent vectors whose length does not match the two-generator ring.
 
 The validator accepts a certificate with stable fields matching the expert shell: `case_id`, `dimension`, `ring_generators`, `operation`, `before_measure`, `after_measure`, `status`, `replay_status`, and `measure_relation`. Optional `before_profile` and `after_profile` remain test-level metadata. Validation recomputes measures from the supplied column and the replayed after-column before comparing stored summaries.
 
