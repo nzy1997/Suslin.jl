@@ -490,6 +490,275 @@ function _column_reduction_stage_detail(stage::Symbol, R, outcome::Symbol; kwarg
 end
 
 const _LAURENT_DIAGNOSTIC_SUPPORT_TERM_LIMIT = 1000
+const _LAURENT_DESCENT_MEASURE_COMPONENTS = (
+    :whole_support_count,
+    :max_entry_terms,
+    :valuation_span,
+    :leading_exponent,
+    :leading_entry_index,
+)
+const _LAURENT_DESCENT_OPERATION_FIELDS = (
+    :family,
+    :target_index,
+    :source_index,
+    :coefficient,
+    :exponent,
+    :ring_generators,
+)
+const _LAURENT_DESCENT_CERTIFICATE_FIELDS = (
+    :case_id,
+    :dimension,
+    :ring_generators,
+    :operation,
+    :before_measure,
+    :after_measure,
+    :status,
+    :replay_status,
+    :measure_relation,
+)
+const _LAURENT_DESCENT_REQUIRED_MEASURE_FIELDS = (
+    :status,
+    :order,
+    :components,
+    _LAURENT_DESCENT_MEASURE_COMPONENTS...,
+)
+
+function _laurent_descent_has_fields(value, fields)::Bool
+    return all(field -> hasproperty(value, field), fields)
+end
+
+function _require_two_generator_laurent_ring(R; label::AbstractString = "ring")
+    _is_laurent_polynomial_ring(R) ||
+        throw(ArgumentError("$label must be a Laurent polynomial ring"))
+    ngens(R) == 2 ||
+        throw(ArgumentError("$label must have exactly two generators"))
+    return R
+end
+
+function _laurent_descent_ring_generators(R)
+    _require_two_generator_laurent_ring(R)
+    return Tuple(string.(gens(R)))
+end
+
+function _laurent_descent_exponent_tuple(exponent)::Tuple{Int, Int}
+    (exponent isa Tuple || exponent isa AbstractVector) ||
+        throw(ArgumentError("exponent must be a length-2 tuple or vector"))
+    length(exponent) == 2 ||
+        throw(ArgumentError("exponent must have exactly two entries"))
+    exponent[1] isa Integer ||
+        throw(ArgumentError("first exponent must be an integer"))
+    exponent[2] isa Integer ||
+        throw(ArgumentError("second exponent must be an integer"))
+    return (Int(exponent[1]), Int(exponent[2]))
+end
+
+function _laurent_descent_entry_support(entry)::Tuple
+    iszero(entry) && return ()
+    support = Tuple{Int, Int}[]
+    for exponent in exponents(entry)
+        push!(support, _laurent_descent_exponent_tuple(exponent))
+    end
+    sort!(support)
+    return Tuple(support)
+end
+
+function _laurent_descent_support_bounds(support)
+    isempty(support) && return nothing
+    return (;
+        min_exponents = (
+            minimum(term[1] for term in support),
+            minimum(term[2] for term in support),
+        ),
+        max_exponents = (
+            maximum(term[1] for term in support),
+            maximum(term[2] for term in support),
+        ),
+    )
+end
+
+function _laurent_descent_leading_candidate_lt(left, right)::Bool
+    left.leading_exponent == right.leading_exponent &&
+        return left.entry_index < right.entry_index
+    return isless(right.leading_exponent, left.leading_exponent)
+end
+
+function _laurent_descent_measure_from_column(column, R; case_id = nothing)
+    _require_two_generator_laurent_ring(R)
+    generator_names = _laurent_descent_ring_generators(R)
+    coerced_column = [
+        _coerce_into_ring(R, column[idx], "column[$idx]")
+        for idx in 1:length(column)
+    ]
+    supports = [_laurent_descent_entry_support(entry) for entry in coerced_column]
+
+    whole_support = Set{Tuple{Int, Int}}()
+    for support in supports
+        union!(whole_support, support)
+    end
+    whole_bounds = _laurent_descent_support_bounds(whole_support)
+
+    leading_candidates = NamedTuple[]
+    for (idx, support) in enumerate(supports)
+        isempty(support) && continue
+        push!(
+            leading_candidates,
+            (;
+                entry_index = idx,
+                leading_exponent = maximum(support),
+            ),
+        )
+    end
+    isempty(leading_candidates) &&
+        throw(ArgumentError("cannot measure a column with no nonzero entries"))
+    ordered_candidates = sort(leading_candidates; lt = _laurent_descent_leading_candidate_lt)
+    leading = first(ordered_candidates)
+    valuation_span = whole_bounds === nothing ? (0, 0) : (
+        whole_bounds.max_exponents[1] - whole_bounds.min_exponents[1],
+        whole_bounds.max_exponents[2] - whole_bounds.min_exponents[2],
+    )
+
+    measure = (;
+        dimension = length(coerced_column),
+        ring_generators = generator_names,
+        status = :measure_contract,
+        order = :lexicographic_minimize,
+        components = _LAURENT_DESCENT_MEASURE_COMPONENTS,
+        whole_support_count = length(whole_support),
+        max_entry_terms = maximum(length, supports; init = 0),
+        valuation_span,
+        leading_exponent = leading.leading_exponent,
+        leading_entry_index = leading.entry_index,
+    )
+    return case_id === nothing ? measure : merge((; case_id), measure)
+end
+
+function _strictly_decreases_laurent_measure(before, after)::Bool
+    _laurent_descent_has_fields(before, _LAURENT_DESCENT_REQUIRED_MEASURE_FIELDS) ||
+        return false
+    _laurent_descent_has_fields(after, _LAURENT_DESCENT_REQUIRED_MEASURE_FIELDS) ||
+        return false
+    before.status == :measure_contract || return false
+    after.status == :measure_contract || return false
+    before.order == :lexicographic_minimize || return false
+    after.order == before.order || return false
+    before.components == _LAURENT_DESCENT_MEASURE_COMPONENTS || return false
+    after.components == before.components || return false
+    return isless(
+        Tuple(getproperty(after, component) for component in _LAURENT_DESCENT_MEASURE_COMPONENTS),
+        Tuple(getproperty(before, component) for component in _LAURENT_DESCENT_MEASURE_COMPONENTS),
+    )
+end
+
+function _laurent_descent_checked_entry_index(index, n::Int, name::AbstractString)::Int
+    index isa Integer ||
+        throw(ArgumentError("$name must be an integer entry index"))
+    checked = Int(index)
+    1 <= checked <= n ||
+        throw(ArgumentError("$name must be between 1 and $n"))
+    return checked
+end
+
+function _laurent_descent_operation_status(operation, n::Int, R)::Symbol
+    _require_two_generator_laurent_ring(R)
+    _laurent_descent_has_fields(operation, _LAURENT_DESCENT_OPERATION_FIELDS) ||
+        return :malformed_operation
+    operation.family == :entry_addition || return :malformed_operation
+    operation.ring_generators == _laurent_descent_ring_generators(R) ||
+        return :wrong_ring_generators
+    try
+        target = _laurent_descent_checked_entry_index(
+            operation.target_index,
+            n,
+            "target_index",
+        )
+        source = _laurent_descent_checked_entry_index(
+            operation.source_index,
+            n,
+            "source_index",
+        )
+        target != source || return :malformed_operation
+        _laurent_descent_exponent_tuple(operation.exponent)
+        _coerce_into_ring(R, operation.coefficient, "coefficient")
+    catch err
+        err isa InterruptException && rethrow()
+        return :malformed_operation
+    end
+    return :ok
+end
+
+function _replay_laurent_elementary_entry_addition(column, R, operation)::Vector
+    _require_two_generator_laurent_ring(R)
+    operation_status = _laurent_descent_operation_status(operation, length(column), R)
+    operation_status == :ok ||
+        throw(ArgumentError("invalid Laurent descent operation: $(operation_status)"))
+
+    transformed = [
+        _coerce_into_ring(R, column[idx], "column[$idx]")
+        for idx in 1:length(column)
+    ]
+    target = Int(operation.target_index)
+    source = Int(operation.source_index)
+    exponent = _laurent_descent_exponent_tuple(operation.exponent)
+    coefficient = _coerce_into_ring(R, operation.coefficient, "coefficient")
+    monomial = coefficient
+    for idx in 1:2
+        monomial *= gens(R)[idx]^exponent[idx]
+    end
+    transformed[target] = transformed[target] + monomial * transformed[source]
+    return transformed
+end
+
+function _validate_laurent_descent_step_certificate(cert, column, R)::Symbol
+    try
+        _require_two_generator_laurent_ring(R)
+        _laurent_descent_has_fields(cert, _LAURENT_DESCENT_CERTIFICATE_FIELDS) ||
+            return :missing_certificate_fields
+        cert.status == :descent_step_certificate || return :wrong_status
+        cert.replay_status == :ok || return :wrong_replay_status
+        cert.measure_relation == :strict_decrease || return :wrong_measure_relation
+        cert.dimension == length(column) || return :wrong_dimension
+
+        ring_generators = _laurent_descent_ring_generators(R)
+        cert.ring_generators == ring_generators || return :wrong_ring_generators
+
+        operation_status = _laurent_descent_operation_status(
+            cert.operation,
+            length(column),
+            R,
+        )
+        operation_status == :ok || return operation_status
+
+        expected_before_measure = _laurent_descent_measure_from_column(
+            column,
+            R;
+            case_id = cert.case_id,
+        )
+        cert.before_measure == expected_before_measure ||
+            return :stale_before_measure
+
+        after_column = _replay_laurent_elementary_entry_addition(
+            column,
+            R,
+            cert.operation,
+        )
+        expected_after_measure = _laurent_descent_measure_from_column(
+            after_column,
+            R;
+            case_id = cert.case_id,
+        )
+        cert.after_measure == expected_after_measure ||
+            return :stale_after_measure
+
+        _strictly_decreases_laurent_measure(
+            expected_before_measure,
+            expected_after_measure,
+        ) || return :not_strict_decrease
+        return :ok
+    catch err
+        err isa InterruptException && rethrow()
+        return :operation_replay_failed
+    end
+end
 
 function _column_reduction_entry_term_count(entry)
     try

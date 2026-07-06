@@ -6,17 +6,8 @@ if !(@isdefined case008_d14_laurent_elementary_move_search_report)
     include(joinpath(@__DIR__, "case008_d14_laurent_elementary_move_search.jl"))
 end
 
-const LAURENT_DESCENT_STEP_CERTIFICATE_FIELDS = (
-    :case_id,
-    :dimension,
-    :ring_generators,
-    :operation,
-    :before_measure,
-    :after_measure,
-    :status,
-    :replay_status,
-    :measure_relation,
-)
+const LAURENT_DESCENT_STEP_CERTIFICATE_FIELDS =
+    Suslin._LAURENT_DESCENT_CERTIFICATE_FIELDS
 
 const LAURENT_DESCENT_STEP_OPERATION_FIELDS = (
     :family,
@@ -92,12 +83,12 @@ function _laurent_descent_step_certificate_from_replay(
     )
     before_profile == expected_before_profile ||
         throw(ArgumentError("before_profile is stale for the input column"))
-    before_measure = _case008_d14_measure_from_column(
+    before_measure = Suslin._laurent_descent_measure_from_column(
         column,
         R;
         case_id = before_profile.case_id,
     )
-    after_column = replay_laurent_elementary_entry_addition(
+    after_column = Suslin._replay_laurent_elementary_entry_addition(
         column,
         R,
         operation,
@@ -107,12 +98,12 @@ function _laurent_descent_step_certificate_from_replay(
         R;
         case_id = before_profile.case_id,
     )
-    after_measure = _case008_d14_measure_from_column(
+    after_measure = Suslin._laurent_descent_measure_from_column(
         after_column,
         R;
         case_id = before_profile.case_id,
     )
-    relation = strictly_decreases_laurent_measure(
+    relation = Suslin._strictly_decreases_laurent_measure(
         before_measure,
         after_measure,
     ) ? :strict_decrease : :not_strict_decrease
@@ -185,15 +176,7 @@ function validate_laurent_descent_step_certificate(cert, column, R)::Symbol
         )
         operation_status == :ok || return operation_status
 
-        expected_before_measure = _case008_d14_measure_from_column(
-            column,
-            R;
-            case_id = cert.case_id,
-        )
-        cert.before_measure == expected_before_measure ||
-            return :stale_before_measure
-
-        after_column = replay_laurent_elementary_entry_addition(
+        after_column = Suslin._replay_laurent_elementary_entry_addition(
             column,
             R,
             cert.operation,
@@ -226,19 +209,7 @@ function validate_laurent_descent_step_certificate(cert, column, R)::Symbol
                 return :stale_after_profile
         end
 
-        expected_after_measure = _case008_d14_measure_from_column(
-            after_column,
-            R;
-            case_id = cert.case_id,
-        )
-        cert.after_measure == expected_after_measure ||
-            return :stale_after_measure
-
-        strictly_decreases_laurent_measure(
-            expected_before_measure,
-            expected_after_measure,
-        ) || return :not_strict_decrease
-        return :ok
+        return Suslin._validate_laurent_descent_step_certificate(cert, column, R)
     catch err
         err isa InterruptException && rethrow()
         return :operation_replay_failed
