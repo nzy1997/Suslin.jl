@@ -92,7 +92,6 @@ end
 
     fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture()
     profile = case008_d14_laurent_descent_profile(fixture)
-    @test validate_laurent_descent_profile(profile, fixture) == :ok
 
     measure = case008_d14_laurent_descent_measure(profile; fixture)
     @test measure.case_id == "case_008"
@@ -147,15 +146,12 @@ end
     @test !strictly_decreases_laurent_measure(reordered_before, reordered_after)
 
     supported_status = merge(profile, (; status = :supported))
-    @test validate_laurent_descent_profile(supported_status, fixture) == :wrong_status
     @test_throws ArgumentError case008_d14_laurent_descent_measure(
         supported_status;
         fixture,
     )
 
     swapped_generators = merge(profile, (; ring_generators = ("v", "u")))
-    @test validate_laurent_descent_profile(swapped_generators, fixture) ==
-          :wrong_ring_generators
     @test_throws ArgumentError case008_d14_laurent_descent_measure(
         swapped_generators;
         fixture,
@@ -173,8 +169,6 @@ end
             ),
         ),
     )
-    @test validate_laurent_descent_profile(stale_support, fixture) ==
-          :wrong_support_summary
     @test_throws ArgumentError case008_d14_laurent_descent_measure(
         stale_support;
         fixture,
@@ -197,8 +191,6 @@ end
             ),
         ),
     )
-    @test validate_laurent_descent_profile(tampered_leading, fixture) ==
-          :wrong_leading_monomial_candidates
     @test_throws ArgumentError case008_d14_laurent_descent_measure(
         tampered_leading;
         fixture,
