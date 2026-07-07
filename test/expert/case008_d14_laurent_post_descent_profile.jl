@@ -26,6 +26,56 @@ const CASE008_D14_EXPECTED_POST_DESCENT_ENTRY_TERM_COUNTS = (
     3495,
 )
 
+const CASE008_D14_EXPECTED_POST_DESCENT_SUPPORT_SUMMARY = (
+    generator_order = ("u", "v"),
+    entry_count = 14,
+    per_entry = (
+        (index = 1, support_count = 3661, term_count = 3661, support_bounds = (min_exponents = (-47, -47), max_exponents = (48, 44))),
+        (index = 2, support_count = 3574, term_count = 3574, support_bounds = (min_exponents = (-46, -48), max_exponents = (48, 44))),
+        (index = 3, support_count = 3554, term_count = 3554, support_bounds = (min_exponents = (-47, -48), max_exponents = (48, 44))),
+        (index = 4, support_count = 3561, term_count = 3561, support_bounds = (min_exponents = (-48, -47), max_exponents = (46, 42))),
+        (index = 5, support_count = 3595, term_count = 3595, support_bounds = (min_exponents = (-46, -47), max_exponents = (48, 44))),
+        (index = 6, support_count = 3734, term_count = 3734, support_bounds = (min_exponents = (-48, -48), max_exponents = (48, 44))),
+        (index = 7, support_count = 3622, term_count = 3622, support_bounds = (min_exponents = (-47, -48), max_exponents = (48, 43))),
+        (index = 8, support_count = 3454, term_count = 3454, support_bounds = (min_exponents = (-47, -46), max_exponents = (46, 43))),
+        (index = 9, support_count = 3489, term_count = 3489, support_bounds = (min_exponents = (-47, -46), max_exponents = (46, 42))),
+        (index = 10, support_count = 3692, term_count = 3692, support_bounds = (min_exponents = (-47, -48), max_exponents = (49, 43))),
+        (index = 11, support_count = 3675, term_count = 3675, support_bounds = (min_exponents = (-48, -48), max_exponents = (48, 44))),
+        (index = 12, support_count = 3600, term_count = 3600, support_bounds = (min_exponents = (-48, -48), max_exponents = (47, 44))),
+        (index = 13, support_count = 3693, term_count = 3693, support_bounds = (min_exponents = (-47, -48), max_exponents = (48, 44))),
+        (index = 14, support_count = 3495, term_count = 3495, support_bounds = (min_exponents = (-47, -46), max_exponents = (46, 43))),
+    ),
+    per_entry_support_counts = (3661, 3574, 3554, 3561, 3595, 3734, 3622, 3454, 3489, 3692, 3675, 3600, 3693, 3495),
+    whole_column_support_count = 7378,
+    whole_column_bounds = (min_exponents = (-48, -48), max_exponents = (49, 44)),
+)
+
+const CASE008_D14_EXPECTED_POST_DESCENT_VALUATION_SUMMARY =
+    (u = (min = -48, max = 49), v = (min = -48, max = 44))
+
+const CASE008_D14_EXPECTED_POST_DESCENT_LEADING_MONOMIAL_SUMMARY = (
+    generator_order = ("u", "v"),
+    order = :lexicographic_descending,
+    tie_breaker = :entry_index_ascending,
+    candidate_count = 14,
+    candidates = (
+        (entry_index = 10, leading_exponent = (49, -5), term_count = 3692, support_bounds = (min_exponents = (-47, -48), max_exponents = (49, 43))),
+        (entry_index = 1, leading_exponent = (48, -4), term_count = 3661, support_bounds = (min_exponents = (-47, -47), max_exponents = (48, 44))),
+        (entry_index = 2, leading_exponent = (48, -4), term_count = 3574, support_bounds = (min_exponents = (-46, -48), max_exponents = (48, 44))),
+        (entry_index = 13, leading_exponent = (48, -4), term_count = 3693, support_bounds = (min_exponents = (-47, -48), max_exponents = (48, 44))),
+        (entry_index = 3, leading_exponent = (48, -5), term_count = 3554, support_bounds = (min_exponents = (-47, -48), max_exponents = (48, 44))),
+        (entry_index = 5, leading_exponent = (48, -5), term_count = 3595, support_bounds = (min_exponents = (-46, -47), max_exponents = (48, 44))),
+        (entry_index = 6, leading_exponent = (48, -5), term_count = 3734, support_bounds = (min_exponents = (-48, -48), max_exponents = (48, 44))),
+        (entry_index = 7, leading_exponent = (48, -5), term_count = 3622, support_bounds = (min_exponents = (-47, -48), max_exponents = (48, 43))),
+        (entry_index = 11, leading_exponent = (48, -5), term_count = 3675, support_bounds = (min_exponents = (-48, -48), max_exponents = (48, 44))),
+        (entry_index = 12, leading_exponent = (47, -5), term_count = 3600, support_bounds = (min_exponents = (-48, -48), max_exponents = (47, 44))),
+        (entry_index = 9, leading_exponent = (46, -4), term_count = 3489, support_bounds = (min_exponents = (-47, -46), max_exponents = (46, 42))),
+        (entry_index = 14, leading_exponent = (46, -4), term_count = 3495, support_bounds = (min_exponents = (-47, -46), max_exponents = (46, 43))),
+        (entry_index = 4, leading_exponent = (46, -5), term_count = 3561, support_bounds = (min_exponents = (-48, -47), max_exponents = (46, 42))),
+        (entry_index = 8, leading_exponent = (46, -5), term_count = 3454, support_bounds = (min_exponents = (-47, -46), max_exponents = (46, 43))),
+    ),
+)
+
 const CASE008_D14_REQUIRED_POST_DESCENT_REPORT_FIELDS = (
     :case_id,
     :dimension,
@@ -186,11 +236,15 @@ end
     @test report.after_measure.leading_entry_index == 10
     @test report.post_descent_profile.entry_term_counts ==
           CASE008_D14_EXPECTED_POST_DESCENT_ENTRY_TERM_COUNTS
+    @test report.post_descent_support_summary ==
+          CASE008_D14_EXPECTED_POST_DESCENT_SUPPORT_SUMMARY
+    @test report.post_descent_valuation_summary ==
+          CASE008_D14_EXPECTED_POST_DESCENT_VALUATION_SUMMARY
+    @test report.post_descent_leading_monomial_summary ==
+          CASE008_D14_EXPECTED_POST_DESCENT_LEADING_MONOMIAL_SUMMARY
     @test report.post_descent_support_summary.whole_column_support_count == 7378
     @test report.post_descent_support_summary.whole_column_bounds ==
           (; min_exponents = (-48, -48), max_exponents = (49, 44))
-    @test report.post_descent_valuation_summary ==
-          (u = (; min = -48, max = 49), v = (; min = -48, max = 44))
     @test first(report.post_descent_leading_monomial_summary.candidates) ==
           (;
               entry_index = 10,
