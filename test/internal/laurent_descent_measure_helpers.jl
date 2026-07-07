@@ -197,4 +197,10 @@ end
         bad_replay_column,
         fixture.ring,
     ) == :operation_replay_failed
+
+    P, _ = polynomial_ring(QQ, ["u", "v"])
+    @test Suslin._laurent_descent_step_diagnostic_certificate(
+        [one(P) for _ in 1:length(fixture.failing_column)],
+        P,
+    ) === nothing
 end
