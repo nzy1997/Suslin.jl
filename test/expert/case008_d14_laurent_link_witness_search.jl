@@ -6,6 +6,421 @@ if !(@isdefined case008_d14_laurent_link_witness_context)
     include(joinpath(@__DIR__, "case008_d14_laurent_link_witness_context.jl"))
 end
 
+const CASE008_D14_LINK_WITNESS_SEARCH_FAMILIES =
+    (:two_entry_laurent_combination,)
+const CASE008_D14_LINK_WITNESS_SEARCH_SEMANTICS =
+    :pivot_plus_shifted_partner_endpoint
+const CASE008_D14_LINK_WITNESS_SEARCH_EXPONENT_RADIUS = 1
+const CASE008_D14_LINK_WITNESS_SEARCH_EXPONENT_VECTORS = Tuple(
+    (a, b)
+    for a in -CASE008_D14_LINK_WITNESS_SEARCH_EXPONENT_RADIUS:
+        CASE008_D14_LINK_WITNESS_SEARCH_EXPONENT_RADIUS
+    for b in -CASE008_D14_LINK_WITNESS_SEARCH_EXPONENT_RADIUS:
+        CASE008_D14_LINK_WITNESS_SEARCH_EXPONENT_RADIUS
+)
+const CASE008_D14_LINK_WITNESS_SEARCH_COEFFICIENT_FAMILY = (1,)
+
+const LAURENT_LINK_WITNESS_FIELDS = (
+    :family,
+    :pivot_index,
+    :partner_index,
+    :coefficient,
+    :exponent,
+    :ring_generators,
+)
+
+const LAURENT_LINK_WITNESS_CANDIDATE_FIELDS = (
+    :witness,
+    :source_endpoint,
+    :target_endpoint,
+    :replay_status,
+    :identity_status,
+    :measure_relation,
+)
+
+const CASE008_D14_LINK_WITNESS_SEARCH_REPORT_FIELDS = (
+    :case_id,
+    :dimension,
+    :ring_generators,
+    :source_boundary,
+    :context_status,
+    :source_measure,
+    :witness_families,
+    :witness_semantics,
+    :pivot_index,
+    :partner_indices,
+    :exponent_radius,
+    :exponent_vectors,
+    :coefficient_family,
+    :checked_candidate_count,
+    :status,
+    :candidate_count,
+    :replay_verified_count,
+    :next_boundary,
+    :candidates,
+)
+
+function _laurent_link_witness_has_fields(value, fields)::Bool
+    return all(field -> hasproperty(value, field), fields)
+end
+
+function _laurent_link_witness_checked_entry_index(
+    index,
+    n::Int,
+    name::AbstractString,
+)::Int
+    index isa Integer ||
+        throw(ArgumentError("$(name) must be an integer entry index"))
+    checked = Int(index)
+    1 <= checked <= n || throw(ArgumentError("$(name) must be between 1 and $(n)"))
+    return checked
+end
+
+function _laurent_link_witness_checked_exponent(exponent)::Tuple{Int, Int}
+    return _checked_exponent_pair(exponent)
+end
+
+function _laurent_link_witness_status(witness, n::Int, R)::Symbol
+    _laurent_link_witness_has_fields(witness, LAURENT_LINK_WITNESS_FIELDS) ||
+        return :malformed_witness
+    witness.family == :two_entry_laurent_combination ||
+        return :wrong_witness_family
+    witness.ring_generators == _ring_generator_names(R) ||
+        return :wrong_ring_generators
+    try
+        pivot = _laurent_link_witness_checked_entry_index(
+            witness.pivot_index,
+            n,
+            "pivot_index",
+        )
+        partner = _laurent_link_witness_checked_entry_index(
+            witness.partner_index,
+            n,
+            "partner_index",
+        )
+        pivot != partner || return :pivot_partner_index_equality
+        _laurent_link_witness_checked_exponent(witness.exponent)
+        R(witness.coefficient)
+    catch err
+        err isa InterruptException && rethrow()
+        return :malformed_witness
+    end
+    return :ok
+end
+
+function _laurent_link_witness_operation(witness)
+    return (;
+        family = :entry_addition,
+        target_index = witness.pivot_index,
+        source_index = witness.partner_index,
+        coefficient = witness.coefficient,
+        exponent = witness.exponent,
+        ring_generators = witness.ring_generators,
+    )
+end
+
+function _laurent_link_endpoint_metadata(
+    entry,
+    R,
+    entry_index::Int,
+    column_measure;
+    case_id,
+)
+    support = _entry_support(R(entry))
+    return (;
+        case_id,
+        status = :link_witness_endpoint_metadata,
+        entry_index,
+        ring_generators = _ring_generator_names(R),
+        is_zero = isempty(support),
+        term_count = length(support),
+        support_bounds = _support_bounds(support),
+        leading_exponent = isempty(support) ? nothing : maximum(support),
+        column_measure,
+    )
+end
+
+function _laurent_link_witness_candidate_from_replay(
+    column,
+    R,
+    witness;
+    case_id,
+    require_strict::Bool = true,
+)
+    status = _laurent_link_witness_status(witness, length(column), R)
+    status == :ok ||
+        throw(ArgumentError("invalid Laurent link witness: $(status)"))
+
+    pivot = Int(witness.pivot_index)
+    before_measure = Suslin._laurent_descent_measure_from_column(
+        column,
+        R;
+        case_id,
+    )
+    after_column = Suslin._replay_laurent_elementary_entry_addition(
+        column,
+        R,
+        _laurent_link_witness_operation(witness),
+    )
+    after_measure = Suslin._laurent_descent_measure_from_column(
+        after_column,
+        R;
+        case_id,
+    )
+    relation = strictly_decreases_laurent_measure(before_measure, after_measure)
+    require_strict && !relation &&
+        throw(ArgumentError("witness does not strictly decrease the replay measure"))
+    return (;
+        witness,
+        source_endpoint = _laurent_link_endpoint_metadata(
+            column[pivot],
+            R,
+            pivot,
+            before_measure;
+            case_id,
+        ),
+        target_endpoint = _laurent_link_endpoint_metadata(
+            after_column[pivot],
+            R,
+            pivot,
+            after_measure;
+            case_id,
+        ),
+        replay_status = :ok,
+        identity_status = :verified,
+        measure_relation = relation ? :strict_decrease : :not_strict_decrease,
+    )
+end
+
+function verify_laurent_link_witness_candidate(column, R, candidate)::Bool
+    try
+        _laurent_link_witness_has_fields(
+            candidate,
+            LAURENT_LINK_WITNESS_CANDIDATE_FIELDS,
+        ) || return false
+        candidate.replay_status == :ok || return false
+        candidate.identity_status == :verified || return false
+        candidate.measure_relation == :strict_decrease || return false
+
+        witness = candidate.witness
+        _laurent_link_witness_status(witness, length(column), R) == :ok ||
+            return false
+        case_id = candidate.source_endpoint.case_id
+        expected = _laurent_link_witness_candidate_from_replay(
+            column,
+            R,
+            witness;
+            case_id,
+        )
+        return candidate == expected
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function _case008_d14_link_witness_source_data(fixture)
+    source_report = case008_d14_laurent_post_descent_profile_report(fixture)
+    source_validation =
+        validate_case008_d14_laurent_post_descent_profile_report(
+            source_report,
+            fixture,
+        )
+    source_validation == :ok ||
+        throw(ArgumentError("post-descent report must validate; got $(source_validation)"))
+    context = case008_d14_laurent_link_witness_context(
+        source_report;
+        source_validation,
+    )
+    context_validation = validate_case008_d14_laurent_link_witness_context(
+        context,
+        source_report;
+        source_validation,
+    )
+    context_validation == :ok ||
+        throw(ArgumentError("link-witness context must validate; got $(context_validation)"))
+    replay = _case008_d14_replayed_post_descent_data(fixture)
+    return (; source_report, source_validation, context, replay)
+end
+
+function _case008_d14_link_witness(
+    pivot::Int,
+    partner::Int,
+    exponent::Tuple{Int, Int},
+    coefficient,
+    ring_generators,
+)
+    return (;
+        family = :two_entry_laurent_combination,
+        pivot_index = pivot,
+        partner_index = partner,
+        coefficient,
+        exponent,
+        ring_generators = Tuple(ring_generators),
+    )
+end
+
+function case008_d14_laurent_link_witness_search_report(
+    fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture(),
+)::NamedTuple
+    source = _case008_d14_link_witness_source_data(fixture)
+    context = source.context
+    column = source.replay.after_column
+    R = fixture.ring
+    generator_names = _ring_generator_names(R)
+    supports = _case008_d14_column_support_sets(column)
+    baseline_measure = Suslin._laurent_descent_measure_from_column(
+        column,
+        R;
+        case_id = context.case_id,
+    )
+    support_measure = _case008_d14_measure_from_supports(
+        supports,
+        generator_names;
+        case_id = context.case_id,
+    )
+    support_measure == baseline_measure ||
+        throw(ArgumentError("support-set baseline measure does not match replayed post-descent measure"))
+
+    candidates = NamedTuple[]
+    checked_candidate_count = 0
+    for partner in context.candidate_partner_indices
+        for exponent in CASE008_D14_LINK_WITNESS_SEARCH_EXPONENT_VECTORS
+            for coefficient in CASE008_D14_LINK_WITNESS_SEARCH_COEFFICIENT_FAMILY
+                checked_candidate_count += 1
+                witness = _case008_d14_link_witness(
+                    context.pivot_entry_index,
+                    partner,
+                    exponent,
+                    coefficient,
+                    generator_names,
+                )
+                after_supports = _case008_d14_update_entry_addition_supports(
+                    supports,
+                    R,
+                    _laurent_link_witness_operation(witness),
+                )
+                after_measure = _case008_d14_measure_from_supports(
+                    after_supports,
+                    generator_names;
+                    case_id = context.case_id,
+                )
+                strictly_decreases_laurent_measure(
+                    baseline_measure,
+                    after_measure,
+                ) || continue
+                candidate = _laurent_link_witness_candidate_from_replay(
+                    column,
+                    R,
+                    witness;
+                    case_id = context.case_id,
+                )
+                verify_laurent_link_witness_candidate(column, R, candidate) ||
+                    continue
+                push!(candidates, candidate)
+            end
+        end
+    end
+
+    status = isempty(candidates) ? :exhausted : :candidate_found
+    return (;
+        case_id = context.case_id,
+        dimension = context.dimension,
+        ring_generators = context.ring_generators,
+        source_boundary = context.source_boundary,
+        context_status = context.status,
+        source_measure = context.source_measure,
+        witness_families = CASE008_D14_LINK_WITNESS_SEARCH_FAMILIES,
+        witness_semantics = CASE008_D14_LINK_WITNESS_SEARCH_SEMANTICS,
+        pivot_index = context.pivot_entry_index,
+        partner_indices = context.candidate_partner_indices,
+        exponent_radius = CASE008_D14_LINK_WITNESS_SEARCH_EXPONENT_RADIUS,
+        exponent_vectors = CASE008_D14_LINK_WITNESS_SEARCH_EXPONENT_VECTORS,
+        coefficient_family = CASE008_D14_LINK_WITNESS_SEARCH_COEFFICIENT_FAMILY,
+        checked_candidate_count,
+        status,
+        candidate_count = length(candidates),
+        replay_verified_count = length(candidates),
+        next_boundary = status == :candidate_found ?
+            :laurent_link_witness_certificate :
+            :laurent_link_witness_search_expansion,
+        candidates = Tuple(candidates),
+    )
+end
+
+function validate_case008_d14_laurent_link_witness_search_report(
+    report,
+    fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture(),
+)::Symbol
+    try
+        _laurent_link_witness_has_fields(
+            report,
+            CASE008_D14_LINK_WITNESS_SEARCH_REPORT_FIELDS,
+        ) || return :missing_report_fields
+        source = _case008_d14_link_witness_source_data(fixture)
+        context = source.context
+        report.case_id == "case_008" || return :wrong_case
+        report.dimension == 14 || return :wrong_dimension
+        report.ring_generators == ("u", "v") || return :wrong_ring_generators
+        report.source_boundary == :case008_d14_post_descent ||
+            return :wrong_source_boundary
+        report.context_status == :link_witness_context ||
+            return :wrong_context_status
+        report.source_measure == context.source_measure ||
+            return :stale_source_measure
+        report.witness_families == CASE008_D14_LINK_WITNESS_SEARCH_FAMILIES ||
+            return :wrong_witness_families
+        report.witness_semantics == CASE008_D14_LINK_WITNESS_SEARCH_SEMANTICS ||
+            return :wrong_witness_semantics
+        report.pivot_index == 10 || return :wrong_pivot_index
+        report.partner_indices == context.candidate_partner_indices ||
+            return :wrong_partner_indices
+        report.exponent_radius == CASE008_D14_LINK_WITNESS_SEARCH_EXPONENT_RADIUS ||
+            return :wrong_exponent_radius
+        report.exponent_vectors == CASE008_D14_LINK_WITNESS_SEARCH_EXPONENT_VECTORS ||
+            return :wrong_exponent_vectors
+        report.coefficient_family ==
+            CASE008_D14_LINK_WITNESS_SEARCH_COEFFICIENT_FAMILY ||
+            return :wrong_coefficient_family
+        report.checked_candidate_count ==
+            length(report.partner_indices) *
+            length(report.exponent_vectors) *
+            length(report.coefficient_family) ||
+            return :wrong_checked_candidate_count
+        report.checked_candidate_count == 117 ||
+            return :wrong_checked_candidate_count
+        report.status in (:candidate_found, :exhausted) || return :wrong_status
+        report.candidate_count == length(report.candidates) ||
+            return :wrong_candidate_count
+        report.replay_verified_count == report.candidate_count ||
+            return :wrong_replay_verified_count
+
+        column = source.replay.after_column
+        R = fixture.ring
+        for candidate in report.candidates
+            verify_laurent_link_witness_candidate(column, R, candidate) ||
+                return :invalid_candidate
+        end
+        if report.status == :candidate_found
+            report.candidate_count > 0 || return :wrong_candidate_count
+            report.next_boundary == :laurent_link_witness_certificate ||
+                return :wrong_next_boundary
+        else
+            report.candidate_count == 0 || return :wrong_candidate_count
+            report.replay_verified_count == 0 || return :wrong_replay_verified_count
+            report.next_boundary == :laurent_link_witness_search_expansion ||
+                return :wrong_next_boundary
+        end
+
+        expected = case008_d14_laurent_link_witness_search_report(fixture)
+        report == expected || return :stale_report
+        return :ok
+    catch err
+        err isa InterruptException && rethrow()
+        return :invalid_report
+    end
+end
+
 @testset "case_008 d=14 Laurent link-witness search report" begin
     runtests = read(joinpath(@__DIR__, "..", "runtests.jl"), String)
     @test occursin(
