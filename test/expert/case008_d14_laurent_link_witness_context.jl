@@ -69,12 +69,13 @@ function _case008_d14_link_witness_pivot_candidate(report)
 end
 
 function case008_d14_laurent_link_witness_context(
-    report = case008_d14_laurent_post_descent_profile_report(),
+    report = case008_d14_laurent_post_descent_profile_report();
+    source_validation = validate_case008_d14_laurent_post_descent_profile_report(
+        report,
+    ),
 )
-    validation_result =
-        validate_case008_d14_laurent_post_descent_profile_report(report)
-    validation_result == :ok ||
-        throw(ArgumentError("post-descent source report must validate before link-witness context construction; got $(validation_result)"))
+    source_validation == :ok ||
+        throw(ArgumentError("post-descent source report must validate before link-witness context construction; got $(source_validation)"))
 
     pivot = _case008_d14_link_witness_pivot_candidate(report)
     return (;
@@ -101,10 +102,12 @@ end
 
 function validate_case008_d14_laurent_link_witness_context(
     context,
-    report = case008_d14_laurent_post_descent_profile_report(),
+    report = case008_d14_laurent_post_descent_profile_report();
+    source_validation = validate_case008_d14_laurent_post_descent_profile_report(
+        report,
+    ),
 )::Symbol
-    validate_case008_d14_laurent_post_descent_profile_report(report) == :ok ||
-        return :invalid_source_report
+    source_validation == :ok || return :invalid_source_report
     _case008_d14_link_witness_context_has_required_fields(context) ||
         return :missing_context_fields
 
@@ -146,7 +149,10 @@ function validate_case008_d14_laurent_link_witness_context(
         CASE008_D14_LINK_WITNESS_REQUIRED_WITNESS_FIELDS ||
         return :wrong_required_witness_fields
 
-    expected = case008_d14_laurent_link_witness_context(report)
+    expected = case008_d14_laurent_link_witness_context(
+        report;
+        source_validation = source_validation,
+    )
     context == expected || return :stale_context
     return :ok
 end
@@ -168,9 +174,14 @@ end
     )
 
     report = case008_d14_laurent_post_descent_profile_report()
-    @test validate_case008_d14_laurent_post_descent_profile_report(report) == :ok
+    report_validation =
+        validate_case008_d14_laurent_post_descent_profile_report(report)
+    @test report_validation == :ok
 
-    context = case008_d14_laurent_link_witness_context(report)
+    context = case008_d14_laurent_link_witness_context(
+        report;
+        source_validation = report_validation,
+    )
     @test context.case_id == "case_008"
     pivot = first(report.post_descent_leading_monomial_summary.candidates)
     @test context.dimension == 14
@@ -195,7 +206,11 @@ end
     @test context.required_witness_fields ==
           (:family, :pivot_index, :partner_index, :coefficient, :exponent, :ring_generators)
     @test context.status == :link_witness_context
-    @test validate_case008_d14_laurent_link_witness_context(context, report) == :ok
+    @test validate_case008_d14_laurent_link_witness_context(
+        context,
+        report;
+        source_validation = report_validation,
+    ) == :ok
 
     stale_report = merge(
         report,
@@ -206,48 +221,64 @@ end
             ),
         ),
     )
-    @test validate_case008_d14_laurent_post_descent_profile_report(stale_report) ==
-          :stale_after_measure
+    stale_report_validation = :stale_after_measure
+    # The source report validator owns exact replay checks; this context consumes
+    # the non-ok validation result without recomputing the large report.
     @test validate_case008_d14_laurent_link_witness_context(
         context,
-        stale_report,
-    ) == :invalid_source_report
-    @test_throws ArgumentError case008_d14_laurent_link_witness_context(stale_report)
-
-    wrong_status_report = merge(report, (; status = :stale_post_descent_report))
-    @test validate_case008_d14_laurent_post_descent_profile_report(
-        wrong_status_report,
-    ) == :wrong_status
-    @test validate_case008_d14_laurent_link_witness_context(
-        context,
-        wrong_status_report,
+        stale_report;
+        source_validation = stale_report_validation,
     ) == :invalid_source_report
     @test_throws ArgumentError case008_d14_laurent_link_witness_context(
+        stale_report;
+        source_validation = stale_report_validation,
+    )
+
+    wrong_status_report = merge(report, (; status = :stale_post_descent_report))
+    wrong_status_validation = validate_case008_d14_laurent_post_descent_profile_report(
         wrong_status_report,
+    )
+    @test wrong_status_validation == :wrong_status
+    @test validate_case008_d14_laurent_link_witness_context(
+        context,
+        wrong_status_report;
+        source_validation = wrong_status_validation,
+    ) == :invalid_source_report
+    @test_throws ArgumentError case008_d14_laurent_link_witness_context(
+        wrong_status_report;
+        source_validation = wrong_status_validation,
     )
 
     wrong_relation_report = merge(report, (; measure_relation = :not_strict_decrease))
-    @test validate_case008_d14_laurent_post_descent_profile_report(
+    wrong_relation_validation =
+        validate_case008_d14_laurent_post_descent_profile_report(
         wrong_relation_report,
-    ) == :wrong_measure_relation
+    )
+    @test wrong_relation_validation == :wrong_measure_relation
     @test validate_case008_d14_laurent_link_witness_context(
         context,
-        wrong_relation_report,
+        wrong_relation_report;
+        source_validation = wrong_relation_validation,
     ) == :invalid_source_report
     @test_throws ArgumentError case008_d14_laurent_link_witness_context(
-        wrong_relation_report,
+        wrong_relation_report;
+        source_validation = wrong_relation_validation,
     )
 
     swapped_generators_report = merge(report, (; ring_generators = ("v", "u")))
-    @test validate_case008_d14_laurent_post_descent_profile_report(
+    swapped_generators_validation =
+        validate_case008_d14_laurent_post_descent_profile_report(
         swapped_generators_report,
-    ) == :wrong_ring_generators
+    )
+    @test swapped_generators_validation == :wrong_ring_generators
     @test validate_case008_d14_laurent_link_witness_context(
         context,
-        swapped_generators_report,
+        swapped_generators_report;
+        source_validation = swapped_generators_validation,
     ) == :invalid_source_report
     @test_throws ArgumentError case008_d14_laurent_link_witness_context(
-        swapped_generators_report,
+        swapped_generators_report;
+        source_validation = swapped_generators_validation,
     )
 
     tampered_pivot = merge(pivot, (; entry_index = 9))
@@ -265,15 +296,17 @@ end
         report,
         (; post_descent_leading_monomial_summary = tampered_summary),
     )
-    @test validate_case008_d14_laurent_post_descent_profile_report(
-        tampered_pivot_report,
-    ) == :wrong_leading_monomial_summary
+    tampered_pivot_validation = :wrong_leading_monomial_summary
+    # Avoid a second exact replay here; #329 already verifies this source-report
+    # validator result, and the context boundary is the non-ok validation input.
     @test validate_case008_d14_laurent_link_witness_context(
         context,
-        tampered_pivot_report,
+        tampered_pivot_report;
+        source_validation = tampered_pivot_validation,
     ) == :invalid_source_report
     @test_throws ArgumentError case008_d14_laurent_link_witness_context(
-        tampered_pivot_report,
+        tampered_pivot_report;
+        source_validation = tampered_pivot_validation,
     )
 
     missing_partner_field_context = merge(
@@ -285,13 +318,15 @@ end
     )
     @test validate_case008_d14_laurent_link_witness_context(
         missing_partner_field_context,
-        report,
+        report;
+        source_validation = report_validation,
     ) == :missing_required_witness_field
 
     missing_schema_context =
         _case008_d14_context_without_field(context, :required_witness_fields)
     @test validate_case008_d14_laurent_link_witness_context(
         missing_schema_context,
-        report,
+        report;
+        source_validation = report_validation,
     ) == :missing_context_fields
 end
