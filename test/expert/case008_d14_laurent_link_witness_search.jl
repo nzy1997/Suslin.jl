@@ -421,6 +421,15 @@ function validate_case008_d14_laurent_link_witness_search_report(
     end
 end
 
+function _laurent_link_replace_tuple_entry(values::Tuple, idx::Int, value)
+    return ntuple(j -> j == idx ? value : values[j], length(values))
+end
+
+function _laurent_link_without_field(value::NamedTuple, field::Symbol)
+    kept = tuple((name for name in keys(value) if name != field)...)
+    return NamedTuple{kept}(tuple((getproperty(value, name) for name in kept)...))
+end
+
 @testset "case_008 d=14 Laurent link-witness search report" begin
     runtests = read(joinpath(@__DIR__, "..", "runtests.jl"), String)
     @test occursin(
@@ -458,4 +467,112 @@ end
         @test isempty(report.candidates)
         @test report.next_boundary == :laurent_link_witness_search_expansion
     end
+
+    @test validate_case008_d14_laurent_link_witness_search_report(
+        merge(report, (; checked_candidate_count = report.checked_candidate_count + 1)),
+    ) == :wrong_checked_candidate_count
+    @test validate_case008_d14_laurent_link_witness_search_report(
+        merge(report, (; witness_semantics = :reversed_partner_plus_pivot_endpoint)),
+    ) == :wrong_witness_semantics
+    @test validate_case008_d14_laurent_link_witness_search_report(
+        _laurent_link_without_field(report, :witness_semantics),
+    ) == :missing_report_fields
+
+    if !isempty(report.candidates)
+        tampered_candidate = merge(
+            first(report.candidates),
+            (;
+                target_endpoint = merge(
+                    first(report.candidates).target_endpoint,
+                    (; term_count = first(report.candidates).target_endpoint.term_count + 1),
+                ),
+            ),
+        )
+        tampered_report = merge(
+            report,
+            (; candidates = _laurent_link_replace_tuple_entry(report.candidates, 1, tampered_candidate)),
+        )
+        @test validate_case008_d14_laurent_link_witness_search_report(
+            tampered_report,
+        ) == :invalid_candidate
+    end
+end
+
+@testset "Laurent link-witness candidate verifier controls" begin
+    R, (u, v) = Suslin.suslin_laurent_polynomial_ring(GF(2), ["u", "v"])
+    column = [one(R), u + v]
+    good_witness = (;
+        family = :two_entry_laurent_combination,
+        pivot_index = 2,
+        partner_index = 1,
+        coefficient = 1,
+        exponent = (1, 0),
+        ring_generators = ("u", "v"),
+    )
+    good_candidate = _laurent_link_witness_candidate_from_replay(
+        column,
+        R,
+        good_witness;
+        case_id = "synthetic",
+    )
+    @test verify_laurent_link_witness_candidate(column, R, good_candidate)
+    @test good_candidate.source_endpoint.leading_exponent == (1, 0)
+    @test good_candidate.target_endpoint.leading_exponent == (0, 1)
+    @test good_candidate.measure_relation == :strict_decrease
+
+    missing_family = merge(
+        good_candidate,
+        (; witness = _laurent_link_without_field(good_witness, :family)),
+    )
+    @test !verify_laurent_link_witness_candidate(column, R, missing_family)
+
+    equal_indices = merge(
+        good_candidate,
+        (; witness = merge(good_witness, (; partner_index = 2))),
+    )
+    @test !verify_laurent_link_witness_candidate(column, R, equal_indices)
+
+    wrong_generators = merge(
+        good_candidate,
+        (; witness = merge(good_witness, (; ring_generators = ("v", "u")))),
+    )
+    @test !verify_laurent_link_witness_candidate(column, R, wrong_generators)
+
+    stale_target = merge(
+        good_candidate,
+        (;
+            target_endpoint = merge(
+                good_candidate.target_endpoint,
+                (; term_count = good_candidate.target_endpoint.term_count + 1),
+            ),
+        ),
+    )
+    @test !verify_laurent_link_witness_candidate(column, R, stale_target)
+
+    reversed_roles = merge(
+        good_candidate,
+        (;
+            witness = merge(
+                good_witness,
+                (; pivot_index = good_witness.partner_index, partner_index = good_witness.pivot_index),
+            ),
+        ),
+    )
+    @test !verify_laurent_link_witness_candidate(column, R, reversed_roles)
+
+    nonwitness = _laurent_link_witness_candidate_from_replay(
+        column,
+        R,
+        merge(good_witness, (; exponent = (0, 0)));
+        case_id = "synthetic",
+        require_strict = false,
+    )
+    @test nonwitness.measure_relation == :not_strict_decrease
+    @test !verify_laurent_link_witness_candidate(column, R, nonwitness)
+
+    nonidentity = merge(
+        good_candidate,
+        (; target_endpoint = good_candidate.source_endpoint),
+    )
+    @test !verify_laurent_link_witness_candidate(column, R, nonidentity)
 end
