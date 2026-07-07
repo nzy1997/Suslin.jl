@@ -173,7 +173,6 @@ end
     context = case008_d14_laurent_link_witness_context(report)
     @test context.case_id == "case_008"
     pivot = first(report.post_descent_leading_monomial_summary.candidates)
-    @test context.case_id == "case_008"
     @test context.dimension == 14
     @test context.ring_generators == ("u", "v")
     @test context.source_report_boundary == :case008_d14_original
@@ -209,12 +208,20 @@ end
     )
     @test validate_case008_d14_laurent_post_descent_profile_report(stale_report) ==
           :stale_after_measure
+    @test validate_case008_d14_laurent_link_witness_context(
+        context,
+        stale_report,
+    ) == :invalid_source_report
     @test_throws ArgumentError case008_d14_laurent_link_witness_context(stale_report)
 
     wrong_status_report = merge(report, (; status = :stale_post_descent_report))
     @test validate_case008_d14_laurent_post_descent_profile_report(
         wrong_status_report,
     ) == :wrong_status
+    @test validate_case008_d14_laurent_link_witness_context(
+        context,
+        wrong_status_report,
+    ) == :invalid_source_report
     @test_throws ArgumentError case008_d14_laurent_link_witness_context(
         wrong_status_report,
     )
@@ -223,6 +230,10 @@ end
     @test validate_case008_d14_laurent_post_descent_profile_report(
         wrong_relation_report,
     ) == :wrong_measure_relation
+    @test validate_case008_d14_laurent_link_witness_context(
+        context,
+        wrong_relation_report,
+    ) == :invalid_source_report
     @test_throws ArgumentError case008_d14_laurent_link_witness_context(
         wrong_relation_report,
     )
@@ -231,6 +242,10 @@ end
     @test validate_case008_d14_laurent_post_descent_profile_report(
         swapped_generators_report,
     ) == :wrong_ring_generators
+    @test validate_case008_d14_laurent_link_witness_context(
+        context,
+        swapped_generators_report,
+    ) == :invalid_source_report
     @test_throws ArgumentError case008_d14_laurent_link_witness_context(
         swapped_generators_report,
     )
@@ -253,6 +268,10 @@ end
     @test validate_case008_d14_laurent_post_descent_profile_report(
         tampered_pivot_report,
     ) == :wrong_leading_monomial_summary
+    @test validate_case008_d14_laurent_link_witness_context(
+        context,
+        tampered_pivot_report,
+    ) == :invalid_source_report
     @test_throws ArgumentError case008_d14_laurent_link_witness_context(
         tampered_pivot_report,
     )
