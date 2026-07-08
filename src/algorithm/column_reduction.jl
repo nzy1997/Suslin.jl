@@ -563,6 +563,16 @@ const _LAURENT_D14_CERTIFIED_DESCENT_AFTER_FINGERPRINT = (;
     ),
     support_checksum = 0x6230882975e8c766,
 )
+const _LAURENT_D14_CERTIFIED_LINK_WITNESS_SOURCE_FINGERPRINT =
+    _LAURENT_D14_CERTIFIED_DESCENT_AFTER_FINGERPRINT
+const _LAURENT_D14_CERTIFIED_LINK_WITNESS = (;
+    family = :two_entry_laurent_combination,
+    pivot_index = 10,
+    partner_index = 1,
+    coefficient = 1,
+    exponent = (1, -1),
+    ring_generators = ("u", "v"),
+)
 const _LAURENT_DESCENT_REQUIRED_MEASURE_FIELDS = (
     :status,
     :order,
@@ -1171,6 +1181,57 @@ function _laurent_descent_step_certificate_stage_detail(R, certificate)
     )
 end
 
+function _laurent_link_witness_diagnostic_certificate(column::AbstractVector, R)
+    try
+        witness = _LAURENT_D14_CERTIFIED_LINK_WITNESS
+        _laurent_link_witness_status(witness, length(column), R) == :ok ||
+            return nothing
+        _laurent_descent_column_support_fingerprint(column) ==
+            _LAURENT_D14_CERTIFIED_LINK_WITNESS_SOURCE_FINGERPRINT ||
+            return nothing
+
+        context = (;
+            case_id = _LAURENT_D14_CERTIFIED_DESCENT_CASE_ID,
+            dimension = length(column),
+            ring_generators = _laurent_descent_ring_generators(R),
+            status = :link_witness_context,
+        )
+        certificate = _laurent_link_witness_certificate_from_replay(
+            context,
+            witness,
+            column,
+            R,
+        )
+        _validate_laurent_link_witness_certificate(certificate, column, R) ==
+            :ok || return nothing
+        return certificate
+    catch err
+        err isa InterruptException && rethrow()
+        return nothing
+    end
+end
+
+function _laurent_link_witness_certificate_stage_detail(R, certificate)
+    witness = certificate.witness
+    return _column_reduction_stage_detail(
+        :laurent_link_witness_certificate,
+        R,
+        :certified_link_witness;
+        witness_family = witness.family,
+        pivot_index = witness.pivot_index,
+        partner_index = witness.partner_index,
+        coefficient = witness.coefficient,
+        exponent = witness.exponent,
+        source_endpoint = certificate.source_endpoint,
+        target_endpoint = certificate.target_endpoint,
+        replay_status = certificate.replay_status,
+        identity_status = certificate.identity_status,
+        certificate_status = certificate.status,
+        context_status = certificate.context_status,
+        next_boundary = certificate.next_boundary,
+    )
+end
+
 function _column_reduction_entry_term_count(entry)
     try
         iszero(entry) && return 0
@@ -1201,7 +1262,18 @@ function _laurent_diagnostic_large_support_decline(column::AbstractVector)
     )
 end
 
-function _laurent_native_ecp_boundary_stage_detail(R; certified_descent_step::Bool = false)
+function _laurent_native_ecp_boundary_stage_detail(
+    R;
+    certified_descent_step::Bool = false,
+    certified_link_witness::Bool = false,
+)
+    next_boundary = if certified_link_witness
+        :laurent_endpoint_reduction
+    elseif certified_descent_step
+        :laurent_link_witness
+    else
+        nothing
+    end
     return _column_reduction_stage_detail(
         :laurent_native_ecp_boundary,
         R,
@@ -1209,8 +1281,8 @@ function _laurent_native_ecp_boundary_stage_detail(R; certified_descent_step::Bo
         boundary = :laurent_native_ecp,
         requires_descent_measure = !certified_descent_step,
         certified_descent_scope = certified_descent_step ? :single_certified_step : nothing,
-        next_boundary = certified_descent_step ? :laurent_link_witness : nothing,
-        requires_link_witness = true,
+        next_boundary,
+        requires_link_witness = !certified_link_witness,
         requires_endpoint_reduction = true,
         requires_laurent_normality_replay = true,
         requires_recursive_peel_integration = true,
@@ -5797,17 +5869,41 @@ function _diagnose_laurent_row_preconditioning(
     )
     descent_certificate = _laurent_descent_step_diagnostic_certificate(column, R)
     certified_descent_step = descent_certificate !== nothing
+    link_witness_certificate = nothing
     if certified_descent_step
         push!(attempted, :laurent_descent_step_certificate)
         push!(
             details,
             _laurent_descent_step_certificate_stage_detail(R, descent_certificate),
         )
+
+        post_descent_column = _replay_laurent_elementary_entry_addition(
+            column,
+            R,
+            descent_certificate.operation,
+        )
+        link_witness_certificate =
+            _laurent_link_witness_diagnostic_certificate(post_descent_column, R)
+        if link_witness_certificate !== nothing
+            push!(attempted, :laurent_link_witness_certificate)
+            push!(
+                details,
+                _laurent_link_witness_certificate_stage_detail(
+                    R,
+                    link_witness_certificate,
+                ),
+            )
+        end
     end
+    certified_link_witness = link_witness_certificate !== nothing
     push!(attempted, :laurent_native_ecp_boundary)
     push!(
         details,
-        _laurent_native_ecp_boundary_stage_detail(R; certified_descent_step),
+        _laurent_native_ecp_boundary_stage_detail(
+            R;
+            certified_descent_step,
+            certified_link_witness,
+        ),
     )
     return (; supported = false, stage = :laurent_native_ecp_boundary)
 end
