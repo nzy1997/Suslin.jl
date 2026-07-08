@@ -18,13 +18,16 @@ function _assert_laurent_native_ecp_boundary_detail(
     detail;
     requires_descent_measure::Bool = true,
     certified_descent_scope = nothing,
+    requires_link_witness::Bool = true,
+    next_boundary = certified_descent_scope === nothing ? nothing : :laurent_link_witness,
 )
     @test detail !== nothing
     @test detail.outcome == :staged_boundary
     @test detail.boundary == :laurent_native_ecp
     @test detail.requires_descent_measure == requires_descent_measure
     @test detail.certified_descent_scope == certified_descent_scope
-    @test detail.requires_link_witness == true
+    @test detail.next_boundary == next_boundary
+    @test detail.requires_link_witness == requires_link_witness
     @test detail.requires_endpoint_reduction == true
     @test detail.requires_laurent_normality_replay == true
     @test detail.requires_recursive_peel_integration == true
@@ -60,11 +63,16 @@ end
     preconditioning_idx = findfirst(==(:laurent_elementary_row_preconditioning), d14.attempted_stages)
     boundary_idx = findfirst(==(:laurent_native_ecp_boundary), d14.attempted_stages)
     descent_idx = findfirst(==(:laurent_descent_step_certificate), d14.attempted_stages)
+    link_witness_idx =
+        findfirst(==(:laurent_link_witness_certificate), d14.attempted_stages)
     @test preconditioning_idx !== nothing
     @test boundary_idx !== nothing
     @test descent_idx !== nothing
+    @test link_witness_idx !== nothing
     @test boundary_idx > preconditioning_idx
     @test boundary_idx > descent_idx
+    @test link_witness_idx > descent_idx
+    @test boundary_idx > link_witness_idx
     @test length(d14.stage_details) == length(d14.attempted_stages)
     d14_witness = _diagnostic_stage_detail(d14, :laurent_witness_unit)
     @test d14_witness !== nothing
@@ -91,10 +99,32 @@ end
         descent.before_measure,
         descent.after_measure,
     )
+    link_witness =
+        _diagnostic_stage_detail(d14, :laurent_link_witness_certificate)
+    @test link_witness !== nothing
+    @test link_witness.outcome == :certified_link_witness
+    @test link_witness.witness_family == :two_entry_laurent_combination
+    @test link_witness.pivot_index == 10
+    @test link_witness.partner_index == 1
+    @test link_witness.coefficient == 1
+    @test link_witness.exponent == (1, -1)
+    @test link_witness.replay_status == :ok
+    @test link_witness.identity_status == :verified
+    @test link_witness.certificate_status == :link_witness_certificate
+    @test link_witness.context_status == :link_witness_context
+    @test link_witness.source_endpoint.status == :link_witness_endpoint_metadata
+    @test link_witness.target_endpoint.status == :link_witness_endpoint_metadata
+    @test link_witness.source_endpoint.case_id == "case_008"
+    @test link_witness.target_endpoint.case_id == "case_008"
+    @test link_witness.source_endpoint.entry_index == 10
+    @test link_witness.target_endpoint.entry_index == 10
+    @test link_witness.next_boundary == :laurent_endpoint_reduction
     _assert_laurent_native_ecp_boundary_detail(
         _diagnostic_stage_detail(d14, :laurent_native_ecp_boundary);
         requires_descent_measure = false,
         certified_descent_scope = :single_certified_step,
+        requires_link_witness = false,
+        next_boundary = :laurent_endpoint_reduction,
     )
 
     d15_fixture = ToricBuilderCase008D15ColumnBoundary.boundary_fixture()
@@ -106,6 +136,7 @@ end
     @test d15.failure_code === nothing
     @test :laurent_elementary_row_preconditioning in d15.attempted_stages
     @test !(:laurent_descent_step_certificate in d15.attempted_stages)
+    @test !(:laurent_link_witness_certificate in d15.attempted_stages)
     @test !(:laurent_native_ecp_boundary in d15.attempted_stages)
     @test _diagnostic_stage_detail(d15, :laurent_native_ecp_boundary) === nothing
     d15_preconditioned =
@@ -145,6 +176,7 @@ end
     @test isempty(non_unimodular_diagnostic.attempted_stages)
     @test isempty(non_unimodular_diagnostic.stage_details)
     @test !(:laurent_descent_step_certificate in non_unimodular_diagnostic.attempted_stages)
+    @test !(:laurent_link_witness_certificate in non_unimodular_diagnostic.attempted_stages)
     @test !(:laurent_native_ecp_boundary in non_unimodular_diagnostic.attempted_stages)
 
     tampered_column = copy(d14_fixture.failing_column)
@@ -157,6 +189,7 @@ end
     )
     @test tampered.status == :unsupported
     @test !(:laurent_descent_step_certificate in tampered.attempted_stages)
+    @test !(:laurent_link_witness_certificate in tampered.attempted_stages)
     tampered_boundary = _diagnostic_stage_detail(tampered, :laurent_native_ecp_boundary)
     @test tampered_boundary.requires_descent_measure == true
 end
