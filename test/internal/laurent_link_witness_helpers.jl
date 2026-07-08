@@ -139,7 +139,11 @@ end
 
     candidate = first(report.candidates)
     witness = candidate.witness
-    @test report.case_id == "case_008"
+    @test candidate.source_endpoint.case_id == "case_008"
+    @test candidate.target_endpoint.case_id == "case_008"
+    @test candidate.replay_status == :ok
+    @test candidate.identity_status == :verified
+    @test candidate.measure_relation == :strict_decrease
     @test witness.pivot_index == 10
     @test witness.partner_index == 1
     @test witness.coefficient == 1
