@@ -2,9 +2,16 @@ using Test
 using Suslin
 using Oscar
 
-if !(@isdefined case008_d14_laurent_link_witness_search_report)
-    include(joinpath(@__DIR__, "..", "expert", "case008_d14_laurent_link_witness_search.jl"))
-end
+include(joinpath(@__DIR__, "..", "fixtures", "toricbuilder_case008_d14_column_boundary.jl"))
+
+const INTERNAL_D14_LINK_SOURCE_OPERATION = (;
+    family = :entry_addition,
+    target_index = 1,
+    source_index = 2,
+    coefficient = 1,
+    exponent = (-1, 1),
+    ring_generators = ("u", "v"),
+)
 
 function _internal_link_without_field(value::NamedTuple, field::Symbol)
     kept = tuple((name for name in keys(value) if name != field)...)
@@ -131,14 +138,27 @@ end
 
 @testset "internal d14 Laurent link-witness candidate" begin
     fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture()
-    source = _case008_d14_link_witness_source_data(fixture)
-    report = case008_d14_laurent_link_witness_search_report(fixture)
-    @test validate_case008_d14_laurent_link_witness_search_report(report, fixture) == :ok
-    @test report.status == :candidate_found
-    @test report.next_boundary == :laurent_link_witness_certificate
+    @test ToricBuilderCase008D14ColumnBoundary.validate_boundary_fixture(fixture) == :ok
 
-    candidate = first(report.candidates)
-    witness = candidate.witness
+    source_column = Suslin._replay_laurent_elementary_entry_addition(
+        fixture.failing_column,
+        fixture.ring,
+        INTERNAL_D14_LINK_SOURCE_OPERATION,
+    )
+    witness = (;
+        family = :two_entry_laurent_combination,
+        pivot_index = 10,
+        partner_index = 1,
+        coefficient = 1,
+        exponent = (1, -1),
+        ring_generators = ("u", "v"),
+    )
+    candidate = Suslin._laurent_link_witness_candidate_from_replay(
+        source_column,
+        fixture.ring,
+        witness;
+        case_id = fixture.case_id,
+    )
     @test candidate.source_endpoint.case_id == "case_008"
     @test candidate.target_endpoint.case_id == "case_008"
     @test candidate.replay_status == :ok
@@ -150,21 +170,27 @@ end
     @test witness.exponent == (1, -1)
 
     @test Suslin._verify_laurent_link_witness_candidate(
-        source.replay.after_column,
+        source_column,
         fixture.ring,
         candidate,
     )
+    context = (;
+        case_id = fixture.case_id,
+        dimension = length(source_column),
+        ring_generators = ("u", "v"),
+        status = :link_witness_context,
+    )
     cert = Suslin._laurent_link_witness_certificate_from_replay(
-        source.context,
+        context,
         witness,
-        source.replay.after_column,
+        source_column,
         fixture.ring,
     )
     @test cert.case_id == "case_008"
     @test cert.next_boundary == :laurent_endpoint_reduction
     @test Suslin._validate_laurent_link_witness_certificate(
         cert,
-        source.replay.after_column,
+        source_column,
         fixture.ring,
     ) == :ok
 end
