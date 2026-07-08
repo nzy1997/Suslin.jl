@@ -27,6 +27,7 @@ const TEST_GROUP_FILES = Dict(
         "internal/toricbuilder_case008_d15_column_boundary.jl",
         "internal/toricbuilder_case008_d14_column_boundary.jl",
         "internal/laurent_descent_measure_helpers.jl",
+        "internal/laurent_link_witness_helpers.jl",
         "internal/toricbuilder_cache_status_report.jl",
         "internal/toricbuilder_cache_case010_certificate.jl",
         "internal/toricbuilder_problem_catalog.jl",
