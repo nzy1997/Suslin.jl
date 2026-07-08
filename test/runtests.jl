@@ -89,6 +89,7 @@ const TEST_GROUP_FILES = Dict(
         "expert/case008_d14_laurent_post_descent_profile.jl",
         "expert/case008_d14_laurent_link_witness_context.jl",
         "expert/case008_d14_laurent_link_witness_search.jl",
+        "expert/laurent_link_witness_certificate.jl",
         "expert/case008_d21_laurent_column_reduction.jl",
         "expert/case008_d15_laurent_column_reduction.jl",
         "expert/case008_d16_laurent_column_reduction.jl",
