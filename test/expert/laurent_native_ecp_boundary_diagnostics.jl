@@ -126,6 +126,24 @@ end
         requires_link_witness = false,
         next_boundary = :laurent_endpoint_reduction,
     )
+    descent_only_boundary = Suslin._laurent_native_ecp_boundary_stage_detail(
+        d14_fixture.ring;
+        certified_descent_step = true,
+        certified_link_witness = false,
+    )
+    _assert_laurent_native_ecp_boundary_detail(
+        descent_only_boundary;
+        requires_descent_measure = false,
+        certified_descent_scope = :single_certified_step,
+        requires_link_witness = true,
+        next_boundary = :laurent_link_witness,
+    )
+
+    ordinary_R, _ = Oscar.polynomial_ring(GF(2), ["x", "y"])
+    @test Suslin._laurent_link_witness_diagnostic_certificate(
+        [one(ordinary_R), zero(ordinary_R)],
+        ordinary_R,
+    ) === nothing
 
     d15_fixture = ToricBuilderCase008D15ColumnBoundary.boundary_fixture()
     d15 = Suslin.diagnose_unimodular_column_reduction(
