@@ -191,5 +191,6 @@ end
     @test !(:laurent_descent_step_certificate in tampered.attempted_stages)
     @test !(:laurent_link_witness_certificate in tampered.attempted_stages)
     tampered_boundary = _diagnostic_stage_detail(tampered, :laurent_native_ecp_boundary)
+    _assert_laurent_native_ecp_boundary_detail(tampered_boundary)
     @test tampered_boundary.requires_descent_measure == true
 end
