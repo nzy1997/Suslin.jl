@@ -569,6 +569,22 @@ const _LAURENT_DESCENT_REQUIRED_MEASURE_FIELDS = (
     :components,
     _LAURENT_DESCENT_MEASURE_COMPONENTS...,
 )
+const _LAURENT_LINK_WITNESS_FIELDS = (
+    :family,
+    :pivot_index,
+    :partner_index,
+    :coefficient,
+    :exponent,
+    :ring_generators,
+)
+const _LAURENT_LINK_WITNESS_CANDIDATE_FIELDS = (
+    :witness,
+    :source_endpoint,
+    :target_endpoint,
+    :replay_status,
+    :identity_status,
+    :measure_relation,
+)
 
 function _laurent_descent_has_fields(value, fields)::Bool
     return all(field -> hasproperty(value, field), fields)
@@ -791,6 +807,139 @@ function _replay_laurent_elementary_entry_addition(column, R, operation)::Vector
     end
     transformed[target] = transformed[target] + monomial * transformed[source]
     return transformed
+end
+
+function _laurent_link_witness_status(witness, n::Int, R)::Symbol
+    _require_two_generator_laurent_ring(R)
+    _laurent_descent_has_fields(witness, _LAURENT_LINK_WITNESS_FIELDS) ||
+        return :malformed_witness
+    witness.family == :two_entry_laurent_combination ||
+        return :wrong_witness_family
+    witness.ring_generators == _laurent_descent_ring_generators(R) ||
+        return :wrong_ring_generators
+    try
+        pivot = _laurent_descent_checked_entry_index(
+            witness.pivot_index,
+            n,
+            "pivot_index",
+        )
+        partner = _laurent_descent_checked_entry_index(
+            witness.partner_index,
+            n,
+            "partner_index",
+        )
+        pivot != partner || return :pivot_partner_index_equality
+        _laurent_descent_exponent_tuple(witness.exponent)
+        _coerce_into_ring(R, witness.coefficient, "coefficient")
+    catch err
+        err isa InterruptException && rethrow()
+        return :malformed_witness
+    end
+    return :ok
+end
+
+function _laurent_link_witness_operation(witness)
+    return (;
+        family = :entry_addition,
+        target_index = witness.pivot_index,
+        source_index = witness.partner_index,
+        coefficient = witness.coefficient,
+        exponent = witness.exponent,
+        ring_generators = witness.ring_generators,
+    )
+end
+
+function _laurent_link_endpoint_metadata(
+    entry,
+    R,
+    entry_index::Int,
+    column_measure;
+    case_id,
+)
+    support = _laurent_descent_entry_support(
+        _coerce_into_ring(R, entry, "entry"),
+    )
+    return (;
+        case_id,
+        status = :link_witness_endpoint_metadata,
+        entry_index,
+        ring_generators = _laurent_descent_ring_generators(R),
+        is_zero = isempty(support),
+        term_count = length(support),
+        support_bounds = _laurent_descent_support_bounds(support),
+        leading_exponent = isempty(support) ? nothing : maximum(support),
+        column_measure,
+    )
+end
+
+function _laurent_link_witness_candidate_from_replay(
+    column,
+    R,
+    witness;
+    case_id,
+    require_strict::Bool = true,
+)
+    status = _laurent_link_witness_status(witness, length(column), R)
+    status == :ok ||
+        throw(ArgumentError("invalid Laurent link witness: $(status)"))
+
+    pivot = Int(witness.pivot_index)
+    before_measure = _laurent_descent_measure_from_column(column, R; case_id)
+    after_column = _replay_laurent_elementary_entry_addition(
+        column,
+        R,
+        _laurent_link_witness_operation(witness),
+    )
+    after_measure = _laurent_descent_measure_from_column(after_column, R; case_id)
+    relation = _strictly_decreases_laurent_measure(before_measure, after_measure)
+    require_strict && !relation &&
+        throw(ArgumentError("witness does not strictly decrease the replay measure"))
+    return (;
+        witness,
+        source_endpoint = _laurent_link_endpoint_metadata(
+            column[pivot],
+            R,
+            pivot,
+            before_measure;
+            case_id,
+        ),
+        target_endpoint = _laurent_link_endpoint_metadata(
+            after_column[pivot],
+            R,
+            pivot,
+            after_measure;
+            case_id,
+        ),
+        replay_status = :ok,
+        identity_status = :verified,
+        measure_relation = relation ? :strict_decrease : :not_strict_decrease,
+    )
+end
+
+function _verify_laurent_link_witness_candidate(column, R, candidate)::Bool
+    try
+        _laurent_descent_has_fields(
+            candidate,
+            _LAURENT_LINK_WITNESS_CANDIDATE_FIELDS,
+        ) || return false
+        candidate.replay_status == :ok || return false
+        candidate.identity_status == :verified || return false
+        candidate.measure_relation == :strict_decrease || return false
+
+        witness = candidate.witness
+        _laurent_link_witness_status(witness, length(column), R) == :ok ||
+            return false
+        expected = _laurent_link_witness_candidate_from_replay(
+            column,
+            R,
+            witness;
+            case_id = candidate.source_endpoint.case_id,
+        )
+        return candidate == expected
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
 end
 
 function _validate_laurent_descent_step_certificate(cert, column, R)::Symbol
