@@ -585,6 +585,22 @@ const _LAURENT_LINK_WITNESS_CANDIDATE_FIELDS = (
     :identity_status,
     :measure_relation,
 )
+const _LAURENT_LINK_WITNESS_CERTIFICATE_STATUS = :link_witness_certificate
+const _LAURENT_LINK_WITNESS_CERTIFICATE_NEXT_BOUNDARY =
+    :laurent_endpoint_reduction
+const _LAURENT_LINK_WITNESS_CERTIFICATE_FIELDS = (
+    :case_id,
+    :dimension,
+    :ring_generators,
+    :context_status,
+    :witness,
+    :source_endpoint,
+    :target_endpoint,
+    :replay_status,
+    :identity_status,
+    :next_boundary,
+    :status,
+)
 
 function _laurent_descent_has_fields(value, fields)::Bool
     return all(field -> hasproperty(value, field), fields)
@@ -939,6 +955,103 @@ function _verify_laurent_link_witness_candidate(column, R, candidate)::Bool
     catch err
         err isa InterruptException && rethrow()
         return false
+    end
+end
+
+function _laurent_link_witness_certificate_from_replay(
+    context,
+    witness,
+    column,
+    R;
+    require_strict::Bool = true,
+)
+    _laurent_descent_has_fields(
+        context,
+        (:case_id, :dimension, :ring_generators, :status),
+    ) || throw(ArgumentError("context must include case_id, dimension, ring_generators, and status"))
+    context.status == :link_witness_context ||
+        throw(ArgumentError("context must have status :link_witness_context"))
+    context.dimension == length(column) ||
+        throw(ArgumentError("context dimension does not match source column"))
+    context.ring_generators == _laurent_descent_ring_generators(R) ||
+        throw(ArgumentError("context ring_generators do not match the ring"))
+
+    candidate = _laurent_link_witness_candidate_from_replay(
+        column,
+        R,
+        witness;
+        case_id = context.case_id,
+        require_strict,
+    )
+    _verify_laurent_link_witness_candidate(column, R, candidate) ||
+        throw(ArgumentError("witness replay did not verify as a link witness"))
+
+    return (;
+        case_id = context.case_id,
+        dimension = context.dimension,
+        ring_generators = context.ring_generators,
+        context_status = context.status,
+        witness = candidate.witness,
+        source_endpoint = candidate.source_endpoint,
+        target_endpoint = candidate.target_endpoint,
+        replay_status = :ok,
+        identity_status = :verified,
+        next_boundary = _LAURENT_LINK_WITNESS_CERTIFICATE_NEXT_BOUNDARY,
+        status = _LAURENT_LINK_WITNESS_CERTIFICATE_STATUS,
+    )
+end
+
+function _validate_laurent_link_witness_certificate(cert, column, R)::Symbol
+    try
+        _require_two_generator_laurent_ring(R)
+        _laurent_descent_has_fields(
+            cert,
+            _LAURENT_LINK_WITNESS_CERTIFICATE_FIELDS,
+        ) || return :missing_certificate_fields
+        cert.status == _LAURENT_LINK_WITNESS_CERTIFICATE_STATUS ||
+            return :wrong_status
+        cert.replay_status == :ok || return :wrong_replay_status
+        cert.identity_status == :verified || return :wrong_identity_status
+        cert.next_boundary == _LAURENT_LINK_WITNESS_CERTIFICATE_NEXT_BOUNDARY ||
+            return :wrong_next_boundary
+        cert.dimension == length(column) || return :wrong_dimension
+        cert.ring_generators == _laurent_descent_ring_generators(R) ||
+            return :wrong_ring_generators
+        cert.context_status == :link_witness_context ||
+            return :wrong_context_status
+
+        context = (;
+            case_id = cert.case_id,
+            dimension = cert.dimension,
+            ring_generators = cert.ring_generators,
+            status = cert.context_status,
+        )
+        candidate = _laurent_link_witness_candidate_from_replay(
+            column,
+            R,
+            cert.witness;
+            case_id = cert.case_id,
+            require_strict = true,
+        )
+        candidate.source_endpoint == cert.source_endpoint ||
+            return :stale_source_endpoint
+        candidate.target_endpoint == cert.target_endpoint ||
+            return :stale_target_endpoint
+        _verify_laurent_link_witness_candidate(column, R, candidate) ||
+            return :identity_replay_failed
+
+        expected = _laurent_link_witness_certificate_from_replay(
+            context,
+            cert.witness,
+            column,
+            R;
+            require_strict = true,
+        )
+        cert == expected || return :stale_certificate
+        return :ok
+    catch err
+        err isa InterruptException && rethrow()
+        return :identity_replay_failed
     end
 end
 
