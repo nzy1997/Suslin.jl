@@ -2,6 +2,10 @@ using Test
 using Suslin
 using Oscar
 
+if !(@isdefined case008_d14_laurent_endpoint_reduction_search_report)
+    include(joinpath(@__DIR__, "case008_d14_laurent_endpoint_reduction_search.jl"))
+end
+
 const LAURENT_ENDPOINT_REDUCTION_CERTIFICATE_STATUS =
     :endpoint_reduction_certificate
 const LAURENT_ENDPOINT_REDUCTION_CERTIFICATE_NEXT_BOUNDARY =
@@ -247,6 +251,82 @@ function validate_laurent_endpoint_reduction_certificate(cert, column, R)::Symbo
     end
 end
 
+const CASE008_D14_ENDPOINT_REDUCTION_CERTIFICATE_SUMMARY_CACHE = Ref{Any}(nothing)
+
+function case008_d14_laurent_endpoint_reduction_certificate_summary(
+    fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture(),
+)
+    cached = CASE008_D14_ENDPOINT_REDUCTION_CERTIFICATE_SUMMARY_CACHE[]
+    cached !== nothing && cached.fixture == fixture && return cached.summary
+
+    report = case008_d14_laurent_endpoint_reduction_search_report(fixture)
+    report_validation =
+        validate_case008_d14_laurent_endpoint_reduction_search_report(
+            report,
+            fixture,
+        )
+    report_validation == :ok ||
+        throw(ArgumentError("d14 endpoint-reduction search report must validate; got $(report_validation)"))
+
+    replay_source = _case008_d14_endpoint_reduction_replay_source(fixture)
+    columns = _case008_d14_endpoint_reduction_columns(replay_source)
+    common = (;
+        case_id = report.case_id,
+        dimension = report.dimension,
+        search_status = report.status,
+        search_next_boundary = report.next_boundary,
+        candidate_count = report.candidate_count,
+        replay_verified_count = report.replay_verified_count,
+        source_column = columns.source_column,
+        ring = columns.ring,
+    )
+
+    if report.status == :candidate_found
+        context = case008_d14_laurent_endpoint_reduction_context(
+            fixture;
+            replay_source,
+        )
+        candidate = first(report.candidates)
+        cert = laurent_endpoint_reduction_certificate(
+            context,
+            candidate.endpoint_operation,
+            columns.source_column,
+            columns.ring;
+            source_endpoint = report.source_endpoint,
+        )
+        validate_laurent_endpoint_reduction_certificate(
+            cert,
+            columns.source_column,
+            columns.ring,
+        ) == :ok ||
+            throw(ArgumentError("first d14 endpoint-reduction candidate did not validate through the certificate shell"))
+        cert.target_endpoint == candidate.source_endpoint ||
+            throw(ArgumentError("d14 certificate target endpoint must match the replayed source-side candidate endpoint"))
+        summary = merge(
+            common,
+            (;
+                d14_status = :endpoint_reduction_certificate,
+                certificate = cert,
+            ),
+        )
+        CASE008_D14_ENDPOINT_REDUCTION_CERTIFICATE_SUMMARY_CACHE[] = (;
+            fixture,
+            summary,
+        )
+        return summary
+    end
+
+    summary = merge(
+        common,
+        (; d14_status = :endpoint_reduction_search_expansion),
+    )
+    CASE008_D14_ENDPOINT_REDUCTION_CERTIFICATE_SUMMARY_CACHE[] = (;
+        fixture,
+        summary,
+    )
+    return summary
+end
+
 @testset "Laurent endpoint-reduction certificate shell" begin
     R, (u, v) = Suslin.suslin_laurent_polynomial_ring(GF(2), ["u", "v"])
     column = [one(R), u + one(R)]
@@ -383,4 +463,39 @@ end
         column,
         R,
     ) == :not_endpoint_reduction
+end
+
+@testset "case_008 d=14 Laurent endpoint-reduction certificate summary" begin
+    summary = case008_d14_laurent_endpoint_reduction_certificate_summary()
+
+    @test summary.case_id == "case_008"
+    @test summary.dimension == 14
+    @test summary.search_status in (:candidate_found, :exhausted)
+    @test summary.d14_status in (
+        :endpoint_reduction_certificate,
+        :endpoint_reduction_search_expansion,
+    )
+
+    if summary.search_status == :candidate_found
+        @test summary.d14_status == :endpoint_reduction_certificate
+        @test summary.search_next_boundary ==
+              :laurent_endpoint_reduction_certificate
+        @test summary.candidate_count > 0
+        @test summary.replay_verified_count == summary.candidate_count
+        @test summary.certificate.case_id == "case_008"
+        @test summary.certificate.status == :endpoint_reduction_certificate
+        @test summary.certificate.next_boundary == :laurent_normality_replay
+        @test validate_laurent_endpoint_reduction_certificate(
+            summary.certificate,
+            summary.source_column,
+            summary.ring,
+        ) == :ok
+    else
+        @test summary.d14_status == :endpoint_reduction_search_expansion
+        @test summary.search_next_boundary ==
+              :laurent_endpoint_reduction_search_expansion
+        @test summary.candidate_count == 0
+        @test summary.replay_verified_count == 0
+        @test !hasproperty(summary, :certificate)
+    end
 end
