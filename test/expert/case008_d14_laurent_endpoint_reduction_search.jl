@@ -54,6 +54,8 @@ const CASE008_D14_ENDPOINT_REDUCTION_CANDIDATE_FIELDS = (
     :replay_status,
     :status,
 )
+const CASE008_D14_ENDPOINT_REDUCTION_NONSTRICT_ERROR =
+    "endpoint operation does not strictly decrease both endpoint measures"
 
 function _case008_d14_endpoint_reduction_has_fields(value, fields)::Bool
     return all(field -> hasproperty(value, field), fields)
@@ -76,6 +78,20 @@ function _case008_d14_endpoint_reduction_link_operation(witness)
         exponent = witness.exponent,
         ring_generators = witness.ring_generators,
     )
+end
+
+function _case008_d14_endpoint_reduction_in_exponent_bounds(exponent)::Bool
+    lower, upper = CASE008_D14_ENDPOINT_REDUCTION_EXPONENT_BOUNDS
+    return lower[1] <= exponent[1] <= upper[1] &&
+           lower[2] <= exponent[2] <= upper[2]
+end
+
+function _case008_d14_endpoint_reduction_is_expected_noncandidate_error(err)::Bool
+    return err isa ArgumentError &&
+           occursin(
+               CASE008_D14_ENDPOINT_REDUCTION_NONSTRICT_ERROR,
+               sprint(showerror, err),
+           )
 end
 
 function _case008_d14_endpoint_reduction_columns(replay_source)
@@ -134,6 +150,24 @@ function _case008_d14_endpoint_reduction_operation_status(
     ) || return :malformed_endpoint_operation
     endpoint_operation.operation.target_index == endpoint_operation.endpoint_index ||
         return :wrong_endpoint_index
+    endpoint_operation.operation.source_index in
+        CASE008_D14_ENDPOINT_REDUCTION_SOURCE_INDICES ||
+        return :wrong_source_index
+    exponent = try
+        Suslin._laurent_descent_exponent_tuple(endpoint_operation.operation.exponent)
+    catch err
+        err isa InterruptException && rethrow()
+        return :malformed_endpoint_operation
+    end
+    exponent in
+        CASE008_D14_ENDPOINT_REDUCTION_EXPONENT_VECTORS ||
+        return :wrong_exponent
+    _case008_d14_endpoint_reduction_in_exponent_bounds(
+        exponent,
+    ) || return :wrong_exponent
+    endpoint_operation.operation.coefficient in
+        CASE008_D14_ENDPOINT_REDUCTION_COEFFICIENT_FAMILIES ||
+        return :wrong_coefficient
     endpoint_operation.operation.ring_generators == endpoint_operation.ring_generators ||
         return :wrong_ring_generators
     Suslin._laurent_descent_operation_status(endpoint_operation.operation, n, R) ==
@@ -225,7 +259,7 @@ function _case008_d14_endpoint_reduction_candidate_from_replay(
     require_strict && candidate_status != :strict_endpoint_decrease &&
         throw(
             ArgumentError(
-                "endpoint operation does not strictly decrease both endpoint measures",
+                CASE008_D14_ENDPOINT_REDUCTION_NONSTRICT_ERROR,
             ),
         )
     return (;
@@ -331,6 +365,9 @@ function case008_d14_laurent_endpoint_reduction_search_report(
                         )
                     catch err
                         err isa InterruptException && rethrow()
+                        _case008_d14_endpoint_reduction_is_expected_noncandidate_error(
+                            err,
+                        ) || rethrow()
                         nothing
                     end
                     candidate === nothing && continue
@@ -340,7 +377,12 @@ function case008_d14_laurent_endpoint_reduction_search_report(
                             candidate,
                             replay_source,
                         )
-                    validation == :ok || continue
+                    validation == :ok ||
+                        throw(
+                            ArgumentError(
+                                "endpoint-reduction candidate replay failed validation; got $(validation)",
+                            ),
+                        )
                     push!(candidates, candidate)
                 end
             end
@@ -563,12 +605,13 @@ end
 
 @testset "case_008 d=14 Laurent endpoint reduction search validator controls" begin
     replay_source = _case008_d14_endpoint_reduction_replay_source()
+    fixture = replay_source.fixture
     context = case008_d14_laurent_endpoint_reduction_context(
-        replay_source.fixture;
+        fixture;
         replay_source,
     )
     report = case008_d14_laurent_endpoint_reduction_search_report(
-        replay_source.fixture,
+        fixture,
     )
     columns = _case008_d14_endpoint_reduction_columns(replay_source)
     endpoint_operation = _case008_d14_endpoint_reduction_operation(
@@ -589,6 +632,7 @@ end
 
     @test validate_case008_d14_laurent_endpoint_reduction_search_report(
         merge(report, (; ring_generators = ("v", "u"))),
+        fixture,
     ) == :wrong_ring_generators
     @test validate_case008_d14_laurent_endpoint_reduction_search_report(
         merge(
@@ -600,6 +644,7 @@ end
                 ),
             ),
         ),
+        fixture,
     ) == :stale_source_endpoint
     @test validate_case008_d14_laurent_endpoint_reduction_search_report(
         merge(
@@ -611,6 +656,7 @@ end
                 ),
             ),
         ),
+        fixture,
     ) == :stale_target_endpoint
     @test validate_case008_d14_laurent_endpoint_reduction_search_report(
         merge(
@@ -620,12 +666,14 @@ end
                     (:family, :endpoint_index, :ring_generators),
             ),
         ),
+        fixture,
     ) == :missing_required_endpoint_reduction_field
     @test validate_case008_d14_laurent_endpoint_reduction_search_report(
         _case008_d14_endpoint_reduction_without_field(
             report,
             :required_endpoint_reduction_fields,
         ),
+        fixture,
     ) == :missing_report_fields
 
     malformed_candidate = merge(
@@ -642,6 +690,7 @@ end
             report,
             malformed_candidate,
         ),
+        fixture,
     ) == :malformed_endpoint_operation
 
     wrong_index_candidate = merge(
@@ -658,7 +707,93 @@ end
             report,
             wrong_index_candidate,
         ),
+        fixture,
     ) == :wrong_endpoint_index
+
+    wrong_source_candidate = merge(
+        candidate,
+        (;
+            endpoint_operation = merge(
+                candidate.endpoint_operation,
+                (;
+                    operation = merge(
+                        candidate.endpoint_operation.operation,
+                        (; source_index = 2),
+                    ),
+                ),
+            ),
+        ),
+    )
+    @test validate_case008_d14_laurent_endpoint_reduction_search_report(
+        _case008_d14_endpoint_reduction_report_with_candidate(
+            report,
+            wrong_source_candidate,
+        ),
+        fixture,
+    ) == :wrong_source_index
+
+    wrong_exponent_candidate = merge(
+        candidate,
+        (;
+            endpoint_operation = merge(
+                candidate.endpoint_operation,
+                (;
+                    operation = merge(
+                        candidate.endpoint_operation.operation,
+                        (; exponent = (2, 0)),
+                    ),
+                ),
+            ),
+        ),
+    )
+    @test validate_case008_d14_laurent_endpoint_reduction_search_report(
+        _case008_d14_endpoint_reduction_report_with_candidate(
+            report,
+            wrong_exponent_candidate,
+        ),
+        fixture,
+    ) == :wrong_exponent
+
+    wrong_coefficient_candidate = merge(
+        candidate,
+        (;
+            endpoint_operation = merge(
+                candidate.endpoint_operation,
+                (;
+                    operation = merge(
+                        candidate.endpoint_operation.operation,
+                        (; coefficient = 0),
+                    ),
+                ),
+            ),
+        ),
+    )
+    @test validate_case008_d14_laurent_endpoint_reduction_search_report(
+        _case008_d14_endpoint_reduction_report_with_candidate(
+            report,
+            wrong_coefficient_candidate,
+        ),
+        fixture,
+    ) == :wrong_coefficient
+
+    copied_metadata_operation = _case008_d14_endpoint_reduction_operation(
+        10,
+        1,
+        (-1, -1),
+        1,
+        ("u", "v"),
+    )
+    copied_metadata_candidate = merge(
+        candidate,
+        (; endpoint_operation = copied_metadata_operation),
+    )
+    @test validate_case008_d14_laurent_endpoint_reduction_search_report(
+        _case008_d14_endpoint_reduction_report_with_candidate(
+            report,
+            copied_metadata_candidate,
+        ),
+        fixture,
+    ) == :stale_candidate_source_endpoint
 
     stale_candidate = merge(
         candidate,
@@ -674,5 +809,6 @@ end
             report,
             stale_candidate,
         ),
+        fixture,
     ) == :stale_candidate_target_endpoint
 end
