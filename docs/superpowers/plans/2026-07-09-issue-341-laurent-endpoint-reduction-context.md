@@ -4,7 +4,7 @@
 
 **Goal:** Add a replay-derived expert-only Laurent endpoint-reduction context for the certified `case_008 d=14` link-witness certificate.
 
-**Architecture:** The context lives in one expert test file and consumes the existing replay chain from `case008_d14_laurent_link_witness_certificate_summary`. Validation recomputes the certified source and target endpoint metadata through internal link-witness certificate helpers, so no diagnostic detail or trusted endpoint copy is used.
+**Architecture:** The context lives in one expert test file and consumes the existing replay chain from `case008_d14_laurent_link_witness_certificate_summary`. Validation derives its ground truth from the fixture through an internal memoized replay-source helper and recomputes the certified source and target endpoint metadata through internal link-witness certificate helpers, so no diagnostic detail or trusted endpoint copy is used.
 
 **Tech Stack:** Julia, Test stdlib, Oscar, Suslin internal expert helpers.
 
@@ -26,7 +26,7 @@
 
 **Interfaces:**
 - Consumes: `case008_d14_laurent_link_witness_certificate_summary(fixture)`, `_case008_d14_link_witness_source_data(fixture)`, and `validate_laurent_link_witness_certificate(cert, column, R)::Symbol`.
-- Produces: `_case008_d14_endpoint_reduction_replay_source(fixture)::NamedTuple`, `case008_d14_laurent_endpoint_reduction_context(fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture(); replay_source = _case008_d14_endpoint_reduction_replay_source(fixture))::NamedTuple`, and `validate_case008_d14_laurent_endpoint_reduction_context(context, fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture(); replay_source = _case008_d14_endpoint_reduction_replay_source(fixture))::Symbol`.
+- Produces: `_case008_d14_endpoint_reduction_replay_source(fixture)::NamedTuple`, `case008_d14_laurent_endpoint_reduction_context(fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture(); replay_source = _case008_d14_endpoint_reduction_replay_source(fixture))::NamedTuple`, and `validate_case008_d14_laurent_endpoint_reduction_context(context, fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture())::Symbol`.
 
 - [ ] **Step 1: Write the expert test file with the intended API and assertions**
 
@@ -65,6 +65,7 @@ const CASE008_D14_ENDPOINT_REDUCTION_CONTEXT_FIELDS = (
     :required_endpoint_reduction_fields,
     :status,
 )
+const CASE008_D14_ENDPOINT_REDUCTION_REPLAY_SOURCE_CACHE = IdDict{Any, Any}()
 ```
 
 - [ ] **Step 2: Add small NamedTuple helpers**
@@ -91,6 +92,8 @@ Add a replay-source helper so the verification command reconstructs the certifie
 function _case008_d14_endpoint_reduction_replay_source(
     fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture(),
 )
+    haskey(CASE008_D14_ENDPOINT_REDUCTION_REPLAY_SOURCE_CACHE, fixture) &&
+        return CASE008_D14_ENDPOINT_REDUCTION_REPLAY_SOURCE_CACHE[fixture]
     summary = case008_d14_laurent_link_witness_certificate_summary(fixture)
     summary.d14_status == :link_witness_certificate ||
         throw(ArgumentError("case_008 d14 requires a certified Laurent link-witness certificate before endpoint context construction"))
@@ -101,7 +104,9 @@ function _case008_d14_endpoint_reduction_replay_source(
     )
     certificate_validation == :ok ||
         throw(ArgumentError("case_008 d14 link-witness certificate must validate; got $(certificate_validation)"))
-    return (; summary, certificate_validation)
+    replay_source = (; summary, certificate_validation)
+    CASE008_D14_ENDPOINT_REDUCTION_REPLAY_SOURCE_CACHE[fixture] = replay_source
+    return replay_source
 end
 ```
 
@@ -147,12 +152,14 @@ The validator recomputes the expected context from the replayed certificate and 
 function validate_case008_d14_laurent_endpoint_reduction_context(
     context,
     fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture(),
-    ;
-    replay_source = _case008_d14_endpoint_reduction_replay_source(fixture),
 )::Symbol
     try
         _case008_d14_endpoint_context_has_required_fields(context) ||
             return :missing_context_fields
+        fixture_validation =
+            ToricBuilderCase008D14ColumnBoundary.validate_boundary_fixture(fixture)
+        fixture_validation == :ok || return :invalid_fixture
+        replay_source = _case008_d14_endpoint_reduction_replay_source(fixture)
         summary = replay_source.summary
         summary.d14_status == :link_witness_certificate ||
             return :missing_link_witness_certificate
@@ -216,6 +223,16 @@ Use two `@testset`s. The positive test asserts every fixed issue field and endpo
     merge(context, (; ring_generators = ("v", "u"))),
     fixture,
 ) == :wrong_ring_generators
+
+@test validate_case008_d14_laurent_endpoint_reduction_context(
+    merge(context, (; pivot_index = 9)),
+    fixture,
+) == :wrong_pivot_index
+
+@test validate_case008_d14_laurent_endpoint_reduction_context(
+    merge(context, (; partner_index = 2)),
+    fixture,
+) == :wrong_partner_index
 
 @test validate_case008_d14_laurent_endpoint_reduction_context(
     merge(context, (; source_endpoint = merge(context.source_endpoint, (; term_count = context.source_endpoint.term_count + 1)))),
