@@ -119,9 +119,13 @@ function _case008_d14_link_witness(
     )
 end
 
-function case008_d14_laurent_link_witness_search_report(
-    fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture(),
-)::NamedTuple
+function case008_d14_laurent_link_witness_search_report()::NamedTuple
+    return case008_d14_laurent_link_witness_search_report(
+        _case008_d14_post_descent_default_fixture(),
+    )
+end
+
+function case008_d14_laurent_link_witness_search_report(fixture)::NamedTuple
     source = _case008_d14_link_witness_source_data(fixture)
     context = source.context
     column = source.replay.after_column
@@ -209,7 +213,16 @@ end
 
 function validate_case008_d14_laurent_link_witness_search_report(
     report,
-    fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture(),
+)::Symbol
+    return validate_case008_d14_laurent_link_witness_search_report(
+        report,
+        _case008_d14_post_descent_default_fixture(),
+    )
+end
+
+function validate_case008_d14_laurent_link_witness_search_report(
+    report,
+    fixture,
 )::Symbol
     try
         _laurent_link_witness_has_fields(

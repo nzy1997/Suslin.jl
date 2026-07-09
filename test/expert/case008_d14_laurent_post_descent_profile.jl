@@ -94,6 +94,31 @@ const CASE008_D14_REQUIRED_POST_DESCENT_REPORT_FIELDS = (
     :status,
 )
 
+const CASE008_D14_POST_DESCENT_FIXTURE_VALIDATION_CACHE = IdDict{Any, Symbol}()
+const CASE008_D14_REPLAYED_POST_DESCENT_DATA_CACHE = IdDict{Any, Any}()
+const CASE008_D14_POST_DESCENT_PROFILE_REPORT_CACHE = IdDict{Any, Any}()
+
+function _case008_d14_post_descent_fixture_validation(fixture)::Symbol
+    haskey(CASE008_D14_POST_DESCENT_FIXTURE_VALIDATION_CACHE, fixture) &&
+        return CASE008_D14_POST_DESCENT_FIXTURE_VALIDATION_CACHE[fixture]
+    validation = ToricBuilderCase008D14ColumnBoundary.validate_boundary_fixture(
+        fixture,
+    )
+    CASE008_D14_POST_DESCENT_FIXTURE_VALIDATION_CACHE[fixture] = validation
+    return validation
+end
+
+function _case008_d14_cached_laurent_post_descent_profile_report()
+    isempty(CASE008_D14_POST_DESCENT_PROFILE_REPORT_CACHE) && return nothing
+    return first(values(CASE008_D14_POST_DESCENT_PROFILE_REPORT_CACHE))
+end
+
+function _case008_d14_post_descent_default_fixture()
+    cached = _case008_d14_cached_laurent_post_descent_profile_report()
+    cached !== nothing && return cached.fixture
+    return ToricBuilderCase008D14ColumnBoundary.boundary_fixture()
+end
+
 function _post_descent_report_has_required_fields(report)::Bool
     return all(
         field -> hasproperty(report, field),
@@ -102,8 +127,9 @@ function _post_descent_report_has_required_fields(report)::Bool
 end
 
 function _case008_d14_replayed_post_descent_data(fixture)
-    fixture_validation =
-        ToricBuilderCase008D14ColumnBoundary.validate_boundary_fixture(fixture)
+    haskey(CASE008_D14_REPLAYED_POST_DESCENT_DATA_CACHE, fixture) &&
+        return CASE008_D14_REPLAYED_POST_DESCENT_DATA_CACHE[fixture]
+    fixture_validation = _case008_d14_post_descent_fixture_validation(fixture)
     fixture_validation == :ok ||
         throw(ArgumentError("invalid case_008 d14 fixture: $(fixture_validation)"))
 
@@ -128,24 +154,34 @@ function _case008_d14_replayed_post_descent_data(fixture)
         fixture.ring;
         case_id = fixture.case_id,
     )
-    return (;
+    replay = (;
         operation,
         before_measure,
         after_column,
         after_measure,
         post_descent_profile,
     )
+    CASE008_D14_REPLAYED_POST_DESCENT_DATA_CACHE[fixture] = replay
+    return replay
 end
 
-function case008_d14_laurent_post_descent_profile_report(
-    fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture(),
-)
+function case008_d14_laurent_post_descent_profile_report()
+    cached = _case008_d14_cached_laurent_post_descent_profile_report()
+    cached !== nothing && return cached.report
+    return case008_d14_laurent_post_descent_profile_report(
+        _case008_d14_post_descent_default_fixture(),
+    )
+end
+
+function case008_d14_laurent_post_descent_profile_report(fixture)
+    haskey(CASE008_D14_POST_DESCENT_PROFILE_REPORT_CACHE, fixture) &&
+        return CASE008_D14_POST_DESCENT_PROFILE_REPORT_CACHE[fixture].report
     replay = _case008_d14_replayed_post_descent_data(fixture)
     relation = strictly_decreases_laurent_measure(
         replay.before_measure,
         replay.after_measure,
     ) ? :strict_decrease : :not_strict_decrease
-    return (;
+    report = (;
         case_id = fixture.case_id,
         dimension = length(fixture.failing_column),
         source_boundary = CASE008_D14_POST_DESCENT_SOURCE_BOUNDARY,
@@ -164,14 +200,25 @@ function case008_d14_laurent_post_descent_profile_report(
             replay.post_descent_profile.leading_monomial_candidates,
         status = CASE008_D14_POST_DESCENT_STATUS,
     )
+    CASE008_D14_POST_DESCENT_PROFILE_REPORT_CACHE[fixture] = (;
+        fixture,
+        report,
+    )
+    return report
+end
+
+function validate_case008_d14_laurent_post_descent_profile_report(report)::Symbol
+    return validate_case008_d14_laurent_post_descent_profile_report(
+        report,
+        _case008_d14_post_descent_default_fixture(),
+    )
 end
 
 function validate_case008_d14_laurent_post_descent_profile_report(
     report,
-    fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture(),
+    fixture,
 )::Symbol
-    fixture_validation =
-        ToricBuilderCase008D14ColumnBoundary.validate_boundary_fixture(fixture)
+    fixture_validation = _case008_d14_post_descent_fixture_validation(fixture)
     fixture_validation == :ok || return :invalid_fixture
     _post_descent_report_has_required_fields(report) ||
         return :missing_report_fields
@@ -213,7 +260,7 @@ end
     )
 
     fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture()
-    @test ToricBuilderCase008D14ColumnBoundary.validate_boundary_fixture(fixture) == :ok
+    @test _case008_d14_post_descent_fixture_validation(fixture) == :ok
 
     report = case008_d14_laurent_post_descent_profile_report(fixture)
     @test report.case_id == "case_008"

@@ -53,7 +53,7 @@ end
 function case008_d14_laurent_link_witness_certificate_summary()
     cached = CASE008_D14_LINK_WITNESS_CERTIFICATE_SUMMARY_CACHE[]
     cached !== nothing && return cached.summary
-    fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture()
+    fixture = _case008_d14_post_descent_default_fixture()
     return case008_d14_laurent_link_witness_certificate_summary(fixture)
 end
 
