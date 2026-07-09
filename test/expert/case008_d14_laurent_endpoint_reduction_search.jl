@@ -556,7 +556,14 @@ end
         runtests,
     )
 
-    report = case008_d14_laurent_endpoint_reduction_search_report()
+    replay_source = _case008_d14_endpoint_reduction_replay_source()
+    fixture = replay_source.fixture
+    @test hasmethod(
+        case008_d14_laurent_endpoint_reduction_search_report,
+        Tuple{},
+    )
+
+    report = case008_d14_laurent_endpoint_reduction_search_report(fixture)
     @test report.case_id == "case_008"
     @test report.dimension == 14
     @test report.ring_generators == ("u", "v")
@@ -584,7 +591,10 @@ end
     @test report.status in (:candidate_found, :exhausted)
     @test report.candidate_count == length(report.candidates)
     @test report.replay_verified_count == report.candidate_count
-    @test validate_case008_d14_laurent_endpoint_reduction_search_report(report) == :ok
+    @test validate_case008_d14_laurent_endpoint_reduction_search_report(
+        report,
+        fixture,
+    ) == :ok
 
     if report.status == :candidate_found
         @test report.candidate_count > 0
