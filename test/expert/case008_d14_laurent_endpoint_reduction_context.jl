@@ -48,12 +48,26 @@ function _case008_d14_endpoint_without_field(value::NamedTuple, field::Symbol)
     return NamedTuple{kept}(tuple((getproperty(value, name) for name in kept)...))
 end
 
+function _case008_d14_endpoint_reduction_replay_source()
+    cached = _case008_d14_cached_laurent_link_witness_certificate_summary()
+    cached !== nothing && return _case008_d14_endpoint_reduction_replay_source(
+        cached.fixture;
+        summary = cached.summary,
+    )
+    return _case008_d14_endpoint_reduction_replay_source(
+        ToricBuilderCase008D14ColumnBoundary.boundary_fixture(),
+    )
+end
+
 function _case008_d14_endpoint_reduction_replay_source(
-    fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture(),
+    fixture;
+    summary = nothing,
 )
     haskey(CASE008_D14_ENDPOINT_REDUCTION_REPLAY_SOURCE_CACHE, fixture) &&
         return CASE008_D14_ENDPOINT_REDUCTION_REPLAY_SOURCE_CACHE[fixture]
-    summary = case008_d14_laurent_link_witness_certificate_summary(fixture)
+    if summary === nothing
+        summary = case008_d14_laurent_link_witness_certificate_summary(fixture)
+    end
     summary.d14_status == :link_witness_certificate ||
         throw(ArgumentError("case_008 d14 requires a certified Laurent link-witness certificate before endpoint context construction"))
     certificate_validation = validate_laurent_link_witness_certificate(
@@ -63,14 +77,21 @@ function _case008_d14_endpoint_reduction_replay_source(
     )
     certificate_validation == :ok ||
         throw(ArgumentError("case_008 d14 link-witness certificate must validate; got $(certificate_validation)"))
-    replay_source = (; summary, certificate_validation)
+    replay_source = (; fixture, summary, certificate_validation)
     CASE008_D14_ENDPOINT_REDUCTION_REPLAY_SOURCE_CACHE[fixture] = replay_source
     return replay_source
 end
 
+function case008_d14_laurent_endpoint_reduction_context()
+    replay_source = _case008_d14_endpoint_reduction_replay_source()
+    return case008_d14_laurent_endpoint_reduction_context(
+        replay_source.fixture;
+        replay_source,
+    )
+end
+
 function case008_d14_laurent_endpoint_reduction_context(
-    fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture(),
-    ;
+    fixture;
     replay_source = _case008_d14_endpoint_reduction_replay_source(fixture),
 )
     summary = replay_source.summary
@@ -96,9 +117,17 @@ function case008_d14_laurent_endpoint_reduction_context(
     )
 end
 
+function validate_case008_d14_laurent_endpoint_reduction_context(context)::Symbol
+    replay_source = _case008_d14_endpoint_reduction_replay_source()
+    return validate_case008_d14_laurent_endpoint_reduction_context(
+        context,
+        replay_source.fixture,
+    )
+end
+
 function validate_case008_d14_laurent_endpoint_reduction_context(
     context,
-    fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture(),
+    fixture,
 )::Symbol
     try
         _case008_d14_endpoint_context_has_required_fields(context) ||
@@ -164,8 +193,8 @@ end
         runtests,
     )
 
-    fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture()
-    replay_source = _case008_d14_endpoint_reduction_replay_source(fixture)
+    replay_source = _case008_d14_endpoint_reduction_replay_source()
+    fixture = replay_source.fixture
     summary = replay_source.summary
     @test summary.d14_status == :link_witness_certificate
     context = case008_d14_laurent_endpoint_reduction_context(
@@ -200,8 +229,8 @@ end
 end
 
 @testset "case_008 d=14 Laurent endpoint reduction context validator" begin
-    fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture()
-    replay_source = _case008_d14_endpoint_reduction_replay_source(fixture)
+    replay_source = _case008_d14_endpoint_reduction_replay_source()
+    fixture = replay_source.fixture
     context = case008_d14_laurent_endpoint_reduction_context(
         fixture;
         replay_source,

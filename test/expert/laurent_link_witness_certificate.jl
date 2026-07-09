@@ -14,6 +14,8 @@ const LAURENT_LINK_WITNESS_CERTIFICATE_NEXT_BOUNDARY =
 const LAURENT_LINK_WITNESS_CERTIFICATE_FIELDS =
     Suslin._LAURENT_LINK_WITNESS_CERTIFICATE_FIELDS
 
+const CASE008_D14_LINK_WITNESS_CERTIFICATE_SUMMARY_CACHE = Ref{Any}(nothing)
+
 function _laurent_link_witness_certificate_has_fields(value, fields)::Bool
     return Suslin._laurent_descent_has_fields(value, fields)
 end
@@ -48,9 +50,18 @@ function validate_laurent_link_witness_certificate(cert, column, R)::Symbol
     return Suslin._validate_laurent_link_witness_certificate(cert, column, R)
 end
 
-function case008_d14_laurent_link_witness_certificate_summary(
-    fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture(),
-)
+function case008_d14_laurent_link_witness_certificate_summary()
+    cached = CASE008_D14_LINK_WITNESS_CERTIFICATE_SUMMARY_CACHE[]
+    cached !== nothing && return cached.summary
+    fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture()
+    return case008_d14_laurent_link_witness_certificate_summary(fixture)
+end
+
+function _case008_d14_cached_laurent_link_witness_certificate_summary()
+    return CASE008_D14_LINK_WITNESS_CERTIFICATE_SUMMARY_CACHE[]
+end
+
+function case008_d14_laurent_link_witness_certificate_summary(fixture)
     source = _case008_d14_link_witness_source_data(fixture)
     search_report = case008_d14_laurent_link_witness_search_report(fixture)
     search_validation =
@@ -86,16 +97,23 @@ function case008_d14_laurent_link_witness_certificate_summary(
             fixture.ring,
         ) == :ok ||
             throw(ArgumentError("first d14 candidate did not validate through the certificate shell"))
-        return merge(
+        summary = merge(
             common,
             (;
                 d14_status = :link_witness_certificate,
                 certificate = cert,
             ),
         )
+        CASE008_D14_LINK_WITNESS_CERTIFICATE_SUMMARY_CACHE[] = (;
+            fixture,
+            summary,
+        )
+        return summary
     end
 
-    return merge(common, (; d14_status = :no_link_witness_candidate))
+    summary = merge(common, (; d14_status = :no_link_witness_candidate))
+    CASE008_D14_LINK_WITNESS_CERTIFICATE_SUMMARY_CACHE[] = (; fixture, summary)
+    return summary
 end
 
 @testset "Laurent link-witness certificate shell" begin
