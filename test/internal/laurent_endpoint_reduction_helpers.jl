@@ -25,7 +25,7 @@ end
         status = :endpoint_reduction_context,
     )
     operation = (;
-        family = :paired_laurent_entry_addition,
+        family = :paired_laurent_endpoint_entry_addition,
         endpoint_index = 2,
         operation = (;
             family = :entry_addition,

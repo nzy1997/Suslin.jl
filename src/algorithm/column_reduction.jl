@@ -620,7 +620,6 @@ const _LAURENT_ENDPOINT_REDUCTION_OPERATION_FIELDS = (
 const _LAURENT_ENDPOINT_REDUCTION_OPERATION_FAMILIES = (
     :laurent_endpoint_entry_addition,
     :paired_laurent_endpoint_entry_addition,
-    :paired_laurent_entry_addition,
 )
 const _LAURENT_ENDPOINT_REDUCTION_CANDIDATE_FIELDS = (
     :endpoint_operation,
