@@ -277,16 +277,20 @@ $tests_definition
 """
 end
 
+function captured_error_message(operation)
+    try
+        operation()
+    catch error
+        return sprint(showerror, error)
+    end
+    return nothing
+end
+
 function load_error_message(toml::AbstractString)
     return mktemp() do path, io
         write(io, toml)
         flush(io)
-        try
-            load_manifest(path)
-        catch error
-            return sprint(showerror, error)
-        end
-        return nothing
+        return captured_error_message(() -> load_manifest(path))
     end
 end
 
@@ -389,6 +393,8 @@ end
         "/public/api_surface.jl",
         "public/api_surface.jl/",
         "C:/public/api_surface.jl",
+        "public/D:/outside.jl",
+        "public/D:outside.jl",
         raw"public\api_surface.jl",
         raw"\\server\share\api_surface.jl",
         "//server/share/api_surface.jl",
@@ -396,6 +402,14 @@ end
     for path in invalid_paths
         @test_throws ArgumentError TestManifest.validate_relative_path(path, "test path")
     end
+
+    manifest = load_manifest(MANIFEST_PATH)
+    @test captured_error_message(
+        () -> validate_manifest(
+            manifest_with(manifest; full_run_paths = Set(["src/D:/outside.jl"])),
+            TEST_ROOT,
+        ),
+    ) == "ArgumentError: full_run_paths entry must not contain ':'"
 end
 
 @testset "CI shard manifest validation rejects malformed data" begin

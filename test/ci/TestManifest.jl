@@ -70,15 +70,8 @@ function validate_relative_path(path::AbstractString, label::AbstractString)
     any(component -> component == "." || component == "..", components) &&
         throw(ArgumentError("$label must not contain '.' or '..' components"))
 
-    first_component = first(components)
-    if ncodeunits(first_component) >= 2
-        bytes = codeunits(first_component)
-        drive_letter =
-            (0x41 <= bytes[1] && bytes[1] <= 0x5a) ||
-            (0x61 <= bytes[1] && bytes[1] <= 0x7a)
-        drive_letter && bytes[2] == 0x3a &&
-            throw(ArgumentError("$label must not use a Windows drive prefix"))
-    end
+    any(component -> occursin(':', component), components) &&
+        throw(ArgumentError("$label must not contain ':'"))
     return nothing
 end
 
