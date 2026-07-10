@@ -4,6 +4,7 @@ using Oscar
 using Suslin
 
 include("toricbuilder_factor_toric_block_3.jl")
+include("toricbuilder_case008_d14_column_boundary.jl")
 
 function _column_matrix(R, values)
     M = zero_matrix(R, length(values), 1)
@@ -72,6 +73,143 @@ function _pinv_toricbuilder_case(ring, ring_constructor)
         ),
         consumer_test_ids = ("issue-6-laurent-fixtures", "issue-19-toricbuilder-contract"),
     )
+end
+
+function _laurent_to_poly_source_refs()
+    return (;
+        laurent_to_poly = (;
+            author = "Park",
+            algorithm = :algorithm_6_1,
+            name = "LaurentToPoly",
+            role = :laurent_to_polynomial_conversion,
+        ),
+        laurent_noether = (;
+            author = "Park",
+            algorithm = :algorithm_6_3,
+            name = "LaurentNoether",
+            role = :laurent_variable_change_normalization,
+        ),
+    )
+end
+
+function _laurent_to_poly_route_ring_metadata(R, variables)
+    return (;
+        description = "GF(2)[$(variables[1])^+/-1, $(variables[2])^+/-1]",
+        object = R,
+        generators = variables,
+    )
+end
+
+function _laurent_to_poly_route_constructor(variables)
+    return (;
+        function_name = :suslin_laurent_polynomial_ring,
+        coefficient = "GF(2)",
+        variables,
+    )
+end
+
+function _laurent_to_poly_route_entry(
+    id,
+    route,
+    R,
+    variables,
+    source_column,
+    selected_entry_index,
+    expected_reducer,
+    provenance_extra,
+    verifier_id,
+)
+    return (;
+        id,
+        kind = :laurent_to_polynomial_route,
+        route,
+        ring_constructor = _laurent_to_poly_route_constructor(variables),
+        ring = _laurent_to_poly_route_ring_metadata(R, variables),
+        source_column,
+        selected_entry_index,
+        source_fingerprint = Suslin._laurent_descent_column_support_fingerprint(source_column),
+        expected_reducer,
+        provenance = (;
+            route,
+            source_refs = _laurent_to_poly_source_refs(),
+            provenance_extra...,
+        ),
+        post_conversion_contract = (;
+            preserves_unimodularity = true,
+            polynomial_target = true,
+            selected_entry_must_be_polynomial_unit = true,
+        ),
+        verifier_id,
+        consumer_test_ids = (
+            "issue-351-laurent-to-poly-route-fixtures",
+            "issue-351-laurent-to-poly-route-consumer",
+        ),
+    )
+end
+
+function laurent_to_poly_route_catalog()
+    normalization_ring, (x, y) = Suslin.suslin_laurent_polynomial_ring(GF(2), ["x", "y"])
+    normalization_column = [
+        x^-1 * y^-1 * (x + y^2),
+        x^-1 * y^-1 * (x * y + x + one(normalization_ring)),
+        x^-1 * y^-1 * (x^2 + x * y + y + one(normalization_ring)),
+        zero(normalization_ring),
+        zero(normalization_ring),
+        zero(normalization_ring),
+    ]
+
+    general_ring, (general_x, general_y) =
+        Suslin.suslin_laurent_polynomial_ring(GF(2), ["x", "y"])
+    general_column = [
+        general_x * general_y + general_x,
+        general_x^2 + general_x + one(general_ring),
+        general_x * general_y + general_y^2 + one(general_ring),
+    ]
+
+    d14 = ToricBuilderCase008D14ColumnBoundary.boundary_fixture()
+    ToricBuilderCase008D14ColumnBoundary.validate_boundary_fixture(d14) == :ok ||
+        throw(ArgumentError("case008 d14 boundary fixture failed validation"))
+    return (;
+        cases = [
+            _laurent_to_poly_route_entry(
+                "laurent-to-poly-existing-normalization",
+                :existing_normalization,
+                normalization_ring,
+                (x, y),
+                normalization_column,
+                1,
+                (; status = :supported, failure_code = nothing, stage = :laurent_normalization),
+                (; source_case = :laurent_column_reduction_diagnostics),
+                :laurent_to_poly_existing_normalization,
+            ),
+            _laurent_to_poly_route_entry(
+                "laurent-to-poly-general-ecp",
+                :general_ecp,
+                general_ring,
+                (general_x, general_y),
+                general_column,
+                2,
+                (; status = :unsupported, failure_code = :unsupported_laurent_column_family, stage = :laurent_native_ecp_boundary),
+                (; source_case = :laurent_column_reduction_diagnostics),
+                :laurent_to_poly_general_ecp,
+            ),
+            _laurent_to_poly_route_entry(
+                "laurent-to-poly-case008-d14",
+                :case008_d14,
+                d14.ring,
+                Tuple(gens(d14.ring)),
+                d14.failing_column,
+                1,
+                (; status = :unsupported, failure_code = :unsupported_laurent_column_family, stage = :laurent_native_ecp_boundary),
+                (; source_case = d14.case_id, source_fixture = :ToricBuilderCase008D14ColumnBoundary, boundary_provenance = d14.boundary_provenance),
+                :laurent_to_poly_case008_d14,
+            ),
+        ],
+    )
+end
+
+function laurent_to_poly_route_cases_by_id()
+    return Dict(entry.id => entry for entry in laurent_to_poly_route_catalog().cases)
 end
 
 function catalog()
