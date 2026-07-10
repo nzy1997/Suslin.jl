@@ -175,4 +175,12 @@ end
     R, (x,) = suslin_laurent_polynomial_ring(GF(2), ["x"])
     monomial_unit = matrix(R, [x;;])
     @test !verify_laurent_gl_normalization(monomial_unit, (;))
+
+    elementary = elementary_matrix(2, 1, 2, x, R)
+    @test Suslin._is_elementary_matrix_factor(elementary, R, 2)
+    @test !Suslin._is_elementary_matrix_factor(identity_matrix(R, 3), R, 2)
+    @test !Suslin._is_elementary_matrix_factor(zero_matrix(R, 2, 3), R, 2)
+
+    S, _ = suslin_laurent_polynomial_ring(GF(2), ["y"])
+    @test !Suslin._is_elementary_matrix_factor(identity_matrix(S, 2), R, 2)
 end
