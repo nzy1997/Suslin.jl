@@ -207,8 +207,10 @@ end
     ])
     laurent_err = _captured_error(() -> elementary_factorization(normalizable_laurent))
     @test laurent_err isa ArgumentError
-    @test occursin("Laurent GL_n normalization boundary", sprint(showerror, laurent_err))
-    @test occursin("determinant-correction/driver path cannot yet return elementary factors that reconstruct the original input", sprint(showerror, laurent_err))
+    laurent_message = sprint(showerror, laurent_err)
+    @test occursin("elementary_factorization(A) is an elementary-only SL_n API", laurent_message)
+    @test occursin("requires determinant 1", laurent_message)
+    @test occursin("laurent_gl_factorization_certificate(A)", laurent_message)
 
     non_normalizable_laurent = matrix(L, [
         x + one(L) zero(L) zero(L);

@@ -32,6 +32,7 @@ const EXPECTED_TESTS = [
     ("internal/laurent_linear_solve.jl", "internal", "internal-core"),
     ("internal/gl_laurent_normalization.jl", "internal", "internal-core"),
     ("internal/laurent_lazy_determinant_fixtures.jl", "internal", "internal-fixtures"),
+    ("internal/laurent_to_polynomial_route_fixtures.jl", "internal", "internal-fixtures"),
     ("internal/toricbuilder_contract.jl", "internal", "internal-core"),
     ("internal/toricbuilder_issue38_fixture.jl", "internal", "internal-fixtures"),
     ("internal/toricbuilder_cache_q_blocks.jl", "internal", "internal-fixtures"),
@@ -328,10 +329,10 @@ end
     @test validate_manifest(manifest, TEST_ROOT) === nothing
     @test shard_ids(manifest) == EXPECTED_SHARDS
     @test length(files_for_group(manifest, "public")) == 6
-    @test length(files_for_group(manifest, "internal")) == 31
+    @test length(files_for_group(manifest, "internal")) == 32
     @test length(files_for_group(manifest, "expert")) == 85
-    @test length(all_test_files(manifest)) == 122
-    @test length(unique(all_test_files(manifest))) == 122
+    @test length(all_test_files(manifest)) == 123
+    @test length(unique(all_test_files(manifest))) == 123
     @test owner_shard(manifest, "expert/documentation_smoke.jl") == "expert-integration"
     @test manifest.documentation_smoke == "expert/documentation_smoke.jl"
 end
@@ -587,11 +588,11 @@ using .TestRunner
     default_targets = requested_targets(String[], manifest)
     @test first.(default_targets) == ["public", "internal"]
     @test length(last(default_targets[1])) == 6
-    @test length(last(default_targets[2])) == 31
+    @test length(last(default_targets[2])) == 32
 
     all_targets = requested_targets(["all"], manifest)
     @test first.(all_targets) == ["public", "internal", "expert"]
-    @test sum(length(last(target)) for target in all_targets) == 122
+    @test sum(length(last(target)) for target in all_targets) == 123
     @test first.(requested_targets(["all,public"], manifest)) ==
           ["public", "internal", "expert"]
     @test_throws ArgumentError requested_targets(["all,not-a-group"], manifest)

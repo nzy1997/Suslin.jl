@@ -3,18 +3,19 @@
 Date: 2026-06-26
 
 This page reconciles the support-scope audit in #129 with the ToricBuilder
-Q-block status in #131 after the `case_010` Laurent certificate route (#135)
-and the bounded `case_008` triage (#137). It is evidence for review only; it
-does not close the parent issues and does not add algorithm support.
+Q-block status in #131 after the `case_010` Laurent certificate route (#135),
+the bounded `case_008` triage (#137), and the finalized Laurent `GL_n`
+determinant contract (#358). It is evidence for review only; it does not close
+the parent issues and does not add arbitrary Laurent `GL_n` support.
 
 ## Support Matrix
 
 | Evidence item | Route | Supported outcome | Boundary |
 | --- | --- | --- | --- |
-| `case_010` ToricBuilder Q-block | `laurent_gl_factorization_certificate` | `gl_certificate_pass`; verified `true`; decomposed base matrices `48` | public `elementary_factorization` remains `staged_boundary` for the original Laurent `GL_n` input |
+| `case_010` ToricBuilder Q-block | `laurent_gl_factorization_certificate` | `gl_certificate_pass`; verified `true`; decomposed base matrices `48` | public `elementary_factorization` reports the intentional determinant contract for the original Laurent `GL_n` input |
 | `case_008` bounded exercise | bounded Laurent `GL_n` certificate route | `certified_algorithm_boundary` at `certificate_construction` under explicit `--exercise=case_008 --timeout-seconds=120` | not a default report pass; remains a staged algorithm boundary |
-| Default ToricBuilder Q-block report rows `case_001`-`case_006`, `case_010` | generated Q-block status report | `gl_certificate_pass` with public `staged_boundary` and Laurent monomial-unit determinants | evidence is the Laurent `GL_n` certificate route, not original-input elementary factor sequences |
-| Laurent monomial-unit `GL_n` inputs in the staged certificate path | `normalize_laurent_gl_matrix` then `laurent_gl_factorization_certificate` | certificate verifies the normalized determinant-one core and exact reconstruction metadata | original-input `elementary_factorization` for Laurent `GL_n` remains a `staged boundary` |
+| Default ToricBuilder Q-block report rows `case_001`-`case_006`, `case_010` | generated Q-block status report | `gl_certificate_pass` with public `determinant_contract` and Laurent monomial-unit determinants | evidence is the Laurent `GL_n` certificate route, not original-input elementary factor sequences |
+| Laurent monomial-unit `GL_n` inputs in the certificate path | `normalize_laurent_gl_matrix` then `laurent_gl_factorization_certificate` | certificate verifies the normalized determinant-one core and exact reconstruction metadata | original-input `elementary_factorization` for Laurent `GL_n` is rejected by the determinant-one elementary-only contract |
 | Ordinary-polynomial staged slices | `elementary_factorization` | exact elementary factor sequences that satisfy `verify_factorization(A, factors) == true` | not arbitrary Park-Woodburn support |
 | Remaining Laurent scope | no broad public factor-sequence route | certificate-backed monomial-unit slices only where recorded tests exercise them | not arbitrary Laurent `GL_n` support |
 
@@ -22,16 +23,18 @@ does not close the parent issues and does not add algorithm support.
 
 `elementary_factorization(A) -> exact elementary factor sequence -> verify_factorization(A, factors)`
 
-This is the public factor-sequence route for the supported ordinary-polynomial
-and determinant-one Laurent `SL` staged slices. It returns factors only when the
-current staged implementation can verify exact multiplication back to `A`.
+This is the public elementary factor-sequence route for supported
+determinant-one `SL_n` inputs. It returns factors only when exact multiplication
+back to `A` verifies.
 
 `ToricBuilder Q-block -> classify Laurent determinant -> normalize Laurent GL_n determinant -> factor determinant-one core -> verify Laurent GL_n certificate`
 
 This is the Laurent `GL_n` certificate route. It records determinant
-normalization, factors the normalized determinant-one core, and verifies the
-certificate metadata. It is not the same as returning an elementary factor
-sequence for the original Laurent `GL_n` input.
+normalization, factors the normalized determinant-one core, verifies the
+certificate metadata, and reconstructs the original input by applying the
+monomial-unit correction. It is not the same as returning an elementary factor
+sequence for the original Laurent `GL_n` input, because elementary factors have
+determinant one.
 
 ## Verification Commands
 
@@ -56,8 +59,8 @@ julia --project=. scripts/report_toricbuilder_cache_q_blocks.jl --exercise=case_
 ```
 
 Expected `case_010` evidence: the generated row contains
-`gl_certificate_pass`, `verified true`, public `staged_boundary`, and a positive
-decomposed base-matrix count.
+`gl_certificate_pass`, `verified true`, public `determinant_contract`, and a
+positive decomposed base-matrix count.
 
 Expected `case_008` evidence: the bounded generated row is structured, not
 `not_exercised_in_default_report`, not `route_error`, and not an unstructured
@@ -66,11 +69,11 @@ at `certificate_construction`.
 
 ## Parent-Issue Reconciliation
 
-- #129 remains the support-scope audit. This page confirms the staged support
-  boundary: exact factor sequences are available only on the supported
-  `elementary_factorization` slices, while Laurent `GL_n` monomial-unit support
-  is certificate evidence unless a later issue adds original-input factor
-  sequences.
+- #129 remains the support-scope audit. This page confirms the public
+  determinant contract: exact elementary factor sequences are available only on
+  supported determinant-one `elementary_factorization` slices, while Laurent
+  `GL_n` monomial-unit support is certificate evidence with a diagonal
+  correction.
 - #131 remains the ToricBuilder Q-block status thread. The default generated
   report now records `case_010` as a Laurent `GL_n` certificate pass, while
   `case_008` is documented through the explicit bounded exercise route.

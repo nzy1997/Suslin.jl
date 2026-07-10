@@ -471,8 +471,8 @@ function catalog()
         "Laurent/ToricBuilder normalization remains outside the ordinary-polynomial #187 public route",
         :laurent_boundary,
         _negative_failure((
-            "Laurent GL_n normalization boundary succeeded",
-            "determinant-correction/driver path cannot yet return elementary factors",
+            "elementary_factorization(A) is an elementary-only SL_n API",
+            "laurent_gl_factorization_certificate(A)",
         ); staged_route = false),
         merge(readme_style_case, (;
             ring_constructor = laurent_constructor,

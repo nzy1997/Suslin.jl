@@ -89,6 +89,11 @@ group = "internal"
 shard = "internal-fixtures"
 
 [[tests]]
+path = "internal/laurent_to_polynomial_route_fixtures.jl"
+group = "internal"
+shard = "internal-fixtures"
+
+[[tests]]
 path = "internal/toricbuilder_contract.jl"
 group = "internal"
 shard = "internal-core"
