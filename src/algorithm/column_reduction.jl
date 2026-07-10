@@ -1208,6 +1208,23 @@ function _replay_laurent_endpoint_reduction(
     )
 end
 
+function _laurent_endpoint_reduction_replay_identity(
+    source_column,
+    target_column,
+    source_replayed_column,
+    target_replayed_column,
+    R,
+)::Bool
+    length(source_column) == length(target_column) == length(source_replayed_column) ==
+        length(target_replayed_column) || return false
+    return all(
+        i ->
+            R(target_replayed_column[i]) - R(source_replayed_column[i]) ==
+            R(target_column[i]) - R(source_column[i]),
+        eachindex(source_column),
+    )
+end
+
 function _laurent_endpoint_reduction_candidate_from_replay(
     source_column,
     target_column,
@@ -1242,6 +1259,19 @@ function _laurent_endpoint_reduction_candidate_from_replay(
                 "endpoint operation does not strictly decrease both endpoint measures",
             ),
         )
+    identity_status = _laurent_endpoint_reduction_replay_identity(
+        source_column,
+        target_column,
+        source_replay.replayed_column,
+        target_replay.replayed_column,
+        R,
+    ) ? :verified : :identity_replay_failed
+    require_strict && identity_status != :verified &&
+        throw(
+            ArgumentError(
+                "endpoint reduction replay does not preserve the source-to-target column delta",
+            ),
+        )
     return (;
         endpoint_operation,
         source_endpoint = source_replay.target_endpoint,
@@ -1249,7 +1279,7 @@ function _laurent_endpoint_reduction_candidate_from_replay(
         source_measure_relation = source_replay.relation,
         target_measure_relation = target_replay.relation,
         replay_status = :ok,
-        identity_status = :verified,
+        identity_status,
         status = candidate_status,
     )
 end

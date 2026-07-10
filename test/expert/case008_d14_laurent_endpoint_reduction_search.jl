@@ -250,6 +250,8 @@ function validate_case008_d14_laurent_endpoint_reduction_candidate(
             return :wrong_candidate_source_relation
         candidate.target_measure_relation == expected.target_measure_relation ||
             return :wrong_candidate_target_relation
+        candidate.identity_status == expected.identity_status ||
+            return :identity_replay_failed
         candidate.status == expected.status || return :wrong_candidate_status
         require_strict && expected.status != :strict_endpoint_decrease &&
             return :not_endpoint_reduction

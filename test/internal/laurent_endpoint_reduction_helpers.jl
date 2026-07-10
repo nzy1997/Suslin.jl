@@ -87,6 +87,35 @@ end
         R,
     ) == :ok
 
+    mismatched_target_column = [v, u * v]
+    mismatched_candidate = Suslin._laurent_endpoint_reduction_candidate_from_replay(
+        source_column,
+        mismatched_target_column,
+        R,
+        operation;
+        case_id = context.case_id,
+        require_strict = false,
+    )
+    @test mismatched_candidate.source_measure_relation == :strict_decrease
+    @test mismatched_candidate.target_measure_relation == :strict_decrease
+    @test mismatched_candidate.identity_status == :identity_replay_failed
+    @test mismatched_candidate.status == :strict_endpoint_decrease
+    @test !Suslin._verify_laurent_endpoint_reduction_candidate(
+        source_column,
+        mismatched_target_column,
+        R,
+        mismatched_candidate,
+    )
+    @test_throws ArgumentError(
+        "endpoint reduction replay does not preserve the source-to-target column delta",
+    ) Suslin._laurent_endpoint_reduction_candidate_from_replay(
+        source_column,
+        mismatched_target_column,
+        R,
+        operation;
+        case_id = context.case_id,
+    )
+
     missing_field = _internal_endpoint_without_field(operation, :family)
     @test Suslin._laurent_endpoint_reduction_status(
         missing_field,
@@ -222,6 +251,15 @@ end
             replay_source.fixture;
             replay_source,
         )
+        mismatched_identity_status = merge(
+            candidate,
+            (; identity_status = :identity_replay_failed),
+        )
+        @test validate_case008_d14_laurent_endpoint_reduction_candidate(
+            context,
+            mismatched_identity_status,
+            replay_source,
+        ) == :identity_replay_failed
         cert = Suslin._laurent_endpoint_reduction_certificate_from_replay(
             context,
             candidate.endpoint_operation,
