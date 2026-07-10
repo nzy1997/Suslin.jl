@@ -52,6 +52,7 @@ const CASE008_D14_ENDPOINT_REDUCTION_CANDIDATE_FIELDS = (
     :source_measure_relation,
     :target_measure_relation,
     :replay_status,
+    :identity_status,
     :status,
 )
 const CASE008_D14_ENDPOINT_REDUCTION_NONSTRICT_ERROR =
@@ -133,22 +134,16 @@ function _case008_d14_endpoint_reduction_operation_status(
     n::Int,
     R,
 )::Symbol
-    _case008_d14_endpoint_reduction_has_fields(
+    generic_status = Suslin._laurent_endpoint_reduction_status(
         endpoint_operation,
-        CASE008_D14_ENDPOINT_REDUCTION_REQUIRED_FIELDS,
-    ) || return :malformed_endpoint_operation
+        n,
+        R,
+    )
+    generic_status == :ok || return generic_status
     endpoint_operation.family == :paired_laurent_endpoint_entry_addition ||
         return :malformed_endpoint_operation
-    endpoint_operation.ring_generators == ("u", "v") ||
-        return :wrong_ring_generators
     endpoint_operation.endpoint_index in
         CASE008_D14_ENDPOINT_REDUCTION_ENDPOINT_INDICES ||
-        return :wrong_endpoint_index
-    _case008_d14_endpoint_reduction_has_fields(
-        endpoint_operation.operation,
-        (:family, :target_index, :source_index, :coefficient, :exponent, :ring_generators),
-    ) || return :malformed_endpoint_operation
-    endpoint_operation.operation.target_index == endpoint_operation.endpoint_index ||
         return :wrong_endpoint_index
     endpoint_operation.operation.source_index in
         CASE008_D14_ENDPOINT_REDUCTION_SOURCE_INDICES ||
@@ -168,10 +163,6 @@ function _case008_d14_endpoint_reduction_operation_status(
     endpoint_operation.operation.coefficient in
         CASE008_D14_ENDPOINT_REDUCTION_COEFFICIENT_FAMILIES ||
         return :wrong_coefficient
-    endpoint_operation.operation.ring_generators == endpoint_operation.ring_generators ||
-        return :wrong_ring_generators
-    Suslin._laurent_descent_operation_status(endpoint_operation.operation, n, R) ==
-        :ok || return :malformed_endpoint_operation
     return :ok
 end
 
@@ -213,63 +204,13 @@ function _case008_d14_endpoint_reduction_candidate_from_replay(
     )
     status == :ok ||
         throw(ArgumentError("invalid Laurent endpoint operation: $(status)"))
-    endpoint_index = Int(endpoint_operation.endpoint_index)
-    source_before = _case008_d14_endpoint_metadata_from_column(
+    return Suslin._laurent_endpoint_reduction_candidate_from_replay(
         source_column,
-        R,
-        endpoint_index;
-        case_id = context.case_id,
-    )
-    target_before = _case008_d14_endpoint_metadata_from_column(
         target_column,
         R,
-        endpoint_index;
+        endpoint_operation;
         case_id = context.case_id,
-    )
-    replayed_source_column = Suslin._replay_laurent_elementary_entry_addition(
-        source_column,
-        R,
-        endpoint_operation.operation,
-    )
-    replayed_target_column = Suslin._replay_laurent_elementary_entry_addition(
-        target_column,
-        R,
-        endpoint_operation.operation,
-    )
-    source_endpoint = _case008_d14_endpoint_metadata_from_column(
-        replayed_source_column,
-        R,
-        endpoint_index;
-        case_id = context.case_id,
-    )
-    target_endpoint = _case008_d14_endpoint_metadata_from_column(
-        replayed_target_column,
-        R,
-        endpoint_index;
-        case_id = context.case_id,
-    )
-    source_measure_relation =
-        _case008_d14_endpoint_relation(source_before, source_endpoint)
-    target_measure_relation =
-        _case008_d14_endpoint_relation(target_before, target_endpoint)
-    candidate_status =
-        source_measure_relation == :strict_decrease &&
-        target_measure_relation == :strict_decrease ?
-        :strict_endpoint_decrease : :not_endpoint_reduction
-    require_strict && candidate_status != :strict_endpoint_decrease &&
-        throw(
-            ArgumentError(
-                CASE008_D14_ENDPOINT_REDUCTION_NONSTRICT_ERROR,
-            ),
-        )
-    return (;
-        endpoint_operation,
-        source_endpoint,
-        target_endpoint,
-        source_measure_relation,
-        target_measure_relation,
-        replay_status = :ok,
-        status = candidate_status,
+        require_strict,
     )
 end
 
@@ -312,6 +253,12 @@ function validate_case008_d14_laurent_endpoint_reduction_candidate(
         candidate.status == expected.status || return :wrong_candidate_status
         require_strict && expected.status != :strict_endpoint_decrease &&
             return :not_endpoint_reduction
+        require_strict && !Suslin._verify_laurent_endpoint_reduction_candidate(
+            columns.source_column,
+            columns.target_column,
+            columns.ring,
+            candidate,
+        ) && return :identity_replay_failed
         return candidate == expected ? :ok : :stale_candidate
     catch err
         err isa InterruptException && rethrow()
