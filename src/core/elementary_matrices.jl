@@ -191,6 +191,19 @@ function _canonical_elementary_factor_record(factor)
     return (; kind = :elementary, n, ring = R, row, col, coefficient)
 end
 
+function _is_elementary_matrix_factor(factor, R, n::Int)::Bool
+    try
+        nrows(factor) == n || return false
+        ncols(factor) == n || return false
+        _same_base_ring(base_ring(factor), R) || return false
+        record = _canonical_elementary_factor_record(factor)
+        return record.kind in (:identity, :elementary)
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
 function _elementary_factor_record_matrix(record)
     record.kind == :identity && return identity_matrix(record.ring, record.n)
     record.kind == :elementary &&

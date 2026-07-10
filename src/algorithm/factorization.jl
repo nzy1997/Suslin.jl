@@ -1748,8 +1748,14 @@ function _throw_staged_factorization_failure(A, ring_profile::Symbol, normalizat
     n = nrows(A)
 
     if ring_profile == :laurent
-        classification = normalization.determinant_classification
-        throw(ArgumentError("Laurent GL_n normalization boundary succeeded with determinant classification $(classification), but the determinant-correction/driver path cannot yet return elementary factors that reconstruct the original input"))
+        profile = normalization.determinant_profile
+        throw(ArgumentError(
+            "elementary_factorization(A) is an elementary-only SL_n API and " *
+            "requires determinant 1. This Laurent input has determinant " *
+            "$(profile.determinant) with classification $(profile.classification); " *
+            "use laurent_gl_factorization_certificate(A) for the supported " *
+            "Laurent GL_n monomial-unit correction certificate.",
+        ))
     end
 
     if !_polynomial_exact_field_backed_ring(base_ring(A))
@@ -3890,6 +3896,18 @@ function _laurent_sl_fallback_factorization(A)
     error("internal Laurent column-peel factorization failed exact verification")
 end
 
+"""
+    elementary_factorization(A)
+
+Return an elementary factor sequence whose product is exactly `A` for supported
+determinant-one (`SL_n`) inputs.
+
+This API is intentionally elementary-only: every returned factor has
+determinant one, so the input must have determinant one. For supported Laurent
+`GL_n` inputs with a nontrivial monomial-unit determinant, use
+`laurent_gl_factorization_certificate(A)` to obtain the diagonal correction
+and the elementary factorization of the determinant-one core.
+"""
 function elementary_factorization(A)
     _validate_factorization_matrix(A)
 
