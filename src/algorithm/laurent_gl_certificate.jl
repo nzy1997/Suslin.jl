@@ -1,3 +1,22 @@
+"""
+    LaurentGLFactorizationCertificate
+
+Verified decomposition certificate for supported Laurent `GL_n` inputs on the
+eager determinant path. The certificate stores the original matrix, determinant
+profile, diagonal monomial-unit correction, determinant-one normalized core,
+elementary core factors, reconstructed product, and verification status.
+
+For supported monomial-unit determinant inputs the public reconstruction
+contract is:
+
+```julia
+certificate.original_matrix ==
+    certificate.correction.factor * prod(certificate.core_factors)
+```
+
+The correction is not an elementary factor; it carries the original nontrivial
+determinant while every elementary factor has determinant one.
+"""
 struct LaurentGLFactorizationCertificate
     original_matrix
     determinant_profile
@@ -396,6 +415,15 @@ function _laurent_gl_certificate_strategy(determinant_strategy)::Symbol
     throw(ArgumentError("determinant_strategy must be :eager or :lazy"))
 end
 
+"""
+    laurent_gl_factorization_certificate(A; determinant_strategy = :eager, correction_side = nothing)
+
+Return a verified Laurent `GL_n` decomposition certificate for supported square
+Laurent matrices whose determinant is `1` or a supported Laurent monomial unit.
+The eager certificate normalizes `A` to a determinant-one core, factors that
+core into elementary matrices, and verifies exact reconstruction of the
+original input by applying the stored diagonal correction.
+"""
 function laurent_gl_factorization_certificate(
     A;
     determinant_strategy = :eager,
@@ -420,6 +448,13 @@ function laurent_gl_factorization_certificate(
     )
 end
 
+"""
+    verify_laurent_gl_factorization_certificate(certificate)::Bool
+
+Independently replay the stored Laurent `GL_n` certificate and return whether
+the determinant classification, correction, determinant-one core,
+elementary-factor product, and original-input reconstruction all verify.
+"""
 function verify_laurent_gl_factorization_certificate(
     certificate::LaurentLazyGLHoistCertificate,
 )::Bool
@@ -446,6 +481,7 @@ function _laurent_gl_factorization_certificate_verification(certificate)
     core_det_ok = false
     core_replay_ok = false
     core_factors_match_ok = false
+    core_factors_elementary_ok = false
     core_factors_ok = false
     reconstructed_product_ok = false
 
@@ -476,6 +512,10 @@ function _laurent_gl_factorization_certificate_verification(certificate)
                 certificate.core_factors,
                 certificate.core_factorization.factors,
             )
+            core_factors_elementary_ok = all(
+                factor -> _is_elementary_matrix_factor(factor, R, n),
+                certificate.core_factors,
+            )
             core_factors_ok = verify_factorization(certificate.normalized_core, certificate.core_factors)
             rebuilt_core = _factor_product(certificate.core_factors, R, n)
             rebuilt = certificate.correction.factor * rebuilt_core
@@ -491,7 +531,7 @@ function _laurent_gl_factorization_certificate_verification(certificate)
     overall_ok = size_ok && normalization_ok && determinant_profile_ok &&
         correction_ok && inverse_correction_ok && normalized_core_ok &&
         core_det_ok && core_replay_ok && core_factors_match_ok &&
-        core_factors_ok && reconstructed_product_ok
+        core_factors_elementary_ok && core_factors_ok && reconstructed_product_ok
 
     return (
         overall_ok = overall_ok,
@@ -504,6 +544,7 @@ function _laurent_gl_factorization_certificate_verification(certificate)
         core_det_ok = core_det_ok,
         core_replay_ok = core_replay_ok,
         core_factors_match_ok = core_factors_match_ok,
+        core_factors_elementary_ok = core_factors_elementary_ok,
         core_factors_ok = core_factors_ok,
         reconstructed_product_ok = reconstructed_product_ok,
     )
@@ -531,6 +572,7 @@ function _laurent_gl_lazy_deferred_correction_certificate_verification(certifica
     rewritten_left_factors_ok = false
     rewritten_right_factors_ok = false
     elementary_factors_ok = false
+    elementary_factors_elementary_ok = false
     elementary_product_ok = false
     reconstructed_product_ok = false
 
@@ -631,6 +673,10 @@ function _laurent_gl_lazy_deferred_correction_certificate_verification(certifica
                 certificate.elementary_factors,
                 assembly.elementary_factors,
             )
+            elementary_factors_elementary_ok = all(
+                factor -> _is_elementary_matrix_factor(factor, R, n),
+                certificate.elementary_factors,
+            )
             rebuilt_product = _factor_product(certificate.elementary_factors, R, n)
             elementary_product_ok = certificate.elementary_product == rebuilt_product
             expected_reconstructed_product = expected_side == :left ?
@@ -649,7 +695,8 @@ function _laurent_gl_lazy_deferred_correction_certificate_verification(certifica
         normalized_factorization_ok && correction_side_ok &&
         reconstruction_relation_ok && rewritten_left_factors_ok &&
         rewritten_right_factors_ok &&
-        elementary_factors_ok && elementary_product_ok && reconstructed_product_ok
+        elementary_factors_ok && elementary_factors_elementary_ok &&
+        elementary_product_ok && reconstructed_product_ok
 
     return (;
         overall_ok,
@@ -664,6 +711,7 @@ function _laurent_gl_lazy_deferred_correction_certificate_verification(certifica
         rewritten_left_factors_ok,
         rewritten_right_factors_ok,
         elementary_factors_ok,
+        elementary_factors_elementary_ok,
         elementary_product_ok,
         reconstructed_product_ok,
     )

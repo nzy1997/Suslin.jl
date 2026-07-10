@@ -18,16 +18,16 @@ The default run fully exercises `case_001`, `case_002`, `case_003`, `case_004`, 
 
 | Case | ToricBuilder a | ToricBuilder b | Matrix size | Sparse nnz | Test level | Status | Decomposed base matrices | Runtime seconds | Determinant | Max factor monomial degree | Total factor offdiag monomials |
 | --- | --- | --- | ---: | ---: | --- | --- | ---: | ---: | --- | ---: | ---: |
-| case_001 | x*y | x*y | 6x6 | 30 | default_contract | gl_certificate_pass / staged_boundary | 50 | 4.350 | u*v | 5 | 74 |
-| case_002 | x^-1*y | x*y | 14x14 | 79 | default_contract | gl_certificate_pass / staged_boundary | 186 | 4.325 | u*v^2 | 7 | 281 |
-| case_003 | x^2 | x^2 | 6x6 | 27 | default_contract | gl_certificate_pass / staged_boundary | 49 | 0.418 | u*v | 4 | 70 |
-| case_004 | x^-1 | y^-1 | 18x18 | 73 | default_contract | gl_certificate_pass / staged_boundary | 189 | 7.660 | u^2*v^2 | 6 | 268 |
-| case_005 | x*y | x*y^-1 | 14x14 | 90 | default_contract | gl_certificate_pass / staged_boundary | 168 | 4.498 | u^2*v | 5 | 257 |
-| case_006 | x^-1 | x^3*y^2 | 18x18 | 99 | default_contract | gl_certificate_pass / staged_boundary | 212 | 8.166 | u*v^4 | 6 | 300 |
+| case_001 | x*y | x*y | 6x6 | 30 | default_contract | gl_certificate_pass / determinant_contract | 50 | 4.350 | u*v | 5 | 74 |
+| case_002 | x^-1*y | x*y | 14x14 | 79 | default_contract | gl_certificate_pass / determinant_contract | 186 | 4.325 | u*v^2 | 7 | 281 |
+| case_003 | x^2 | x^2 | 6x6 | 27 | default_contract | gl_certificate_pass / determinant_contract | 49 | 0.418 | u*v | 4 | 70 |
+| case_004 | x^-1 | y^-1 | 18x18 | 73 | default_contract | gl_certificate_pass / determinant_contract | 189 | 7.660 | u^2*v^2 | 6 | 268 |
+| case_005 | x*y | x*y^-1 | 14x14 | 90 | default_contract | gl_certificate_pass / determinant_contract | 168 | 4.498 | u^2*v | 5 | 257 |
+| case_006 | x^-1 | x^3*y^2 | 18x18 | 99 | default_contract | gl_certificate_pass / determinant_contract | 212 | 8.166 | u*v^4 | 6 | 300 |
 | case_007 | y^-2 | x^-2 | 42x42 | 546 | default_contract | not_exercised_in_default_report / not_run | not_run | not_run | not_run | not_run | not_run |
 | case_008 | y^-2 | x^2 | 30x30 | 477 | default_contract | not_exercised_in_default_report / not_run | not_run | not_run | not_run | not_run | not_run |
 | case_009 | x^-1*y | x^-1*y^-1 | 62x62 | 739 | default_contract | not_exercised_in_default_report / not_run | not_run | not_run | not_run | not_run | not_run |
-| case_010 | x^-2*y^-1 | x^2*y | 6x6 | 34 | default_contract | gl_certificate_pass / staged_boundary | 48 | 0.134 | u*v | 5 | 95 |
+| case_010 | x^-2*y^-1 | x^2*y | 6x6 | 34 | default_contract | gl_certificate_pass / determinant_contract | 48 | 0.134 | u*v | 5 | 95 |
 | case_011 | x^-1*y^3 | x^3*y^-1 | 288x288 | 14713 | optional_slow | not_exercised_in_default_report / not_run | not_run | not_run | not_run | not_run | not_run |
 | case_012 | x^-2 | x^-2*y^2 | 98x98 | 1883 | default_contract | not_exercised_in_default_report / not_run | not_run | not_run | not_run | not_run | not_run |
 
@@ -50,13 +50,13 @@ The default run fully exercises `case_001`, `case_002`, `case_003`, `case_004`, 
 
 ## Exercised Evidence
 
-- `case_001`: determinant `u*v`, route `gl_certificate_pass`, public `staged_boundary`, decomposed base matrices `50`, verified `true`, determinant_strategy `eager`, correction_side `not_run`, determinant_source `not_run`. normalize_laurent_gl_matrix and laurent_gl_factorization_certificate exercised; normalized determinant is 1.
-- `case_002`: determinant `u*v^2`, route `gl_certificate_pass`, public `staged_boundary`, decomposed base matrices `186`, verified `true`, determinant_strategy `eager`, correction_side `not_run`, determinant_source `not_run`. normalize_laurent_gl_matrix and laurent_gl_factorization_certificate exercised; normalized determinant is 1.
-- `case_003`: determinant `u*v`, route `gl_certificate_pass`, public `staged_boundary`, decomposed base matrices `49`, verified `true`, determinant_strategy `eager`, correction_side `not_run`, determinant_source `not_run`. normalize_laurent_gl_matrix and laurent_gl_factorization_certificate exercised; normalized determinant is 1.
-- `case_004`: determinant `u^2*v^2`, route `gl_certificate_pass`, public `staged_boundary`, decomposed base matrices `189`, verified `true`, determinant_strategy `eager`, correction_side `not_run`, determinant_source `not_run`. normalize_laurent_gl_matrix and laurent_gl_factorization_certificate exercised; normalized determinant is 1.
-- `case_005`: determinant `u^2*v`, route `gl_certificate_pass`, public `staged_boundary`, decomposed base matrices `168`, verified `true`, determinant_strategy `eager`, correction_side `not_run`, determinant_source `not_run`. normalize_laurent_gl_matrix and laurent_gl_factorization_certificate exercised; normalized determinant is 1.
-- `case_006`: determinant `u*v^4`, route `gl_certificate_pass`, public `staged_boundary`, decomposed base matrices `212`, verified `true`, determinant_strategy `eager`, correction_side `not_run`, determinant_source `not_run`. normalize_laurent_gl_matrix and laurent_gl_factorization_certificate exercised; normalized determinant is 1.
-- `case_010`: determinant `u*v`, route `gl_certificate_pass`, public `staged_boundary`, decomposed base matrices `48`, verified `true`, determinant_strategy `eager`, correction_side `not_run`, determinant_source `not_run`. normalize_laurent_gl_matrix and laurent_gl_factorization_certificate exercised; normalized determinant is 1.
+- `case_001`: determinant `u*v`, route `gl_certificate_pass`, public `determinant_contract`, decomposed base matrices `50`, verified `true`, determinant_strategy `eager`, correction_side `not_run`, determinant_source `not_run`. normalize_laurent_gl_matrix and laurent_gl_factorization_certificate exercised; normalized determinant is 1.
+- `case_002`: determinant `u*v^2`, route `gl_certificate_pass`, public `determinant_contract`, decomposed base matrices `186`, verified `true`, determinant_strategy `eager`, correction_side `not_run`, determinant_source `not_run`. normalize_laurent_gl_matrix and laurent_gl_factorization_certificate exercised; normalized determinant is 1.
+- `case_003`: determinant `u*v`, route `gl_certificate_pass`, public `determinant_contract`, decomposed base matrices `49`, verified `true`, determinant_strategy `eager`, correction_side `not_run`, determinant_source `not_run`. normalize_laurent_gl_matrix and laurent_gl_factorization_certificate exercised; normalized determinant is 1.
+- `case_004`: determinant `u^2*v^2`, route `gl_certificate_pass`, public `determinant_contract`, decomposed base matrices `189`, verified `true`, determinant_strategy `eager`, correction_side `not_run`, determinant_source `not_run`. normalize_laurent_gl_matrix and laurent_gl_factorization_certificate exercised; normalized determinant is 1.
+- `case_005`: determinant `u^2*v`, route `gl_certificate_pass`, public `determinant_contract`, decomposed base matrices `168`, verified `true`, determinant_strategy `eager`, correction_side `not_run`, determinant_source `not_run`. normalize_laurent_gl_matrix and laurent_gl_factorization_certificate exercised; normalized determinant is 1.
+- `case_006`: determinant `u*v^4`, route `gl_certificate_pass`, public `determinant_contract`, decomposed base matrices `212`, verified `true`, determinant_strategy `eager`, correction_side `not_run`, determinant_source `not_run`. normalize_laurent_gl_matrix and laurent_gl_factorization_certificate exercised; normalized determinant is 1.
+- `case_010`: determinant `u*v`, route `gl_certificate_pass`, public `determinant_contract`, decomposed base matrices `48`, verified `true`, determinant_strategy `eager`, correction_side `not_run`, determinant_source `not_run`. normalize_laurent_gl_matrix and laurent_gl_factorization_certificate exercised; normalized determinant is 1.
 
 ## Stage Timing Details
 

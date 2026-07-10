@@ -411,7 +411,7 @@ end
     @test Set(keys(by_id)) == Set(["case_$(lpad(string(idx), 3, "0"))" for idx in 1:12])
 
     @test by_id["case_001"].route_status == :gl_certificate_pass
-    @test by_id["case_001"].public_elementary_status == :staged_boundary
+    @test by_id["case_001"].public_elementary_status == :determinant_contract
     @test by_id["case_001"].determinant_class == :laurent_monomial_unit
     @test by_id["case_001"].verified == true
     @test by_id["case_001"].factor_count > 0
@@ -427,7 +427,7 @@ end
     @test by_id["case_001"].factor_total_offdiagonal_monomials > 0
 
     @test by_id["case_002"].route_status == :gl_certificate_pass
-    @test by_id["case_002"].public_elementary_status == :staged_boundary
+    @test by_id["case_002"].public_elementary_status == :determinant_contract
     @test by_id["case_002"].verified == true
     @test by_id["case_002"].decomposed_base_matrix_count == 186
     @test by_id["case_002"].runtime_seconds > 0
@@ -435,7 +435,7 @@ end
     @test by_id["case_002"].toricbuilder_b == "x*y"
 
     @test by_id["case_003"].route_status == :gl_certificate_pass
-    @test by_id["case_003"].public_elementary_status == :staged_boundary
+    @test by_id["case_003"].public_elementary_status == :determinant_contract
     @test by_id["case_003"].verified == true
     @test by_id["case_003"].factor_count > 0
     @test by_id["case_003"].runtime_seconds > 0
@@ -448,7 +448,7 @@ end
     @test by_id["case_006"].decomposed_base_matrix_count == 212
 
     @test by_id["case_010"].route_status == :gl_certificate_pass
-    @test by_id["case_010"].public_elementary_status == :staged_boundary
+    @test by_id["case_010"].public_elementary_status == :determinant_contract
     @test by_id["case_010"].determinant_class == :laurent_monomial_unit
     @test by_id["case_010"].verified == true
     @test by_id["case_010"].decomposed_base_matrix_count > 0
@@ -488,13 +488,13 @@ end
     @test occursin("Runtime seconds", markdown)
     @test !occursin("Public elementary status", markdown)
     @test !occursin("Determinant class |", markdown)
-    @test occursin(r"\| case_001 \| x\*y \| x\*y \| 6x6 \| 30 \| default_contract \| gl_certificate_pass / staged_boundary \| 50 \| [0-9]+\.[0-9]{3} \| u\*v \| [1-9][0-9]* \| [1-9][0-9]* \|", markdown)
-    @test occursin(r"\| case_002 \| x\^-1\*y \| x\*y \| 14x14 \| 79 \| default_contract \| gl_certificate_pass / staged_boundary \| 186 \| [0-9]+\.[0-9]{3} \| u\*v\^2 \| [1-9][0-9]* \| [1-9][0-9]* \|", markdown)
-    @test occursin(r"\| case_003 \| x\^2 \| x\^2 \| 6x6 \| 27 \| default_contract \| gl_certificate_pass / staged_boundary \| 49 \| [0-9]+\.[0-9]{3} \| u\*v \| [1-9][0-9]* \| [1-9][0-9]* \|", markdown)
-    @test occursin(r"\| case_004 \| x\^-1 \| y\^-1 \| 18x18 \| 73 \| default_contract \| gl_certificate_pass / staged_boundary \| 189 \| [0-9]+\.[0-9]{3} \| u\^2\*v\^2 \| [1-9][0-9]* \| [1-9][0-9]* \|", markdown)
-    @test occursin(r"\| case_005 \| x\*y \| x\*y\^-1 \| 14x14 \| 90 \| default_contract \| gl_certificate_pass / staged_boundary \| 168 \| [0-9]+\.[0-9]{3} \| u\^2\*v \| [1-9][0-9]* \| [1-9][0-9]* \|", markdown)
-    @test occursin(r"\| case_006 \| x\^-1 \| x\^3\*y\^2 \| 18x18 \| 99 \| default_contract \| gl_certificate_pass / staged_boundary \| 212 \| [0-9]+\.[0-9]{3} \| u\*v\^4 \| [1-9][0-9]* \| [1-9][0-9]* \|", markdown)
-    @test occursin(r"\| case_010 \| x\^-2\*y\^-1 \| x\^2\*y \| 6x6 \| 34 \| default_contract \| gl_certificate_pass / staged_boundary \| [1-9][0-9]* \| [0-9]+\.[0-9]{3} \| u\*v \| [1-9][0-9]* \| [1-9][0-9]* \|", markdown)
+    @test occursin(r"\| case_001 \| x\*y \| x\*y \| 6x6 \| 30 \| default_contract \| gl_certificate_pass / determinant_contract \| 50 \| [0-9]+\.[0-9]{3} \| u\*v \| [1-9][0-9]* \| [1-9][0-9]* \|", markdown)
+    @test occursin(r"\| case_002 \| x\^-1\*y \| x\*y \| 14x14 \| 79 \| default_contract \| gl_certificate_pass / determinant_contract \| 186 \| [0-9]+\.[0-9]{3} \| u\*v\^2 \| [1-9][0-9]* \| [1-9][0-9]* \|", markdown)
+    @test occursin(r"\| case_003 \| x\^2 \| x\^2 \| 6x6 \| 27 \| default_contract \| gl_certificate_pass / determinant_contract \| 49 \| [0-9]+\.[0-9]{3} \| u\*v \| [1-9][0-9]* \| [1-9][0-9]* \|", markdown)
+    @test occursin(r"\| case_004 \| x\^-1 \| y\^-1 \| 18x18 \| 73 \| default_contract \| gl_certificate_pass / determinant_contract \| 189 \| [0-9]+\.[0-9]{3} \| u\^2\*v\^2 \| [1-9][0-9]* \| [1-9][0-9]* \|", markdown)
+    @test occursin(r"\| case_005 \| x\*y \| x\*y\^-1 \| 14x14 \| 90 \| default_contract \| gl_certificate_pass / determinant_contract \| 168 \| [0-9]+\.[0-9]{3} \| u\^2\*v \| [1-9][0-9]* \| [1-9][0-9]* \|", markdown)
+    @test occursin(r"\| case_006 \| x\^-1 \| x\^3\*y\^2 \| 18x18 \| 99 \| default_contract \| gl_certificate_pass / determinant_contract \| 212 \| [0-9]+\.[0-9]{3} \| u\*v\^4 \| [1-9][0-9]* \| [1-9][0-9]* \|", markdown)
+    @test occursin(r"\| case_010 \| x\^-2\*y\^-1 \| x\^2\*y \| 6x6 \| 34 \| default_contract \| gl_certificate_pass / determinant_contract \| [1-9][0-9]* \| [0-9]+\.[0-9]{3} \| u\*v \| [1-9][0-9]* \| [1-9][0-9]* \|", markdown)
     @test occursin("| case_011 | x^-1*y^3 | x^3*y^-1 | 288x288 | 14713 | optional_slow | not_exercised_in_default_report / not_run | not_run | not_run | not_run | not_run | not_run |", markdown)
     @test occursin("| case_009 | x^-1*y | x^-1*y^-1 | 62x62 | 739 | default_contract | not_exercised_in_default_report / not_run | not_run | not_run | not_run | not_run | not_run |", markdown)
     @test hasproperty(by_id["case_001"], :stage_timings)

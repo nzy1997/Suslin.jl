@@ -345,7 +345,9 @@ end
         err
     end
     @test original_err isa ArgumentError
-    @test occursin("Laurent GL_n normalization boundary", sprint(showerror, original_err))
+    original_message = sprint(showerror, original_err)
+    @test occursin("elementary_factorization(A) is an elementary-only SL_n API", original_message)
+    @test occursin("laurent_gl_factorization_certificate(A)", original_message)
 
     @test_throws ErrorException Suslin._laurent_sl_fallback_factorization(_Issue57FallbackProbe())
 end

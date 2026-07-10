@@ -419,12 +419,20 @@ function _staged_argument_error(err)
         occursin("normalization boundary", message)
 end
 
+function _determinant_contract_argument_error(err)
+    err isa ArgumentError || return false
+    message = sprint(showerror, err)
+    return occursin("elementary_factorization(A) is an elementary-only SL_n API", message) &&
+        occursin("laurent_gl_factorization_certificate(A)", message)
+end
+
 function _public_elementary_status(A)
     try
         factors = elementary_factorization(A)
         return verify_factorization(A, factors) ? :elementary_factorization_pass : :factorization_unverified
     catch err
         err isa InterruptException && rethrow()
+        _determinant_contract_argument_error(err) && return :determinant_contract
         return _staged_argument_error(err) ? :staged_boundary : :route_error
     end
 end

@@ -31,6 +31,46 @@ function _issue59_tamper_correction(certificate)
     )
 end
 
+function _issue358_tamper_correction_side(certificate)
+    bad_correction = merge(certificate.correction, (; side = :right))
+    bad_normalization = merge(certificate.normalization, (; correction = bad_correction))
+    return Suslin.LaurentGLFactorizationCertificate(
+        certificate.original_matrix,
+        certificate.determinant_profile,
+        bad_normalization,
+        bad_correction,
+        certificate.inverse_correction,
+        certificate.normalized_core,
+        certificate.core_factorization,
+        certificate.core_factors,
+        certificate.reconstructed_product,
+        certificate.verification,
+    )
+end
+
+function _issue358_tamper_reordered_core_factor(certificate)
+    length(certificate.core_factors) >= 2 ||
+        error("issue-358 reorder control requires at least two core factors")
+    bad_factors = copy(certificate.core_factors)
+    bad_factors[1], bad_factors[2] = bad_factors[2], bad_factors[1]
+    return Suslin.LaurentGLFactorizationCertificate(
+        certificate.original_matrix,
+        certificate.determinant_profile,
+        certificate.normalization,
+        certificate.correction,
+        certificate.inverse_correction,
+        certificate.normalized_core,
+        certificate.core_factorization,
+        bad_factors,
+        certificate.reconstructed_product,
+        certificate.verification,
+    )
+end
+
+function _issue358_non_unit_matrix(R, u)
+    return diagonal_matrix(R, [u + one(R), one(R), one(R)])
+end
+
 function _issue59_tamper_core_factor(certificate)
     R = base_ring(certificate.original_matrix)
     n = nrows(certificate.original_matrix)
@@ -210,6 +250,15 @@ end
     @test certificate.inverse_correction == certificate.correction.inverse_factor
     @test certificate.normalized_core == certificate.normalization.normalized_matrix
     @test det(certificate.normalized_core) == one(R)
+    @test certificate.verification.overall_ok
+    @test certificate.verification.core_factors_elementary_ok
+    @test certificate.verification.reconstructed_product_ok
+    @test certificate.correction.side == :left
+    @test certificate.correction.factor * _issue59_product(
+        certificate.core_factors,
+        R,
+        nrows(Q),
+    ) == Q
     @test length(certificate.core_factors) > 0
     @test verify_factorization(certificate.normalized_core, certificate.core_factors)
     @test !verify_factorization(Q, certificate.core_factors)
@@ -222,6 +271,12 @@ end
 
     tampered_correction = _issue59_tamper_correction(certificate)
     @test !verify_laurent_gl_factorization_certificate(tampered_correction)
+
+    tampered_correction_side = _issue358_tamper_correction_side(certificate)
+    @test !verify_laurent_gl_factorization_certificate(tampered_correction_side)
+
+    tampered_reordered_factor = _issue358_tamper_reordered_core_factor(certificate)
+    @test !verify_laurent_gl_factorization_certificate(tampered_reordered_factor)
 
     tampered_factor = _issue59_tamper_core_factor(certificate)
     @test !verify_laurent_gl_factorization_certificate(tampered_factor)
@@ -265,6 +320,17 @@ end
         _issue162_tamper_lazy_hoisted_factor(lazy_certificate),
     )
 
+    non_unit = _issue358_non_unit_matrix(R, u)
+    @test classify_laurent_determinant(non_unit).classification == :non_unit
+    non_unit_err = try
+        laurent_gl_factorization_certificate(non_unit)
+        nothing
+    catch err
+        err
+    end
+    @test non_unit_err isa ArgumentError
+    @test occursin("non-unit", sprint(showerror, non_unit_err))
+
     original_err = try
         elementary_factorization(Q)
         nothing
@@ -272,5 +338,8 @@ end
         err
     end
     @test original_err isa ArgumentError
-    @test occursin("Laurent GL_n normalization boundary", sprint(showerror, original_err))
+    original_message = sprint(showerror, original_err)
+    @test occursin("elementary_factorization(A) is an elementary-only SL_n API", original_message)
+    @test occursin("requires determinant 1", original_message)
+    @test occursin("laurent_gl_factorization_certificate(A)", original_message)
 end

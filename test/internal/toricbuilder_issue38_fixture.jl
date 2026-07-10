@@ -52,8 +52,11 @@ function _assert_original_q_remains_unsupported(entry)
     end
 
     err isa ArgumentError || throw(ArgumentError("fixture $(entry.id) original Q must remain unsupported"))
-    occursin("Laurent GL_n normalization boundary", sprint(showerror, err)) ||
-        throw(ArgumentError("fixture $(entry.id) original Q unsupported boundary changed"))
+    message = sprint(showerror, err)
+    occursin("elementary_factorization(A) is an elementary-only SL_n API", message) ||
+        throw(ArgumentError("fixture $(entry.id) original Q determinant contract changed"))
+    occursin("laurent_gl_factorization_certificate(A)", message) ||
+        throw(ArgumentError("fixture $(entry.id) original Q certificate guidance changed"))
     return true
 end
 
