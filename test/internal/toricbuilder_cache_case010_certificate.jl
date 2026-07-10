@@ -104,7 +104,9 @@ end
         err
     end
     @test public_error isa ArgumentError
-    @test occursin("Laurent GL_n normalization boundary", sprint(showerror, public_error))
+    public_message = sprint(showerror, public_error)
+    @test occursin("elementary_factorization(A) is an elementary-only SL_n API", public_message)
+    @test occursin("laurent_gl_factorization_certificate(A)", public_message)
 
     corrupted_matrix = _case010_corrupt_matrix(A)
     corrupted_certificate = _case010_certificate_with_original(certificate, corrupted_matrix)

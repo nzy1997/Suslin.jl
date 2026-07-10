@@ -133,8 +133,10 @@ end
         caught
     end
     @test err isa ArgumentError
-    @test occursin("Laurent GL_n normalization boundary", sprint(showerror, err))
-    @test occursin("determinant-correction/driver path cannot yet return elementary factors that reconstruct the original input", sprint(showerror, err))
+    message = sprint(showerror, err)
+    @test occursin("elementary_factorization(A) is an elementary-only SL_n API", message)
+    @test occursin("requires determinant 1", message)
+    @test occursin("laurent_gl_factorization_certificate(A)", message)
 
     non_unit = matrix(R, [
         x + one(R) zero(R) zero(R);
