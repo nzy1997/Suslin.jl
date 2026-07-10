@@ -46,10 +46,10 @@ The current fixture entries both use `one`.
 
 ## GL_n Laurent Normalization Boundary
 
-Suslin exposes `normalize_laurent_gl_matrix(A)` for exact Laurent `GL_n`
-inputs before any staged `SL_n` factorization attempt. The boundary computes
-and classifies the determinant, then either returns a determinant-one core
-with explicit correction metadata or throws a staged `ArgumentError`.
+For supported Laurent monomial-unit `GL_n` inputs, the public verified boundary
+is `laurent_gl_factorization_certificate(A)`. It computes and classifies the
+determinant, then returns a determinant-one core with explicit correction
+metadata and a verified reconstruction relation.
 
 Supported corrections are determinant `1`, permutation/sign determinant `-1`
 where the coefficient ring distinguishes it from `1`, and Laurent monomial
