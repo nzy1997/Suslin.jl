@@ -57,18 +57,16 @@ unit determinants such as `x^-1*y` over `GF(2)`. The correction metadata stores
 a left diagonal factor `D` and verifies exact reconstruction as
 `D * normalized_matrix == A`.
 
-Non-unit determinants and non-monomial units remain outside the staged `SL_n`
-path. `elementary_factorization` calls this boundary for Laurent matrices
-before it continues to the current narrow `3 x 3` univariate algorithm checks.
+For supported Laurent monomial-unit `GL_n` inputs, the public decomposition is
+the verified `laurent_gl_factorization_certificate(A)` relation
+`A == certificate.correction.factor * prod(certificate.core_factors)`. The
+core factors are elementary factors of the determinant-one normalized core; the
+diagonal correction is recorded separately because it is not elementary when
+its determinant is nontrivial.
 
 ## Suslin Output Contract
 
-ToricBuilder ultimately needs a verified transformation certificate. For this
-first contract, that certificate is the exact inverse relation plus determinant
-classification. Raw elementary factors and normalized factor metadata are not
-required until later implementation issues expand Laurent support.
-
-Current Suslin behavior supports these determinant-one matrices through the
-recursive Laurent column-peel path. General Laurent `GL_n` determinant
-correction remains staged separately for inputs whose determinant is a Laurent
-unit other than `1`.
+ToricBuilder ultimately needs a verified transformation certificate. For
+supported Laurent monomial-unit `GL_n` inputs, it consumes the public
+Laurent-`GL_n` certificate contract above rather than a core-only elementary
+factor sequence.

@@ -24,8 +24,13 @@ verify_factorization(A, factors)
 
 ## Current scope
 
-- `elementary_factorization(A)` is staged but now supports the evidence-backed
-  ordinary-polynomial `SL_3` driver path for exact field-backed `3 x 3`
+- `elementary_factorization(A)` is an elementary-only determinant-one (`SL_n`)
+  factor sequence API: every returned factor has determinant one and the
+  product equals the original input. Supported Laurent `GL_n` inputs with
+  nontrivial monomial-unit determinant are intentionally routed to
+  `laurent_gl_factorization_certificate(A)` instead of returning a misleading
+  core-only factor sequence. For ordinary polynomials, it supports the
+  evidence-backed ordinary-polynomial `SL_3` driver path for exact field-backed `3 x 3`
   determinant-one inputs whose #235 checked context, #236 local-form or
   variable-change witness, #237 ordinary Quillen local evidence, and #183/#220
   global patch evidence all replay before factors are returned. This includes
@@ -62,10 +67,15 @@ verify_factorization(A, factors)
   minimum factor counts and does not add Laurent `GL_n` or ToricBuilder
   support. The closeout audit is
   `docs/audits/2026-07-04-issue-188-steinberg-optimization.md`.
-- `laurent_gl_factorization_certificate(A)` defaults to the eager Laurent
-  normalization/core certificate. With `determinant_strategy = :lazy`, it
-  records the supported monomial-unit deferred determinant correction path for
-  original Laurent `GL_n` inputs such as the issue #38 fixture.
+- `laurent_gl_factorization_certificate(A)` is the public decomposition API
+  for supported Laurent `GL_n` inputs whose determinant is `1` or a supported
+  Laurent monomial unit. The eager certificate records the original matrix,
+  determinant metadata, diagonal correction, inverse correction,
+  determinant-one normalized core, ordered elementary core factors,
+  reconstructed product, and verification status. Its public reconstruction
+  relation is `A == certificate.correction.factor * prod(certificate.core_factors)`.
+  The diagonal correction is not part of the elementary sequence because it
+  carries the nontrivial determinant.
 - The supported ordinary-polynomial normality/conjugation certificates cover
   the completed #181 layer: Cohn-type realization certificates, rank-one
   normality certificates, and conjugated-elementary normality certificates. The
