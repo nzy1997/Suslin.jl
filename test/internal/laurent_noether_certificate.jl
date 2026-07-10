@@ -78,6 +78,16 @@ end
         certificate;
         forward_substitution = noninvertible_forward,
     )) != :ok
+    @test Suslin._laurent_noether_substitution_values(nothing) == ()
+    uncoercible_substitution = (
+        (; variable = x, value = nothing),
+        (; variable = y, value = y),
+    )
+    @test !Suslin._laurent_noether_maps_are_inverse(
+        R,
+        uncoercible_substitution,
+        certificate.inverse_substitution,
+    )
     @test Suslin._validate_laurent_noether_certificate(_laurent_noether_tamper(
         certificate;
         transformed_column = tuple(certificate.original_column...),
@@ -98,6 +108,10 @@ end
         certificate;
         selected_entry_index = length(column) + 1,
     )) != :ok
+    @test Suslin._validate_laurent_noether_certificate(_laurent_noether_tamper(
+        certificate;
+        original_column = (nothing,),
+    )) == :invalid_certificate
 
     @test_throws ArgumentError Suslin._laurent_noether_certificate(column, 0, x)
     @test_throws ArgumentError Suslin._laurent_noether_certificate([zero(R), one(R)], 1, x)
