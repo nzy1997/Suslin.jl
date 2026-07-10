@@ -148,4 +148,16 @@ using Oscar
     end
     @test rejected_side_without_lazy isa ArgumentError
     @test occursin("determinant_strategy = :lazy", sprint(showerror, rejected_side_without_lazy))
+
+    monomial_unit_laurent_gl = diagonal_matrix(LR, [u, one(LR), one(LR)])
+    monomial_err = try
+        elementary_factorization(monomial_unit_laurent_gl)
+        nothing
+    catch err
+        err
+    end
+    @test monomial_err isa ArgumentError
+    monomial_message = sprint(showerror, monomial_err)
+    @test occursin("elementary_factorization(A) is an elementary-only SL_n API", monomial_message)
+    @test occursin("laurent_gl_factorization_certificate(A)", monomial_message)
 end

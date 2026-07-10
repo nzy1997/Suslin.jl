@@ -13,6 +13,14 @@ function _issue160_caught_error(f)
     end
 end
 
+function _issue160_factor_product(factors, R, n::Int)
+    product = identity_matrix(R, n)
+    for factor in factors
+        product *= factor
+    end
+    return product
+end
+
 @testset "public Laurent GL certificate options" begin
     entry = only(ToricBuilderIssue38Cases.catalog().cases)
     Q = entry.inputs.matrix
@@ -22,6 +30,14 @@ end
     @test eager_certificate isa LaurentGLFactorizationCertificate
     @test eager_certificate.reconstructed_product == Q
     @test verify_laurent_gl_factorization_certificate(eager_certificate)
+    eager_core_product = _issue160_factor_product(
+        eager_certificate.core_factors,
+        base_ring(Q),
+        nrows(Q),
+    )
+    @test eager_core_product == eager_certificate.normalized_core
+    @test eager_certificate.correction.factor * eager_core_product == Q
+    @test eager_certificate.verification.core_factors_elementary_ok
 
     explicit_eager = laurent_gl_factorization_certificate(
         Q;
@@ -111,5 +127,8 @@ end
 
     original_err = _issue160_caught_error(() -> elementary_factorization(Q))
     @test original_err isa ArgumentError
-    @test occursin("Laurent GL_n normalization boundary", sprint(showerror, original_err))
+    original_message = sprint(showerror, original_err)
+    @test occursin("elementary_factorization(A) is an elementary-only SL_n API", original_message)
+    @test occursin("requires determinant 1", original_message)
+    @test occursin("laurent_gl_factorization_certificate(A)", original_message)
 end
