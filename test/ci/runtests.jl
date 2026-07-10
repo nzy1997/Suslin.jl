@@ -219,6 +219,17 @@ function manifest_with(
     )
 end
 
+@testset "workflow contract" begin
+    workflow = read(joinpath(TEST_ROOT, "..", ".github", "workflows", "CI.yml"), String)
+    @test occursin("name: PR Gate", workflow)
+    @test occursin("max-parallel: 4", workflow)
+    @test occursin("pr-selected", workflow)
+    @test occursin("test/ci/select_shards.jl", workflow)
+    @test !occursin("name: Full Suite Tests", workflow)
+    @test !occursin("name: Default Fast Tests", workflow)
+    @test !occursin("name: Instantiate Dependencies", workflow)
+end
+
 function manifest_with_test_entry(
     manifest::Manifest,
     index::Integer;
