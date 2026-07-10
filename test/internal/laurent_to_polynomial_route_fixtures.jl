@@ -20,6 +20,63 @@ function _entry_term_count(entry)
     return length(collect(coefficients(entry)))
 end
 
+function _diagnostic_stage_detail(diagnostic, stage::Symbol)
+    hasproperty(diagnostic, :stage_details) ||
+        throw(ArgumentError("route diagnostic missing stage details"))
+    idx = findfirst(detail -> detail.stage == stage, diagnostic.stage_details)
+    return idx === nothing ? nothing : diagnostic.stage_details[idx]
+end
+
+function _validate_stage_detail_shape(entry, diagnostic)
+    hasproperty(diagnostic, :stage_details) ||
+        throw(ArgumentError("route $(entry.id) reducer diagnostic has no stage details"))
+    diagnostic.stage_details isa Tuple ||
+        throw(ArgumentError("route $(entry.id) reducer stage details are not a tuple"))
+    length(diagnostic.stage_details) == length(diagnostic.attempted_stages) ||
+        throw(ArgumentError("route $(entry.id) reducer stage details are stale"))
+    all(detail -> detail isa NamedTuple, diagnostic.stage_details) ||
+        throw(ArgumentError("route $(entry.id) reducer stage details are malformed"))
+end
+
+function _validate_expected_stage_detail(entry, diagnostic, expected)
+    expected.stage === nothing && return nothing
+    detail = _diagnostic_stage_detail(diagnostic, expected.stage)
+    detail !== nothing ||
+        throw(ArgumentError("route $(entry.id) expected reducer stage is absent"))
+    detail.outcome == expected.stage_outcome ||
+        throw(ArgumentError("route $(entry.id) reducer stage outcome changed"))
+
+    if expected.stage_outcome == :delegated_to_polynomial
+        detail.normalized_status == expected.normalized_status ||
+            throw(ArgumentError("route $(entry.id) normalized reducer status changed"))
+        detail.normalized_failure_code == expected.normalized_failure_code ||
+            throw(ArgumentError("route $(entry.id) normalized reducer failure code changed"))
+    elseif expected.stage_outcome == :staged_boundary
+        detail.boundary == expected.boundary ||
+            throw(ArgumentError("route $(entry.id) reducer boundary changed"))
+        detail.requires_descent_measure == expected.requires_descent_measure ||
+            throw(ArgumentError("route $(entry.id) descent-measure requirement changed"))
+        detail.certified_descent_scope == expected.certified_descent_scope ||
+            throw(ArgumentError("route $(entry.id) certified descent scope changed"))
+        detail.next_boundary == expected.next_boundary ||
+            throw(ArgumentError("route $(entry.id) next boundary changed"))
+        detail.requires_link_witness == expected.requires_link_witness ||
+            throw(ArgumentError("route $(entry.id) link-witness requirement changed"))
+        detail.requires_endpoint_reduction == expected.requires_endpoint_reduction ||
+            throw(ArgumentError("route $(entry.id) endpoint-reduction requirement changed"))
+        detail.requires_laurent_normality_replay == expected.requires_laurent_normality_replay ||
+            throw(ArgumentError("route $(entry.id) Laurent normality replay requirement changed"))
+        detail.requires_recursive_peel_integration ==
+            expected.requires_recursive_peel_integration ||
+            throw(ArgumentError("route $(entry.id) recursive peel requirement changed"))
+        detail.fallback_policy == expected.fallback_policy ||
+            throw(ArgumentError("route $(entry.id) boundary fallback policy changed"))
+    else
+        throw(ArgumentError("route $(entry.id) has unsupported expected stage outcome"))
+    end
+    return detail
+end
+
 const _ROUTE_EXPECTATIONS = Dict(
     "laurent-to-poly-existing-normalization" => (;
         route = :existing_normalization,
@@ -127,8 +184,8 @@ function validate_laurent_to_poly_route_fixture(entry)
         throw(ArgumentError("route $(entry.id) reducer status changed"))
     diagnostic.failure_code == expected.failure_code ||
         throw(ArgumentError("route $(entry.id) reducer failure code changed"))
-    expected.stage === nothing || expected.stage in diagnostic.attempted_stages ||
-        throw(ArgumentError("route $(entry.id) expected reducer stage is absent"))
+    _validate_stage_detail_shape(entry, diagnostic)
+    _validate_expected_stage_detail(entry, diagnostic, expected)
 
     entry.route == expectation.route || throw(ArgumentError("route $(entry.id) identifier changed"))
     entry.verifier_id == expectation.verifier_id ||
@@ -262,6 +319,29 @@ end
     )
     @test_throws ArgumentError validate_laurent_to_poly_route_fixture(
         merge(normalization, (; selected_entry_index = 2)),
+    )
+    @test_throws ArgumentError validate_laurent_to_poly_route_fixture(
+        merge(
+            normalization,
+            (;
+                expected_reducer = merge(
+                    normalization.expected_reducer,
+                    (; stage_outcome = :supported),
+                ),
+            ),
+        ),
+    )
+    general = by_id["laurent-to-poly-general-ecp"]
+    @test_throws ArgumentError validate_laurent_to_poly_route_fixture(
+        merge(
+            general,
+            (;
+                expected_reducer = merge(
+                    general.expected_reducer,
+                    (; requires_descent_measure = false),
+                ),
+            ),
+        ),
     )
     @test_throws ArgumentError validate_laurent_to_poly_route_fixture(
         merge(normalization, (; post_conversion_contract = merge(normalization.post_conversion_contract, (; selected_entry_must_be_polynomial_unit = false)))),
