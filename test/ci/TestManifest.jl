@@ -38,6 +38,20 @@ function string_vector(value, label::AbstractString)
     return String[String(item) for item in value]
 end
 
+function unique_string_vector(value, label::AbstractString)
+    result = string_vector(value, label)
+    length(unique(result)) == length(result) ||
+        throw(ArgumentError("$label values must be unique"))
+    return result
+end
+
+function required_string(table::AbstractDict, key::AbstractString, label::AbstractString)
+    haskey(table, key) || throw(ArgumentError("$label is required"))
+    value = table[key]
+    value isa AbstractString || throw(ArgumentError("$label must be a string"))
+    return String(value)
+end
+
 function string_map(value, label::AbstractString)
     value isa AbstractDict || throw(ArgumentError("$label must be a table"))
     result = Dict{String,Vector{String}}()
@@ -47,18 +61,88 @@ function string_map(value, label::AbstractString)
     return result
 end
 
+function validate_relative_path(path::AbstractString, label::AbstractString)
+    isempty(path) && throw(ArgumentError("$label must not be empty"))
+    isabspath(path) && throw(ArgumentError("$label must be relative"))
+    occursin('\\', path) && throw(ArgumentError("$label must use forward slashes"))
+    normpath(path) == path || throw(ArgumentError("$label must be normalized"))
+    first(split(path, '/')) == ".." &&
+        throw(ArgumentError("$label must stay within the repository"))
+    return nothing
+end
+
+function validate_policy_values(values, label::AbstractString)
+    isempty(values) && throw(ArgumentError("$label must not be empty"))
+    all(value -> !isempty(value), values) ||
+        throw(ArgumentError("$label must not contain empty values"))
+    length(unique(values)) == length(values) ||
+        throw(ArgumentError("$label values must be unique"))
+    return nothing
+end
+
+function validate_policy_files(values, label::AbstractString, repository_root::AbstractString)
+    validate_policy_values(values, label)
+    for path in values
+        validate_relative_path(path, "$label entry")
+        isfile(joinpath(repository_root, path)) ||
+            throw(ArgumentError("$label references a missing file: $path"))
+    end
+    return nothing
+end
+
+function validate_policy_prefixes(
+    prefixes,
+    label::AbstractString,
+    repository_root::AbstractString,
+)
+    validate_policy_values(prefixes, label)
+    for prefix in prefixes
+        endswith(prefix, "/") ||
+            throw(ArgumentError("$label entry must end with '/': $prefix"))
+        directory = chop(prefix; tail = 1)
+        validate_relative_path(directory, "$label entry")
+        isdir(joinpath(repository_root, directory)) ||
+            throw(ArgumentError("$label references a missing directory: $prefix"))
+    end
+    return nothing
+end
+
+function validate_impact_map(
+    impacts::Dict{String,Vector{String}},
+    label::AbstractString,
+    required_prefix::AbstractString,
+    repository_root::AbstractString,
+    shard_set::Set{String},
+)
+    isempty(impacts) && throw(ArgumentError("$label must not be empty"))
+    for (path, shards) in impacts
+        validate_relative_path(path, "$label key")
+        startswith(path, required_prefix) ||
+            throw(ArgumentError("$label key must start with $required_prefix: $path"))
+        isfile(joinpath(repository_root, path)) ||
+            throw(ArgumentError("$label key references a missing file: $path"))
+        validate_policy_values(shards, "$label.$path")
+        all(shard -> shard in shard_set, shards) ||
+            throw(ArgumentError("$label references an unknown shard"))
+    end
+    return nothing
+end
+
 function load_manifest(path::AbstractString)
     raw = TOML.parsefile(path)
     get(raw, "version", nothing) == 1 ||
         throw(ArgumentError("unsupported shard manifest version"))
 
     shard_order = string_vector(raw["shard_order"], "shard_order")
+    raw_tests = get(raw, "tests", nothing)
+    raw_tests isa Vector || throw(ArgumentError("tests must be an array"))
     tests = TestEntry[]
-    for item in raw["tests"]
+    for (index, item) in enumerate(raw_tests)
+        item isa AbstractDict || throw(ArgumentError("tests[$index] must be a table"))
         push!(tests, TestEntry(
-            String(item["path"]),
-            String(item["group"]),
-            String(item["shard"]),
+            required_string(item, "path", "tests[$index].path"),
+            required_string(item, "group", "tests[$index].group"),
+            required_string(item, "shard", "tests[$index].shard"),
         ))
     end
 
@@ -66,9 +150,9 @@ function load_manifest(path::AbstractString)
         shard_order,
         tests,
         String(raw["documentation_smoke"]),
-        Set(string_vector(raw["full_run_paths"], "full_run_paths")),
+        Set(unique_string_vector(raw["full_run_paths"], "full_run_paths")),
         string_vector(raw["full_run_prefixes"], "full_run_prefixes"),
-        Set(string_vector(raw["documentation_paths"], "documentation_paths")),
+        Set(unique_string_vector(raw["documentation_paths"], "documentation_paths")),
         string_vector(raw["documentation_prefixes"], "documentation_prefixes"),
         string_map(raw["source_impacts"], "source_impacts"),
         string_map(raw["fixture_impacts"], "fixture_impacts"),
@@ -89,6 +173,7 @@ function owner_shard(manifest::Manifest, test_path::AbstractString)
 end
 
 function validate_manifest(manifest::Manifest, test_root::AbstractString)
+    isempty(manifest.shard_order) && throw(ArgumentError("shard ids must not be empty"))
     length(unique(manifest.shard_order)) == length(manifest.shard_order) ||
         throw(ArgumentError("shard ids must be unique"))
     paths = all_test_files(manifest)
@@ -101,6 +186,18 @@ function validate_manifest(manifest::Manifest, test_root::AbstractString)
             throw(ArgumentError("invalid test group: $(entry.group)"))
         entry.shard in shard_set ||
             throw(ArgumentError("unknown shard $(entry.shard) for $(entry.path)"))
+        validate_relative_path(entry.path, "test path")
+        startswith(entry.path, "$(entry.group)/") ||
+            throw(ArgumentError("test path does not match group: $(entry.path)"))
+        endswith(entry.path, ".jl") ||
+            throw(ArgumentError("test path must name a Julia file: $(entry.path)"))
+        if entry.group == "public"
+            entry.shard == "public" ||
+                throw(ArgumentError("public test must belong to the public shard"))
+        else
+            startswith(entry.shard, "$(entry.group)-") ||
+                throw(ArgumentError("test group does not match shard: $(entry.path)"))
+        end
         isfile(joinpath(test_root, entry.path)) ||
             throw(ArgumentError("missing test file: $(entry.path)"))
     end
@@ -113,14 +210,45 @@ function validate_manifest(manifest::Manifest, test_root::AbstractString)
     manifest.documentation_smoke in paths ||
         throw(ArgumentError("documentation smoke test must belong to the complete suite"))
 
-    for impacts in values(manifest.source_impacts)
-        all(shard -> shard in shard_set, impacts) ||
-            throw(ArgumentError("source impact references an unknown shard"))
-    end
-    for impacts in values(manifest.fixture_impacts)
-        all(shard -> shard in shard_set, impacts) ||
-            throw(ArgumentError("fixture impact references an unknown shard"))
-    end
+    repository_root = normpath(joinpath(test_root, ".."))
+    validate_policy_files(manifest.full_run_paths, "full_run_paths", repository_root)
+    validate_policy_prefixes(
+        manifest.full_run_prefixes,
+        "full_run_prefixes",
+        repository_root,
+    )
+    validate_policy_files(
+        manifest.documentation_paths,
+        "documentation_paths",
+        repository_root,
+    )
+    validate_policy_prefixes(
+        manifest.documentation_prefixes,
+        "documentation_prefixes",
+        repository_root,
+    )
+    validate_impact_map(
+        manifest.source_impacts,
+        "source_impacts",
+        "src/",
+        repository_root,
+        shard_set,
+    )
+    validate_impact_map(
+        manifest.fixture_impacts,
+        "fixture_impacts",
+        "test/fixtures/",
+        repository_root,
+        shard_set,
+    )
+
+    fixture_directory = joinpath(test_root, "fixtures")
+    expected_fixtures = Set(
+        "test/fixtures/$file" for file in readdir(fixture_directory) if
+        endswith(file, ".jl") && isfile(joinpath(fixture_directory, file))
+    )
+    Set(keys(manifest.fixture_impacts)) == expected_fixtures ||
+        throw(ArgumentError("fixture_impacts must cover every test fixture exactly"))
     return nothing
 end
 
