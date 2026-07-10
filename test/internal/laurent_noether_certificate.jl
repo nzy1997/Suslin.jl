@@ -53,6 +53,15 @@ end
     @test varied_certificate.noether_power == 5
     _assert_laurent_noether_replay(R, varied_column, varied_certificate)
 
+    S5, (u5, v5) = suslin_laurent_polynomial_ring(GF(5), ["u", "v"])
+    second_generator_column = [v5^2 + u5^-1 * v5 + u5^3 * v5^-1, one(S5) + u5 * v5^-2]
+    second_generator_certificate =
+        Suslin._laurent_noether_certificate(second_generator_column, 1, v5)
+    @test second_generator_certificate.selected_generator_index == 2
+    @test second_generator_certificate.selected_generator == v5
+    @test second_generator_certificate.other_generator_index == 1
+    _assert_laurent_noether_replay(S5, second_generator_column, second_generator_certificate)
+
     @test Suslin._validate_laurent_noether_certificate(_laurent_noether_tamper(
         certificate;
         noether_power = certificate.noether_power + 1,
@@ -91,6 +100,7 @@ end
     )) != :ok
 
     @test_throws ArgumentError Suslin._laurent_noether_certificate(column, 0, x)
+    @test_throws ArgumentError Suslin._laurent_noether_certificate([zero(R), one(R)], 1, x)
     @test_throws ArgumentError Suslin._laurent_noether_certificate(column, 1, y + one(R))
     P, (t,) = suslin_polynomial_ring(QQ, ["t"])
     @test_throws ArgumentError Suslin._laurent_noether_certificate([t], 1, t)

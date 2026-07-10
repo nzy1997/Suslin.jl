@@ -100,6 +100,8 @@ function _laurent_noether_validate_input(column::AbstractVector, selected_entry_
     selected_generator_index = findfirst(==(selected_generator), variables)
     selected_generator_index === nothing &&
         throw(ArgumentError("selected Laurent generator must be a generator of the Laurent ring"))
+    iszero(column[selected_entry_index]) &&
+        throw(ArgumentError("selected Laurent column entry must be nonzero"))
     return R, selected_generator_index, 3 - selected_generator_index
 end
 
