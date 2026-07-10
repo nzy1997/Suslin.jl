@@ -375,6 +375,29 @@ end
     ) == "ArgumentError: documentation_paths values must be unique"
 end
 
+@testset "canonical POSIX repository paths" begin
+    @test TestManifest.validate_relative_path(
+        "public/api_surface.jl",
+        "test path",
+    ) === nothing
+
+    invalid_paths = [
+        "",
+        "public//api_surface.jl",
+        "public/./api_surface.jl",
+        "public/../internal/rings.jl",
+        "/public/api_surface.jl",
+        "public/api_surface.jl/",
+        "C:/public/api_surface.jl",
+        raw"public\api_surface.jl",
+        raw"\\server\share\api_surface.jl",
+        "//server/share/api_surface.jl",
+    ]
+    for path in invalid_paths
+        @test_throws ArgumentError TestManifest.validate_relative_path(path, "test path")
+    end
+end
+
 @testset "CI shard manifest validation rejects malformed data" begin
     manifest = load_manifest(MANIFEST_PATH)
 

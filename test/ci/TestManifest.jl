@@ -63,13 +63,27 @@ end
 
 function validate_relative_path(path::AbstractString, label::AbstractString)
     isempty(path) && throw(ArgumentError("$label must not be empty"))
-    isabspath(path) && throw(ArgumentError("$label must be relative"))
     occursin('\\', path) && throw(ArgumentError("$label must use forward slashes"))
-    normpath(path) == path || throw(ArgumentError("$label must be normalized"))
-    first(split(path, '/')) == ".." &&
-        throw(ArgumentError("$label must stay within the repository"))
+    components = split(path, '/'; keepempty = true)
+    any(isempty, components) &&
+        throw(ArgumentError("$label must not contain empty components"))
+    any(component -> component == "." || component == "..", components) &&
+        throw(ArgumentError("$label must not contain '.' or '..' components"))
+
+    first_component = first(components)
+    if ncodeunits(first_component) >= 2
+        bytes = codeunits(first_component)
+        drive_letter =
+            (0x41 <= bytes[1] && bytes[1] <= 0x5a) ||
+            (0x61 <= bytes[1] && bytes[1] <= 0x7a)
+        drive_letter && bytes[2] == 0x3a &&
+            throw(ArgumentError("$label must not use a Windows drive prefix"))
+    end
     return nothing
 end
+
+repository_path(root::AbstractString, path::AbstractString) =
+    joinpath(root, split(path, '/')...)
 
 function validate_policy_values(values, label::AbstractString)
     isempty(values) && throw(ArgumentError("$label must not be empty"))
@@ -84,7 +98,7 @@ function validate_policy_files(values, label::AbstractString, repository_root::A
     validate_policy_values(values, label)
     for path in values
         validate_relative_path(path, "$label entry")
-        isfile(joinpath(repository_root, path)) ||
+        isfile(repository_path(repository_root, path)) ||
             throw(ArgumentError("$label references a missing file: $path"))
     end
     return nothing
@@ -101,7 +115,7 @@ function validate_policy_prefixes(
             throw(ArgumentError("$label entry must end with '/': $prefix"))
         directory = chop(prefix; tail = 1)
         validate_relative_path(directory, "$label entry")
-        isdir(joinpath(repository_root, directory)) ||
+        isdir(repository_path(repository_root, directory)) ||
             throw(ArgumentError("$label references a missing directory: $prefix"))
     end
     return nothing
@@ -119,7 +133,7 @@ function validate_impact_map(
         validate_relative_path(path, "$label key")
         startswith(path, required_prefix) ||
             throw(ArgumentError("$label key must start with $required_prefix: $path"))
-        isfile(joinpath(repository_root, path)) ||
+        isfile(repository_path(repository_root, path)) ||
             throw(ArgumentError("$label key references a missing file: $path"))
         validate_policy_values(shards, "$label.$path")
         all(shard -> shard in shard_set, shards) ||
@@ -198,7 +212,7 @@ function validate_manifest(manifest::Manifest, test_root::AbstractString)
             startswith(entry.shard, "$(entry.group)-") ||
                 throw(ArgumentError("test group does not match shard: $(entry.path)"))
         end
-        isfile(joinpath(test_root, entry.path)) ||
+        isfile(repository_path(test_root, entry.path)) ||
             throw(ArgumentError("missing test file: $(entry.path)"))
     end
 
