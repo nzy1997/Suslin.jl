@@ -6,11 +6,35 @@ using .TestSelection
 
 const MANIFEST_PATH = joinpath(@__DIR__, "shards.toml")
 const TEST_ROOT = normpath(joinpath(@__DIR__, ".."))
+const REPOSITORY_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
-function changed_paths(base::AbstractString, head::AbstractString)
+function parse_name_status(output::AbstractString)
+    fields = String.(split(output, '\0'; keepempty = false))
+    paths = String[]
+    index = 1
+    while index <= length(fields)
+        status = fields[index]
+        index += 1
+        path_count = first(status) in ('R', 'C') ? 2 : 1
+        index + path_count - 1 <= length(fields) ||
+            throw(ArgumentError("malformed git name-status output"))
+        append!(paths, fields[index:index + path_count - 1])
+        index += path_count
+    end
+    return unique(paths)
+end
+
+function changed_paths(
+    base::AbstractString,
+    head::AbstractString;
+    repository_root::AbstractString = REPOSITORY_ROOT,
+)
     range = "$base...$head"
-    output = read(`git diff --name-only --diff-filter=ACMRT $range`, String)
-    return filter(!isempty, split(chomp(output), '\n'))
+    output = read(
+        `git -C $repository_root diff --name-status -z --find-renames --diff-filter=ACMRTD $range`,
+        String,
+    )
+    return parse_name_status(output)
 end
 
 function argument_value(argument::AbstractString, option::AbstractString)
@@ -45,13 +69,26 @@ function parse_arguments(arguments::Vector{String})
     return (; base, head, format, github_output)
 end
 
+function github_delimiter(reasons::Vector{String})
+    payload = replace(join(reasons, "\n"), "\r\n" => "\n", "\r" => "\n")
+    payload_lines = Set(split(payload, '\n'; keepempty = true))
+    delimiter = "EOF"
+    suffix = 0
+    while delimiter in payload_lines
+        suffix += 1
+        delimiter = "EOF_$suffix"
+    end
+    return delimiter
+end
+
 function write_github_output(path::AbstractString, selection::Selection)
+    delimiter = github_delimiter(selection.reasons)
     open(path, "a") do io
         println(io, "matrix=$(matrix_json(selection.targets))")
         println(io, "documentation_only=$(selection.documentation_only)")
-        println(io, "reason<<EOF")
+        println(io, "reason<<$delimiter")
         foreach(reason -> println(io, reason), selection.reasons)
-        println(io, "EOF")
+        println(io, delimiter)
     end
     return nothing
 end

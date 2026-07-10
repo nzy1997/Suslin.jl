@@ -1,4 +1,5 @@
 using Test
+using TOML
 
 include("TestManifest.jl")
 using .TestManifest
@@ -784,6 +785,28 @@ end
     @test unknown_path.reasons == ["unknown path: scripts/new_helper.jl"]
 
     @test matrix_json(["a\\b", "c\"d"]) == "[\"a\\\\b\",\"c\\\"d\"]"
+
+    control_targets = [
+        "line\nfeed",
+        "tab\tvalue",
+        "carriage\rreturn",
+        "back\bspace",
+        "form\ffeed",
+        "nul\0value",
+        "unit$(Char(0x1f))separator",
+        "snow 雪",
+    ]
+    control_json = matrix_json(control_targets)
+    @test control_json ==
+        "[\"line\\nfeed\",\"tab\\tvalue\",\"carriage\\rreturn\"," *
+        "\"back\\bspace\",\"form\\ffeed\",\"nul\\u0000value\"," *
+        "\"unit\\u001fseparator\",\"snow 雪\"]"
+    parsed_targets = try
+        TOML.parse("targets = $control_json")["targets"]
+    catch error
+        error
+    end
+    @test parsed_targets == control_targets
 end
 
 const REPOSITORY_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
@@ -798,6 +821,64 @@ function run_selector_cli(arguments::Vector{String}; directory = REPOSITORY_ROOT
     )
     process = run(pipeline(ignorestatus(command); stdout, stderr))
     return success(process), String(take!(stdout)), String(take!(stderr))
+end
+
+function run_selector_expression(
+    expression::AbstractString,
+    arguments::Vector{String} = String[];
+    directory = REPOSITORY_ROOT,
+)
+    stdout = IOBuffer()
+    stderr = IOBuffer()
+    command = Cmd(
+        `$(Base.julia_cmd()) --startup-file=no --project=$REPOSITORY_ROOT -e $expression -- $arguments`;
+        dir = directory,
+    )
+    process = run(pipeline(ignorestatus(command); stdout, stderr))
+    return success(process), String(take!(stdout)), String(take!(stderr))
+end
+
+function changed_paths_for_repository(repository::AbstractString)
+    expression = """
+    include($(repr(SELECTOR_CLI)))
+    foreach(println, changed_paths(
+        ARGS[1], ARGS[2]; repository_root = ARGS[3],
+    ))
+    """
+    succeeded, stdout, stderr = run_selector_expression(
+        expression,
+        ["HEAD~1", "HEAD", String(repository)],
+    )
+    paths = String.(filter(!isempty, split(chomp(stdout), '\n')))
+    return succeeded, paths, stderr
+end
+
+function git_command(repository::AbstractString, arguments::Vector{String})
+    return run(`git -C $repository $arguments`)
+end
+
+function initialize_git_repository(repository::AbstractString)
+    git_command(repository, ["init", "--quiet"])
+    git_command(repository, ["config", "user.email", "ci-test@example.com"])
+    git_command(repository, ["config", "user.name", "CI Test"])
+    return nothing
+end
+
+function write_repository_file(
+    repository::AbstractString,
+    path::AbstractString,
+    contents::AbstractString,
+)
+    full_path = joinpath(repository, split(path, '/')...)
+    mkpath(dirname(full_path))
+    write(full_path, contents)
+    return nothing
+end
+
+function commit_repository(repository::AbstractString, message::AbstractString)
+    git_command(repository, ["add", "--all"])
+    git_command(repository, ["commit", "--quiet", "-m", String(message)])
+    return nothing
 end
 
 @testset "affected test selection CLI" begin
@@ -848,4 +929,132 @@ end
     @test !succeeded
     @test isempty(stdout)
     @test occursin("ArgumentError: unknown option: --unknown-option", stderr)
+end
+
+@testset "affected test selection GitHub delimiter safety" begin
+    mktemp() do github_output, io
+        close(io)
+        expression = """
+        include($(repr(SELECTOR_CLI)))
+        selection = Selection(
+            ["public"], false, ["first line\nEOF\ninjected=value"],
+        )
+        write_github_output(ARGS[1], selection)
+        """
+        succeeded, stdout, stderr = run_selector_expression(
+            expression,
+            [github_output],
+        )
+        @test succeeded
+        @test isempty(stdout)
+        @test isempty(stderr)
+        @test read(github_output, String) ==
+            "matrix=[\"public\"]\n" *
+            "documentation_only=false\n" *
+            "reason<<EOF_1\n" *
+            "first line\n" *
+            "EOF\n" *
+            "injected=value\n" *
+            "EOF_1\n"
+    end
+end
+
+@testset "affected test selection Git diff safety" begin
+    manifest = load_manifest(MANIFEST_PATH)
+
+    mktempdir() do outside_repository
+        succeeded, stdout, stderr = run_selector_cli(
+            ["--base=HEAD", "--head=HEAD", "--format=lines"];
+            directory = outside_repository,
+        )
+        @test succeeded
+        @test stdout == join(EXPECTED_SHARDS, '\n') * "\n"
+        @test isempty(stderr)
+    end
+
+    mktempdir() do repository
+        initialize_git_repository(repository)
+        write_repository_file(repository, "README.md", "initial docs\n")
+        write_repository_file(repository, "src/core/rings.jl", "core source\n")
+        commit_repository(repository, "initial files")
+
+        write_repository_file(repository, "README.md", "changed docs\n")
+        rm(joinpath(repository, "src", "core", "rings.jl"))
+        commit_repository(repository, "delete core source")
+
+        succeeded, paths, stderr = changed_paths_for_repository(repository)
+        @test succeeded
+        @test isempty(stderr)
+        @test Set(paths) == Set(["README.md", "src/core/rings.jl"])
+        @test select_targets(paths, manifest).targets == shard_ids(manifest)
+
+        write_repository_file(
+            repository,
+            "src/algorithm/sln_to_sl3_reduction.jl",
+            "source rename fixture\n",
+        )
+        write_repository_file(
+            repository,
+            "test/expert/ecp_link_step.jl",
+            "test rename fixture\n",
+        )
+        commit_repository(repository, "add rename fixtures")
+
+        mkpath(joinpath(repository, "docs"))
+        git_command(repository, [
+            "mv", "src/algorithm/sln_to_sl3_reduction.jl", "docs/source_guide.jl",
+        ])
+        git_command(repository, [
+            "mv", "test/expert/ecp_link_step.jl", "docs/test_guide.jl",
+        ])
+        commit_repository(repository, "rename source and test to docs")
+
+        succeeded, paths, stderr = changed_paths_for_repository(repository)
+        @test succeeded
+        @test isempty(stderr)
+        @test Set(paths) == Set([
+            "src/algorithm/sln_to_sl3_reduction.jl",
+            "docs/source_guide.jl",
+            "test/expert/ecp_link_step.jl",
+            "docs/test_guide.jl",
+        ])
+        @test select_targets(paths, manifest).targets == [
+            "public", "expert-sl3", "expert-ecp", "expert-integration",
+        ]
+
+        mkpath(joinpath(repository, "src", "algorithm"))
+        mkpath(joinpath(repository, "test", "expert"))
+        git_command(repository, [
+            "mv", "docs/source_guide.jl", "src/algorithm/sln_to_sl3_reduction.jl",
+        ])
+        git_command(repository, [
+            "mv", "docs/test_guide.jl", "test/expert/ecp_link_step.jl",
+        ])
+        commit_repository(repository, "rename docs to source and test")
+
+        succeeded, paths, stderr = changed_paths_for_repository(repository)
+        @test succeeded
+        @test isempty(stderr)
+        @test Set(paths) == Set([
+            "docs/source_guide.jl",
+            "src/algorithm/sln_to_sl3_reduction.jl",
+            "docs/test_guide.jl",
+            "test/expert/ecp_link_step.jl",
+        ])
+
+        succeeded, expected_stdout, stderr = run_selector_cli(
+            ["--base=HEAD~1", "--head=HEAD", "--format=lines"],
+        )
+        @test succeeded
+        @test !isempty(expected_stdout)
+        @test isempty(stderr)
+
+        succeeded, stdout, stderr = run_selector_cli(
+            ["--base=HEAD~1", "--head=HEAD", "--format=lines"];
+            directory = repository,
+        )
+        @test succeeded
+        @test stdout == expected_stdout
+        @test isempty(stderr)
+    end
 end

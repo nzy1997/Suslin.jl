@@ -64,8 +64,34 @@ function select_targets(changed_paths::Vector{String}, manifest::Manifest)
     return Selection(ordered_targets(selected, manifest), false, reasons)
 end
 
+function escape_json_string(value::AbstractString)
+    io = IOBuffer()
+    for character in value
+        if character == '"'
+            print(io, "\\\"")
+        elseif character == '\\'
+            print(io, "\\\\")
+        elseif character == '\b'
+            print(io, "\\b")
+        elseif character == '\f'
+            print(io, "\\f")
+        elseif character == '\n'
+            print(io, "\\n")
+        elseif character == '\r'
+            print(io, "\\r")
+        elseif character == '\t'
+            print(io, "\\t")
+        elseif UInt32(character) <= 0x1f
+            print(io, "\\u", lpad(string(UInt32(character); base = 16), 4, '0'))
+        else
+            print(io, character)
+        end
+    end
+    return String(take!(io))
+end
+
 function matrix_json(targets::Vector{String})
-    escaped = replace.(targets, "\\" => "\\\\", "\"" => "\\\"")
+    escaped = escape_json_string.(targets)
     return "[" * join(["\"$target\"" for target in escaped], ",") * "]"
 end
 
