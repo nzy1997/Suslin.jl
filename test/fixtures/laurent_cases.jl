@@ -104,7 +104,31 @@ function _laurent_to_poly_route_constructor(variables)
     return (;
         function_name = :suslin_laurent_polynomial_ring,
         coefficient = "GF(2)",
-        variables,
+        variables = Tuple(string.(variables)),
+    )
+end
+
+function _laurent_to_poly_entry_term_count(entry)
+    iszero(entry) && return 0
+    return length(collect(coefficients(entry)))
+end
+
+function _laurent_to_poly_selected_entry_contract(
+    source_column,
+    selected_entry_index,
+    selected_entry_role,
+)
+    selected_entry = source_column[selected_entry_index]
+    return (;
+        preserves_unimodularity = true,
+        polynomial_target = true,
+        selected_entry_must_be_polynomial_unit = true,
+        selected_entry_index,
+        selected_entry_role,
+        selected_source_fingerprint =
+            Suslin._laurent_descent_column_support_fingerprint([selected_entry]),
+        selected_source_term_count = _laurent_to_poly_entry_term_count(selected_entry),
+        selected_source_is_unit = is_unit(selected_entry),
     )
 end
 
@@ -118,6 +142,7 @@ function _laurent_to_poly_route_entry(
     expected_reducer,
     provenance_extra,
     verifier_id,
+    selected_entry_role,
 )
     return (;
         id,
@@ -134,11 +159,10 @@ function _laurent_to_poly_route_entry(
             source_refs = _laurent_to_poly_source_refs(),
             provenance_extra...,
         ),
-        post_conversion_contract = (;
-            preserves_unimodularity = true,
-            polynomial_target = true,
-            selected_entry_must_be_polynomial_unit = true,
+        post_conversion_contract = _laurent_to_poly_selected_entry_contract(
+            source_column,
             selected_entry_index,
+            selected_entry_role,
         ),
         verifier_id,
         consumer_test_ids = (
@@ -182,6 +206,7 @@ function laurent_to_poly_route_catalog()
                 (; status = :supported, failure_code = nothing, stage = :laurent_normalization),
                 (; source_case = :laurent_column_reduction_diagnostics),
                 :laurent_to_poly_existing_normalization,
+                :existing_normalization_anchor,
             ),
             _laurent_to_poly_route_entry(
                 "laurent-to-poly-general-ecp",
@@ -193,6 +218,7 @@ function laurent_to_poly_route_catalog()
                 (; status = :unsupported, failure_code = :unsupported_laurent_column_family, stage = :laurent_native_ecp_boundary),
                 (; source_case = :laurent_column_reduction_diagnostics),
                 :laurent_to_poly_general_ecp,
+                :general_ecp_anchor,
             ),
             _laurent_to_poly_route_entry(
                 "laurent-to-poly-case008-d14",
@@ -202,8 +228,36 @@ function laurent_to_poly_route_catalog()
                 d14.failing_column,
                 1,
                 (; status = :unsupported, failure_code = :unsupported_laurent_column_family, stage = :laurent_native_ecp_boundary),
-                (; source_case = d14.case_id, source_fixture = :ToricBuilderCase008D14ColumnBoundary, boundary_provenance = d14.boundary_provenance),
+                (;
+                    source_case = d14.case_id,
+                    source_fixture = :ToricBuilderCase008D14ColumnBoundary,
+                    case_id = d14.case_id,
+                    dimension = d14.first_failing_peel_dimension,
+                    source_cache_file = d14.source_cache_file,
+                    source_block = d14.source_block,
+                    source_matrix_dimensions = d14.source_matrix_dimensions,
+                    source_column_transformation_dimensions =
+                        d14.source_column_transformation_dimensions,
+                    passed_peel_dimensions = d14.passed_peel_dimensions,
+                    first_failing_peel_dimension = d14.first_failing_peel_dimension,
+                    boundary_status = :current_staged_d14_boundary,
+                    boundary_provenance = d14.boundary_provenance,
+                    post_d15_provenance = (;
+                        source = d14.boundary_provenance.source,
+                        stage = d14.boundary_provenance.stage,
+                        route_status = d14.boundary_provenance.route_status,
+                        current_peel_dimension = d14.boundary_provenance.current_peel_dimension,
+                        last_completed_peel_dimension =
+                            d14.boundary_provenance.last_completed_peel_dimension,
+                        failure_code = d14.boundary_provenance.failure_code,
+                        old_d15_boundary_cleared =
+                            d14.boundary_provenance.old_d15_boundary_cleared,
+                    ),
+                    last_column_nonzero_count = d14.last_column_nonzero_count,
+                    max_entry_term_count = d14.max_entry_term_count,
+                ),
                 :laurent_to_poly_case008_d14,
+                :case008_d14_boundary_anchor,
             ),
         ],
     )
