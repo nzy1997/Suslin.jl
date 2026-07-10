@@ -710,3 +710,142 @@ timing_lines(output::AbstractString) =
         end
     end
 end
+
+include("TestSelection.jl")
+using .TestSelection
+
+@testset "affected test selection" begin
+    manifest = load_manifest(MANIFEST_PATH)
+
+    laurent = select_targets(["src/algorithm/laurent_column_peel.jl"], manifest)
+    @test laurent.documentation_only == false
+    @test laurent.targets == [
+        "public", "internal-core", "internal-fixtures",
+        "expert-laurent-a", "expert-laurent-b", "expert-integration",
+    ]
+
+    sl3 = select_targets(["src/algorithm/sln_to_sl3_reduction.jl"], manifest)
+    @test sl3.targets == ["public", "expert-sl3", "expert-integration"]
+
+    owned_test = select_targets(["test/expert/ecp_link_step.jl"], manifest)
+    @test owned_test.targets == ["expert-ecp"]
+
+    fixture = select_targets(["test/fixtures/quillen_patch_cases.jl"], manifest)
+    @test fixture.targets == ["internal-core", "expert-quillen"]
+
+    docs = select_targets(["README.md", "docs/src/index.md"], manifest)
+    @test docs.documentation_only
+    @test docs.targets == ["documentation-smoke"]
+
+    core = select_targets(["src/core/rings.jl"], manifest)
+    @test core.targets == shard_ids(manifest)
+
+    unknown_source = select_targets(["src/algorithm/new_algorithm.jl"], manifest)
+    @test unknown_source.targets == shard_ids(manifest)
+
+    unknown_fixture = select_targets(["test/fixtures/new_fixture.jl"], manifest)
+    @test unknown_fixture.targets == shard_ids(manifest)
+
+    empty_diff = select_targets(String[], manifest)
+    @test empty_diff.targets == shard_ids(manifest)
+
+    @test matrix_json(["public", "expert-ecp"]) ==
+        "[\"public\",\"expert-ecp\"]"
+end
+
+@testset "affected test selection ordering and fail-closed controls" begin
+    manifest = load_manifest(MANIFEST_PATH)
+
+    combined = select_targets([
+        "test/expert/ecp_link_step.jl",
+        "src/algorithm/sln_to_sl3_reduction.jl",
+        "docs/src/index.md",
+    ], manifest)
+    @test combined.targets == [
+        "public", "expert-sl3", "expert-ecp", "expert-integration",
+    ]
+    @test !combined.documentation_only
+    @test combined.reasons == [
+        "test/expert/ecp_link_step.jl => expert-ecp",
+        "src/algorithm/sln_to_sl3_reduction.jl => public,expert-sl3,expert-integration",
+        "docs/src/index.md => documentation companion",
+    ]
+
+    full_run = select_targets(["README.md", "Project.toml"], manifest)
+    @test full_run.targets == shard_ids(manifest)
+    @test full_run.reasons == ["full-run trigger: Project.toml"]
+
+    unknown_test = select_targets(["test/expert/new_test.jl"], manifest)
+    @test unknown_test.targets == shard_ids(manifest)
+    @test unknown_test.reasons == ["unknown test path: test/expert/new_test.jl"]
+
+    unknown_path = select_targets(["scripts/new_helper.jl"], manifest)
+    @test unknown_path.targets == shard_ids(manifest)
+    @test unknown_path.reasons == ["unknown path: scripts/new_helper.jl"]
+
+    @test matrix_json(["a\\b", "c\"d"]) == "[\"a\\\\b\",\"c\\\"d\"]"
+end
+
+const REPOSITORY_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
+const SELECTOR_CLI = joinpath(@__DIR__, "select_shards.jl")
+
+function run_selector_cli(arguments::Vector{String}; directory = REPOSITORY_ROOT)
+    stdout = IOBuffer()
+    stderr = IOBuffer()
+    command = Cmd(
+        `$(Base.julia_cmd()) --startup-file=no --project=$REPOSITORY_ROOT $SELECTOR_CLI $arguments`;
+        dir = directory,
+    )
+    process = run(pipeline(ignorestatus(command); stdout, stderr))
+    return success(process), String(take!(stdout)), String(take!(stderr))
+end
+
+@testset "affected test selection CLI" begin
+    succeeded, stdout, stderr = run_selector_cli(
+        ["--base=HEAD", "--head=HEAD", "--format=lines"];
+        directory = joinpath(TEST_ROOT, "expert"),
+    )
+    @test succeeded
+    @test stdout == join(EXPECTED_SHARDS, '\n') * "\n"
+    @test isempty(stderr)
+
+    mktemp() do github_output, io
+        write(io, "existing=value\n")
+        close(io)
+        succeeded, stdout, stderr = run_selector_cli([
+            "--base=HEAD",
+            "--head=HEAD",
+            "--github-output=$github_output",
+        ])
+        @test succeeded
+        @test isempty(stdout)
+        @test isempty(stderr)
+        @test read(github_output, String) ==
+            "existing=value\n" *
+            "matrix=$(matrix_json(EXPECTED_SHARDS))\n" *
+            "documentation_only=false\n" *
+            "reason<<EOF\n" *
+            "empty diff: full fallback\n" *
+            "EOF\n"
+    end
+
+    succeeded, stdout, stderr = run_selector_cli(["--format=lines"])
+    @test !succeeded
+    @test isempty(stdout)
+    @test occursin("ArgumentError: --base is required", stderr)
+    @test occursin("Stacktrace:", stderr)
+
+    succeeded, stdout, stderr = run_selector_cli([
+        "--base=HEAD", "--format=json",
+    ])
+    @test !succeeded
+    @test isempty(stdout)
+    @test occursin("ArgumentError: unsupported format: json", stderr)
+
+    succeeded, stdout, stderr = run_selector_cli([
+        "--base=HEAD", "--unknown-option",
+    ])
+    @test !succeeded
+    @test isempty(stdout)
+    @test occursin("ArgumentError: unknown option: --unknown-option", stderr)
+end
