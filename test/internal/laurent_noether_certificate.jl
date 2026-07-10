@@ -61,6 +61,14 @@ end
         certificate;
         inverse_substitution = certificate.forward_substitution,
     )) != :ok
+    noninvertible_forward = (
+        certificate.forward_substitution[1],
+        merge(certificate.forward_substitution[2], (; value = certificate.forward_substitution[1].value)),
+    )
+    @test Suslin._validate_laurent_noether_certificate(_laurent_noether_tamper(
+        certificate;
+        forward_substitution = noninvertible_forward,
+    )) != :ok
     @test Suslin._validate_laurent_noether_certificate(_laurent_noether_tamper(
         certificate;
         transformed_column = tuple(certificate.original_column...),
