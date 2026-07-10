@@ -611,6 +611,44 @@ const _LAURENT_LINK_WITNESS_CERTIFICATE_FIELDS = (
     :next_boundary,
     :status,
 )
+const _LAURENT_ENDPOINT_REDUCTION_OPERATION_FIELDS = (
+    :family,
+    :endpoint_index,
+    :operation,
+    :ring_generators,
+)
+const _LAURENT_ENDPOINT_REDUCTION_OPERATION_FAMILIES = (
+    :laurent_endpoint_entry_addition,
+    :paired_laurent_endpoint_entry_addition,
+)
+const _LAURENT_ENDPOINT_REDUCTION_CANDIDATE_FIELDS = (
+    :endpoint_operation,
+    :source_endpoint,
+    :target_endpoint,
+    :source_measure_relation,
+    :target_measure_relation,
+    :replay_status,
+    :identity_status,
+    :status,
+)
+const _LAURENT_ENDPOINT_REDUCTION_CERTIFICATE_STATUS =
+    :endpoint_reduction_certificate
+const _LAURENT_ENDPOINT_REDUCTION_CERTIFICATE_NEXT_BOUNDARY =
+    :laurent_normality_replay
+const _LAURENT_ENDPOINT_REDUCTION_CERTIFICATE_FIELDS = (
+    :case_id,
+    :dimension,
+    :ring_generators,
+    :context_status,
+    :operation,
+    :source_endpoint,
+    :target_endpoint,
+    :endpoint_measure_relation,
+    :replay_status,
+    :identity_status,
+    :next_boundary,
+    :status,
+)
 
 function _laurent_descent_has_fields(value, fields)::Bool
     return all(field -> hasproperty(value, field), fields)
@@ -1062,6 +1100,329 @@ function _validate_laurent_link_witness_certificate(cert, column, R)::Symbol
     catch err
         err isa InterruptException && rethrow()
         return :identity_replay_failed
+    end
+end
+
+function _laurent_endpoint_metadata_from_column(column, R, endpoint_index::Int; case_id)
+    measure = _laurent_descent_measure_from_column(column, R; case_id)
+    entry = _coerce_into_ring(R, column[endpoint_index], "column[$endpoint_index]")
+    metadata = _laurent_link_endpoint_metadata(
+        entry,
+        R,
+        endpoint_index,
+        measure;
+        case_id,
+    )
+    return merge(metadata, (; entry))
+end
+
+function _laurent_endpoint_reduction_status(endpoint_operation, n::Int, R)::Symbol
+    _require_two_generator_laurent_ring(R)
+    _laurent_descent_has_fields(
+        endpoint_operation,
+        _LAURENT_ENDPOINT_REDUCTION_OPERATION_FIELDS,
+    ) || return :malformed_endpoint_operation
+    endpoint_operation.family in _LAURENT_ENDPOINT_REDUCTION_OPERATION_FAMILIES ||
+        return :malformed_endpoint_operation
+    endpoint_operation.ring_generators == _laurent_descent_ring_generators(R) ||
+        return :wrong_ring_generators
+
+    endpoint_index = try
+        _laurent_descent_checked_entry_index(
+            endpoint_operation.endpoint_index,
+            n,
+            "endpoint_index",
+        )
+    catch err
+        err isa InterruptException && rethrow()
+        return :wrong_endpoint_index
+    end
+
+    _laurent_descent_has_fields(
+        endpoint_operation.operation,
+        _LAURENT_DESCENT_OPERATION_FIELDS,
+    ) || return :malformed_endpoint_operation
+    endpoint_operation.operation.target_index == endpoint_index ||
+        return :wrong_endpoint_index
+    endpoint_operation.operation.ring_generators ==
+        endpoint_operation.ring_generators ||
+        return :wrong_ring_generators
+
+    operation_status = _laurent_descent_operation_status(
+        endpoint_operation.operation,
+        n,
+        R,
+    )
+    operation_status == :ok || return operation_status == :wrong_ring_generators ?
+                                  :wrong_ring_generators :
+                                  :malformed_endpoint_operation
+    return :ok
+end
+
+function _replay_laurent_endpoint_reduction(
+    column,
+    R,
+    endpoint_operation;
+    case_id,
+    require_strict::Bool = true,
+)
+    status = _laurent_endpoint_reduction_status(
+        endpoint_operation,
+        length(column),
+        R,
+    )
+    status == :ok ||
+        throw(ArgumentError("invalid Laurent endpoint operation: $(status)"))
+    endpoint_index = Int(endpoint_operation.endpoint_index)
+    source_endpoint = _laurent_endpoint_metadata_from_column(
+        column,
+        R,
+        endpoint_index;
+        case_id,
+    )
+    replayed_column = _replay_laurent_elementary_entry_addition(
+        column,
+        R,
+        endpoint_operation.operation,
+    )
+    target_endpoint = _laurent_endpoint_metadata_from_column(
+        replayed_column,
+        R,
+        endpoint_index;
+        case_id,
+    )
+    relation = _strictly_decreases_laurent_measure(
+        source_endpoint.column_measure,
+        target_endpoint.column_measure,
+    ) ? :strict_decrease : :not_strict_decrease
+    require_strict && relation != :strict_decrease &&
+        throw(
+            ArgumentError(
+                "endpoint operation does not strictly decrease the endpoint measure",
+            ),
+        )
+    return (;
+        endpoint_operation,
+        replayed_column,
+        source_endpoint,
+        target_endpoint,
+        relation,
+    )
+end
+
+function _laurent_endpoint_reduction_replay_identity(
+    source_column,
+    target_column,
+    source_replayed_column,
+    target_replayed_column,
+    R,
+)::Bool
+    length(source_column) == length(target_column) == length(source_replayed_column) ==
+        length(target_replayed_column) || return false
+    return all(
+        i ->
+            R(target_replayed_column[i]) - R(source_replayed_column[i]) ==
+            R(target_column[i]) - R(source_column[i]),
+        eachindex(source_column),
+    )
+end
+
+function _laurent_endpoint_reduction_candidate_from_replay(
+    source_column,
+    target_column,
+    R,
+    endpoint_operation;
+    case_id,
+    require_strict::Bool = true,
+)
+    length(source_column) == length(target_column) ||
+        throw(ArgumentError("source and target columns must have the same length"))
+    source_replay = _replay_laurent_endpoint_reduction(
+        source_column,
+        R,
+        endpoint_operation;
+        case_id,
+        require_strict = false,
+    )
+    target_replay = _replay_laurent_endpoint_reduction(
+        target_column,
+        R,
+        endpoint_operation;
+        case_id,
+        require_strict = false,
+    )
+    candidate_status =
+        source_replay.relation == :strict_decrease &&
+        target_replay.relation == :strict_decrease ?
+        :strict_endpoint_decrease : :not_endpoint_reduction
+    require_strict && candidate_status != :strict_endpoint_decrease &&
+        throw(
+            ArgumentError(
+                "endpoint operation does not strictly decrease both endpoint measures",
+            ),
+        )
+    identity_status = _laurent_endpoint_reduction_replay_identity(
+        source_column,
+        target_column,
+        source_replay.replayed_column,
+        target_replay.replayed_column,
+        R,
+    ) ? :verified : :identity_replay_failed
+    require_strict && identity_status != :verified &&
+        throw(
+            ArgumentError(
+                "endpoint reduction replay does not preserve the source-to-target column delta",
+            ),
+        )
+    return (;
+        endpoint_operation,
+        source_endpoint = source_replay.target_endpoint,
+        target_endpoint = target_replay.target_endpoint,
+        source_measure_relation = source_replay.relation,
+        target_measure_relation = target_replay.relation,
+        replay_status = :ok,
+        identity_status,
+        status = candidate_status,
+    )
+end
+
+function _verify_laurent_endpoint_reduction_candidate(
+    source_column,
+    target_column,
+    R,
+    candidate,
+)::Bool
+    try
+        _laurent_descent_has_fields(
+            candidate,
+            _LAURENT_ENDPOINT_REDUCTION_CANDIDATE_FIELDS,
+        ) || return false
+        candidate.replay_status == :ok || return false
+        candidate.identity_status == :verified || return false
+        candidate.source_measure_relation == :strict_decrease || return false
+        candidate.target_measure_relation == :strict_decrease || return false
+        candidate.status == :strict_endpoint_decrease || return false
+        _laurent_endpoint_reduction_status(
+            candidate.endpoint_operation,
+            length(source_column),
+            R,
+        ) == :ok || return false
+        expected = _laurent_endpoint_reduction_candidate_from_replay(
+            source_column,
+            target_column,
+            R,
+            candidate.endpoint_operation;
+            case_id = candidate.source_endpoint.case_id,
+        )
+        return candidate == expected
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function _laurent_endpoint_reduction_certificate_from_replay(
+    context,
+    endpoint_operation,
+    column,
+    R;
+    source_endpoint = nothing,
+    require_strict::Bool = true,
+)
+    _laurent_descent_has_fields(
+        context,
+        (:case_id, :dimension, :ring_generators, :status),
+    ) || throw(ArgumentError("context must include case_id, dimension, ring_generators, and status"))
+    context.status == :endpoint_reduction_context ||
+        throw(ArgumentError("context must have status :endpoint_reduction_context"))
+    context.dimension == length(column) ||
+        throw(ArgumentError("context dimension does not match source column"))
+    context.ring_generators == _laurent_descent_ring_generators(R) ||
+        throw(ArgumentError("context ring_generators do not match the ring"))
+
+    replay = _replay_laurent_endpoint_reduction(
+        column,
+        R,
+        endpoint_operation;
+        case_id = context.case_id,
+        require_strict = require_strict,
+    )
+    source_endpoint === nothing || source_endpoint == replay.source_endpoint ||
+        throw(ArgumentError("source endpoint is stale for the input column"))
+    return (;
+        case_id = context.case_id,
+        dimension = context.dimension,
+        ring_generators = context.ring_generators,
+        context_status = context.status,
+        operation = replay.endpoint_operation,
+        source_endpoint = replay.source_endpoint,
+        target_endpoint = replay.target_endpoint,
+        endpoint_measure_relation = replay.relation,
+        replay_status = :ok,
+        identity_status = :verified,
+        next_boundary = _LAURENT_ENDPOINT_REDUCTION_CERTIFICATE_NEXT_BOUNDARY,
+        status = _LAURENT_ENDPOINT_REDUCTION_CERTIFICATE_STATUS,
+    )
+end
+
+function _validate_laurent_endpoint_reduction_certificate(cert, column, R)::Symbol
+    try
+        _require_two_generator_laurent_ring(R)
+        _laurent_descent_has_fields(
+            cert,
+            _LAURENT_ENDPOINT_REDUCTION_CERTIFICATE_FIELDS,
+        ) || return :missing_certificate_fields
+        cert.status == _LAURENT_ENDPOINT_REDUCTION_CERTIFICATE_STATUS ||
+            return :wrong_status
+        cert.replay_status == :ok || return :wrong_replay_status
+        cert.identity_status == :verified || return :wrong_identity_status
+        cert.next_boundary == _LAURENT_ENDPOINT_REDUCTION_CERTIFICATE_NEXT_BOUNDARY ||
+            return :wrong_next_boundary
+        cert.dimension == length(column) || return :wrong_dimension
+        cert.ring_generators == _laurent_descent_ring_generators(R) ||
+            return :wrong_ring_generators
+        cert.context_status == :endpoint_reduction_context ||
+            return :wrong_context_status
+
+        operation_status = _laurent_endpoint_reduction_status(
+            cert.operation,
+            length(column),
+            R,
+        )
+        operation_status == :ok || return operation_status
+        replay = _replay_laurent_endpoint_reduction(
+            column,
+            R,
+            cert.operation;
+            case_id = cert.case_id,
+            require_strict = false,
+        )
+        replay.source_endpoint == cert.source_endpoint ||
+            return :stale_source_endpoint
+        replay.target_endpoint == cert.target_endpoint ||
+            return :stale_target_endpoint
+        cert.endpoint_measure_relation == replay.relation ||
+            return :wrong_endpoint_measure_relation
+        replay.relation == :strict_decrease || return :not_endpoint_reduction
+
+        context = (;
+            case_id = cert.case_id,
+            dimension = cert.dimension,
+            ring_generators = cert.ring_generators,
+            status = cert.context_status,
+        )
+        expected = _laurent_endpoint_reduction_certificate_from_replay(
+            context,
+            cert.operation,
+            column,
+            R;
+            source_endpoint = cert.source_endpoint,
+        )
+        cert == expected || return :stale_certificate
+        return :ok
+    catch err
+        err isa InterruptException && rethrow()
+        return :operation_replay_failed
     end
 end
 
