@@ -217,12 +217,6 @@ function validate_laurent_descent_step_certificate(cert, column, R)::Symbol
 end
 
 @testset "Laurent descent-step certificate shell" begin
-    runtests = read(joinpath(@__DIR__, "..", "runtests.jl"), String)
-    @test occursin(
-        "\"expert/laurent_descent_step_certificate.jl\"",
-        runtests,
-    )
-
     R, (u, v) = Suslin.suslin_laurent_polynomial_ring(GF(2), ["u", "v"])
     column = [u + v, u + v + one(R)]
     before_profile = laurent_descent_step_profile(

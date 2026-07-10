@@ -167,12 +167,6 @@ function _case008_d14_context_without_field(context::NamedTuple, field::Symbol)
 end
 
 @testset "case_008 d=14 Laurent link-witness context" begin
-    runtests = read(joinpath(@__DIR__, "..", "runtests.jl"), String)
-    @test occursin(
-        "\"expert/case008_d14_laurent_link_witness_context.jl\"",
-        runtests,
-    )
-
     report = case008_d14_laurent_post_descent_profile_report()
     report_validation =
         validate_case008_d14_laurent_post_descent_profile_report(report)

@@ -549,3 +549,27 @@ end
         TEST_ROOT,
     )
 end
+
+include("TestRunner.jl")
+using .TestRunner
+
+@testset "CI test target resolution" begin
+    manifest = load_manifest(MANIFEST_PATH)
+    default_targets = requested_targets(String[], manifest)
+    @test first.(default_targets) == ["public", "internal"]
+    @test length(last(default_targets[1])) == 6
+    @test length(last(default_targets[2])) == 31
+
+    all_targets = requested_targets(["all"], manifest)
+    @test first.(all_targets) == ["public", "internal", "expert"]
+    @test sum(length(last(target)) for target in all_targets) == 122
+
+    shard_target = only(requested_targets(["shard:expert-quillen"], manifest))
+    @test first(shard_target) == "shard:expert-quillen"
+    @test last(shard_target) == files_for_shard(manifest, "expert-quillen")
+
+    smoke_target = only(requested_targets(["documentation-smoke"], manifest))
+    @test last(smoke_target) == [manifest.documentation_smoke]
+    @test_throws ArgumentError requested_targets(["shard:missing"], manifest)
+    @test_throws ArgumentError requested_targets(["not-a-group"], manifest)
+end

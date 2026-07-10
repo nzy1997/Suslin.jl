@@ -3,7 +3,7 @@ using Suslin
 using Oscar
 
 const RUN_STANDALONE_LAURENT_ENDPOINT_REDUCTION_D14 =
-    !isdefined(Main, :TEST_GROUP_FILES)
+    !isdefined(Main, :TEST_MANIFEST)
 
 if RUN_STANDALONE_LAURENT_ENDPOINT_REDUCTION_D14 &&
    !(@isdefined case008_d14_laurent_endpoint_reduction_search_report)
@@ -16,9 +16,6 @@ function _internal_endpoint_without_field(value::NamedTuple, field::Symbol)
 end
 
 @testset "internal Laurent endpoint-reduction helpers" begin
-    runtests = read(joinpath(@__DIR__, "..", "runtests.jl"), String)
-    @test occursin("\"internal/laurent_endpoint_reduction_helpers.jl\"", runtests)
-
     R, (u, v) = Suslin.suslin_laurent_polynomial_ring(GF(2), ["u", "v"])
     source_column = [one(R), u + one(R)]
     target_column = [one(R), u + v]

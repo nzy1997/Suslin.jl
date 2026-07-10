@@ -32,9 +32,6 @@ function _internal_descent_certificate(column, R, operation; case_id = "case_008
 end
 
 @testset "internal Laurent descent measure helpers" begin
-    runtests = read(joinpath(@__DIR__, "..", "runtests.jl"), String)
-    @test occursin("\"internal/laurent_descent_measure_helpers.jl\"", runtests)
-
     fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture()
     @test ToricBuilderCase008D14ColumnBoundary.validate_boundary_fixture(fixture) == :ok
 

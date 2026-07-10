@@ -303,12 +303,6 @@ function _laurent_link_without_field(value::NamedTuple, field::Symbol)
 end
 
 @testset "case_008 d=14 Laurent link-witness search report" begin
-    runtests = read(joinpath(@__DIR__, "..", "runtests.jl"), String)
-    @test occursin(
-        "\"expert/case008_d14_laurent_link_witness_search.jl\"",
-        runtests,
-    )
-
     report = case008_d14_laurent_link_witness_search_report()
     @test report.case_id == "case_008"
     @test report.dimension == 14
