@@ -138,6 +138,7 @@ function _laurent_to_poly_route_entry(
             preserves_unimodularity = true,
             polynomial_target = true,
             selected_entry_must_be_polynomial_unit = true,
+            selected_entry_index,
         ),
         verifier_id,
         consumer_test_ids = (

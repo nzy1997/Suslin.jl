@@ -14,16 +14,19 @@ const _ROUTE_EXPECTATIONS = Dict(
         route = :existing_normalization,
         verifier_id = :laurent_to_poly_existing_normalization,
         source_case = :laurent_column_reduction_diagnostics,
+        selected_entry_index = 1,
     ),
     "laurent-to-poly-general-ecp" => (;
         route = :general_ecp,
         verifier_id = :laurent_to_poly_general_ecp,
         source_case = :laurent_column_reduction_diagnostics,
+        selected_entry_index = 2,
     ),
     "laurent-to-poly-case008-d14" => (;
         route = :case008_d14,
         verifier_id = :laurent_to_poly_case008_d14,
         source_case = "case_008",
+        selected_entry_index = 1,
     ),
 )
 
@@ -70,19 +73,20 @@ function validate_laurent_to_poly_route_fixture(entry)
         throw(ArgumentError("route $(entry.id) has the wrong ring constructor"))
     Tuple(string.(gens(ring.object))) == Tuple(string.(ring.generators)) ||
         throw(ArgumentError("route $(entry.id) Laurent generators changed"))
-    ring_constructor = (;
-        function_name = constructor.function_name,
-        coefficient = constructor.coefficient,
-        variables = constructor.variables,
-    )
-    ring_constructor == entry.ring_constructor ||
-        throw(ArgumentError("route $(entry.id) ring constructor metadata changed"))
+    constructor.coefficient == "GF(2)" ||
+        throw(ArgumentError("route $(entry.id) constructor coefficient changed"))
+    constructor.variables == Tuple(string.(gens(ring.object))) ||
+        throw(ArgumentError("route $(entry.id) constructor variables do not match the ring"))
+    constructor.variables == Tuple(string.(ring.generators)) ||
+        throw(ArgumentError("route $(entry.id) constructor variables do not match the route ring"))
 
     Suslin._require_laurent_polynomial_ring(ring.object; label="route $(entry.id) ring")
     Suslin._laurent_descent_column_support_fingerprint(column) == entry.source_fingerprint ||
         throw(ArgumentError("route $(entry.id) source fingerprint is stale"))
     1 <= entry.selected_entry_index <= length(column) ||
         throw(ArgumentError("route $(entry.id) selected entry is out of bounds"))
+    entry.selected_entry_index == expectation.selected_entry_index ||
+        throw(ArgumentError("route $(entry.id) selected entry changed"))
 
     diagnostic = if entry.route == :case008_d14
         ToricBuilderCase008D14ColumnBoundary.validate_boundary_fixture(
@@ -131,6 +135,12 @@ function validate_laurent_to_poly_route_fixture(entry)
         throw(ArgumentError("route $(entry.id) does not preserve unimodularity"))
     contract.polynomial_target === true ||
         throw(ArgumentError("route $(entry.id) has no polynomial target contract"))
+    contract.selected_entry_must_be_polynomial_unit === true ||
+        throw(ArgumentError("route $(entry.id) selected entry contract changed"))
+    hasproperty(contract, :selected_entry_index) ||
+        throw(ArgumentError("route $(entry.id) has no selected entry contract"))
+    contract.selected_entry_index == entry.selected_entry_index ||
+        throw(ArgumentError("route $(entry.id) selected entry contract is stale"))
     entry.consumer_test_ids == (
         "issue-351-laurent-to-poly-route-fixtures",
         "issue-351-laurent-to-poly-route-consumer",
@@ -168,7 +178,22 @@ end
     swapped = merge(normalization, (; ring = merge(normalization.ring, (; generators = (y, x)))))
     @test_throws ArgumentError validate_laurent_to_poly_route_fixture(swapped)
     @test_throws ArgumentError validate_laurent_to_poly_route_fixture(
+        merge(normalization, (; ring_constructor = merge(normalization.ring_constructor, (; coefficient = "GF(3)")))),
+    )
+    @test_throws ArgumentError validate_laurent_to_poly_route_fixture(
+        merge(normalization, (; ring_constructor = merge(normalization.ring_constructor, (; variables = ("y", "x"))))),
+    )
+    @test_throws ArgumentError validate_laurent_to_poly_route_fixture(
         merge(normalization, (; selected_entry_index = length(normalization.source_column) + 1)),
+    )
+    @test_throws ArgumentError validate_laurent_to_poly_route_fixture(
+        merge(normalization, (; selected_entry_index = 2)),
+    )
+    @test_throws ArgumentError validate_laurent_to_poly_route_fixture(
+        merge(normalization, (; post_conversion_contract = merge(normalization.post_conversion_contract, (; selected_entry_must_be_polynomial_unit = false)))),
+    )
+    @test_throws ArgumentError validate_laurent_to_poly_route_fixture(
+        merge(normalization, (; post_conversion_contract = merge(normalization.post_conversion_contract, (; selected_entry_index = 2)))),
     )
     @test_throws ArgumentError validate_laurent_to_poly_route_fixture(
         merge(d14, (; provenance = merge(d14.provenance, (; route = :stale_route)))),
