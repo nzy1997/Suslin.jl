@@ -169,6 +169,10 @@ end
         unit_certificate;
         noether_certificate = stale_noether,
     )) != :ok
+    @test Suslin._validate_laurent_to_polynomial_certificate(_ltp_tamper(
+        unit_certificate;
+        original_column = (nothing, nothing, nothing),
+    )) == :invalid_certificate
     @test_throws ArgumentError Suslin._laurent_to_polynomial_certificate(
         unit_column,
         stale_noether,
