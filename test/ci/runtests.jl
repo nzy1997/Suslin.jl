@@ -563,6 +563,12 @@ using .TestRunner
     all_targets = requested_targets(["all"], manifest)
     @test first.(all_targets) == ["public", "internal", "expert"]
     @test sum(length(last(target)) for target in all_targets) == 122
+    @test first.(requested_targets(["all,public"], manifest)) ==
+          ["public", "internal", "expert"]
+    @test_throws ArgumentError requested_targets(["all,not-a-group"], manifest)
+    @test_throws ArgumentError requested_targets(["all,shard:missing"], manifest)
+    @test_throws ArgumentError requested_targets(["all", "not-a-group"], manifest)
+    @test_throws ArgumentError requested_targets(["all", "shard:missing"], manifest)
 
     shard_target = only(requested_targets(["shard:expert-quillen"], manifest))
     @test first(shard_target) == "shard:expert-quillen"
@@ -572,4 +578,135 @@ using .TestRunner
     @test last(smoke_target) == [manifest.documentation_smoke]
     @test_throws ArgumentError requested_targets(["shard:missing"], manifest)
     @test_throws ArgumentError requested_targets(["not-a-group"], manifest)
+end
+
+@testset "CI test target overlap preflight" begin
+    manifest = load_manifest(MANIFEST_PATH)
+
+    duplicate_target = requested_targets(
+        ["shard:expert-quillen", "shard:expert-quillen"],
+        manifest,
+    )
+    @test first.(duplicate_target) == ["shard:expert-quillen"]
+    @test last(only(duplicate_target)) == files_for_shard(manifest, "expert-quillen")
+    @test first.(requested_targets(
+        ["documentation-smoke,documentation-smoke"],
+        manifest,
+    )) == ["documentation-smoke"]
+
+    group_shard_error = captured_error_message(
+        () -> requested_targets(["public,shard:public"], manifest),
+    )
+    @test occursin("public/api_surface.jl", something(group_shard_error, ""))
+    @test occursin(
+        "both public and shard:public",
+        something(group_shard_error, ""),
+    )
+
+    smoke_shard_error = captured_error_message(
+        () -> requested_targets(
+            ["documentation-smoke,shard:expert-integration"],
+            manifest,
+        ),
+    )
+    @test occursin(manifest.documentation_smoke, something(smoke_shard_error, ""))
+    @test occursin(
+        "both documentation-smoke and shard:expert-integration",
+        something(smoke_shard_error, ""),
+    )
+
+    legacy_targets = requested_targets(["public,internal"], manifest)
+    @test first.(legacy_targets) == ["public", "internal"]
+    shard_targets = requested_targets(
+        ["shard:expert-quillen,shard:expert-ecp"],
+        manifest,
+    )
+    @test first.(shard_targets) == ["shard:expert-quillen", "shard:expert-ecp"]
+    @test length(unique(vcat(last.(shard_targets)...))) ==
+          sum(length(last(target)) for target in shard_targets)
+
+    @test_throws ArgumentError requested_targets([",", ""], manifest)
+    empty_public_manifest = manifest_with(
+        manifest;
+        tests = filter(entry -> entry.group != "public", manifest.tests),
+    )
+    @test_throws ArgumentError requested_targets(["public"], empty_public_manifest)
+end
+
+timing_lines(output::AbstractString) =
+    filter(!isempty, split(chomp(output), '\n'))
+
+@testset "CI test file timing" begin
+    normal_io = IOBuffer()
+    normal_result = try
+        TestRunner.timed_test_file(() -> :completed, "normal.jl"; io = normal_io)
+    catch error
+        error
+    end
+    @test normal_result === :completed
+    normal_lines = timing_lines(String(take!(normal_io)))
+    @test length(normal_lines) == 1
+    if length(normal_lines) == 1
+        normal_fields = split(only(normal_lines), '\t')
+        @test length(normal_fields) == 3
+        if length(normal_fields) == 3
+            @test normal_fields[1:2] == ["TEST_FILE_TIME", "normal.jl"]
+            @test !isnothing(tryparse(Float64, normal_fields[3]))
+        end
+    end
+
+    test_io = IOBuffer()
+    test_result = try
+        TestRunner.timed_test_file(() -> (@test true), "test-pass.jl"; io = test_io)
+    catch error
+        error
+    end
+    @test test_result isa Test.Pass
+    @test length(timing_lines(String(take!(test_io)))) == 1
+
+    expected_error = ErrorException("timed failure")
+    error_io = IOBuffer()
+    caught_error = try
+        TestRunner.timed_test_file(
+            () -> throw(expected_error),
+            "thrown-error.jl";
+            io = error_io,
+        )
+        nothing
+    catch error
+        error
+    end
+    @test caught_error === expected_error
+    error_lines = timing_lines(String(take!(error_io)))
+    @test length(error_lines) == 1
+    if length(error_lines) == 1
+        @test startswith(only(error_lines), "TEST_FILE_TIME\tthrown-error.jl\t")
+    end
+
+    mktemp() do path, file_io
+        write(file_io, "error(\"top-level failure\")\n")
+        flush(file_io)
+        close(file_io)
+
+        load_error_io = IOBuffer()
+        caught_load_error = try
+            TestRunner.timed_test_file(
+                () -> Base.include(Main, path),
+                "temporary-load-error.jl";
+                io = load_error_io,
+            )
+            nothing
+        catch error
+            error
+        end
+        @test caught_load_error isa LoadError
+        load_error_lines = timing_lines(String(take!(load_error_io)))
+        @test length(load_error_lines) == 1
+        if length(load_error_lines) == 1
+            @test startswith(
+                only(load_error_lines),
+                "TEST_FILE_TIME\ttemporary-load-error.jl\t",
+            )
+        end
+    end
 end
