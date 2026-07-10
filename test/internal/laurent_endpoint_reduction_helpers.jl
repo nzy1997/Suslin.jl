@@ -2,7 +2,11 @@ using Test
 using Suslin
 using Oscar
 
-if !(@isdefined case008_d14_laurent_endpoint_reduction_search_report)
+const RUN_STANDALONE_LAURENT_ENDPOINT_REDUCTION_D14 =
+    !isdefined(Main, :TEST_GROUP_FILES)
+
+if RUN_STANDALONE_LAURENT_ENDPOINT_REDUCTION_D14 &&
+   !(@isdefined case008_d14_laurent_endpoint_reduction_search_report)
     include(joinpath(@__DIR__, "..", "expert", "case008_d14_laurent_endpoint_reduction_search.jl"))
 end
 
@@ -266,64 +270,67 @@ end
     )
 end
 
-@testset "internal d14 Laurent endpoint-reduction candidate" begin
-    report = case008_d14_laurent_endpoint_reduction_search_report()
-    replay_source = _case008_d14_endpoint_reduction_replay_source()
-    columns = _case008_d14_endpoint_reduction_columns(replay_source)
+if RUN_STANDALONE_LAURENT_ENDPOINT_REDUCTION_D14
+    @testset "internal d14 Laurent endpoint-reduction candidate" begin
+        report = case008_d14_laurent_endpoint_reduction_search_report()
+        replay_source = _case008_d14_endpoint_reduction_replay_source()
+        columns = _case008_d14_endpoint_reduction_columns(replay_source)
 
-    if report.status == :candidate_found
-        candidate = first(report.candidates)
-        @test Suslin._verify_laurent_endpoint_reduction_candidate(
-            columns.source_column,
-            columns.target_column,
-            columns.ring,
-            candidate,
-        )
-        expected = Suslin._laurent_endpoint_reduction_candidate_from_replay(
-            columns.source_column,
-            columns.target_column,
-            columns.ring,
-            candidate.endpoint_operation;
-            case_id = report.case_id,
-        )
-        @test candidate == expected
+        if report.status == :candidate_found
+            candidate = first(report.candidates)
+            @test Suslin._verify_laurent_endpoint_reduction_candidate(
+                columns.source_column,
+                columns.target_column,
+                columns.ring,
+                candidate,
+            )
+            expected = Suslin._laurent_endpoint_reduction_candidate_from_replay(
+                columns.source_column,
+                columns.target_column,
+                columns.ring,
+                candidate.endpoint_operation;
+                case_id = report.case_id,
+            )
+            @test candidate == expected
 
-        context = case008_d14_laurent_endpoint_reduction_context(
-            replay_source.fixture;
-            replay_source,
-        )
-        mismatched_identity_status = merge(
-            candidate,
-            (; identity_status = :identity_replay_failed),
-        )
-        @test validate_case008_d14_laurent_endpoint_reduction_candidate(
-            context,
-            mismatched_identity_status,
-            replay_source,
-        ) == :identity_replay_failed
-        exact_source_endpoint = Suslin._laurent_endpoint_metadata_from_column(
-            columns.source_column,
-            columns.ring,
-            candidate.endpoint_operation.endpoint_index;
-            case_id = report.case_id,
-        )
-        cert = Suslin._laurent_endpoint_reduction_certificate_from_replay(
-            context,
-            candidate.endpoint_operation,
-            columns.source_column,
-            columns.ring;
-            source_endpoint = exact_source_endpoint,
-        )
-        @test cert.target_endpoint == candidate.source_endpoint
-        @test Suslin._validate_laurent_endpoint_reduction_certificate(
-            cert,
-            columns.source_column,
-            columns.ring,
-        ) == :ok
-    else
-        @test report.status == :exhausted
-        @test report.candidate_count == 0
-        @test report.replay_verified_count == 0
-        @test report.next_boundary == :laurent_endpoint_reduction_search_expansion
+            context = case008_d14_laurent_endpoint_reduction_context(
+                replay_source.fixture;
+                replay_source,
+            )
+            mismatched_identity_status = merge(
+                candidate,
+                (; identity_status = :identity_replay_failed),
+            )
+            @test validate_case008_d14_laurent_endpoint_reduction_candidate(
+                context,
+                mismatched_identity_status,
+                replay_source,
+            ) == :identity_replay_failed
+            exact_source_endpoint = Suslin._laurent_endpoint_metadata_from_column(
+                columns.source_column,
+                columns.ring,
+                candidate.endpoint_operation.endpoint_index;
+                case_id = report.case_id,
+            )
+            cert = Suslin._laurent_endpoint_reduction_certificate_from_replay(
+                context,
+                candidate.endpoint_operation,
+                columns.source_column,
+                columns.ring;
+                source_endpoint = exact_source_endpoint,
+            )
+            @test cert.target_endpoint == candidate.source_endpoint
+            @test Suslin._validate_laurent_endpoint_reduction_certificate(
+                cert,
+                columns.source_column,
+                columns.ring,
+            ) == :ok
+        else
+            @test report.status == :exhausted
+            @test report.candidate_count == 0
+            @test report.replay_verified_count == 0
+            @test report.next_boundary ==
+                  :laurent_endpoint_reduction_search_expansion
+        end
     end
 end
