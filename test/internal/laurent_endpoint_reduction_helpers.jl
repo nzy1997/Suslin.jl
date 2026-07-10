@@ -77,6 +77,8 @@ end
         source_endpoint = replay.source_endpoint,
     )
     @test cert.case_id == "synthetic"
+    @test cert.source_endpoint.entry == source_column[2]
+    @test cert.target_endpoint.entry == replay.replayed_column[2]
     @test cert.target_endpoint.leading_exponent == (0, 0)
     @test cert.endpoint_measure_relation == :strict_decrease
     @test cert.next_boundary == :laurent_normality_replay
@@ -192,6 +194,45 @@ end
         R,
     ) == :stale_target_endpoint
 
+    exact_R, (exact_u, exact_v) =
+        Suslin.suslin_laurent_polynomial_ring(QQ, ["u", "v"])
+    exact_column = [one(exact_R), exact_u + one(exact_R)]
+    exact_context = merge(context, (; case_id = "synthetic-exact"))
+    exact_operation = merge(
+        operation,
+        (;
+            operation = merge(
+                operation.operation,
+                (; coefficient = -exact_u, exponent = (0, 0)),
+            ),
+        ),
+    )
+    exact_cert = Suslin._laurent_endpoint_reduction_certificate_from_replay(
+        exact_context,
+        exact_operation,
+        exact_column,
+        exact_R,
+    )
+    support_preserving_tamper = merge(
+        exact_cert,
+        (;
+            operation = merge(
+                exact_operation,
+                (;
+                    operation = merge(
+                        exact_operation.operation,
+                        (; coefficient = -exact_u + one(exact_R)),
+                    ),
+                ),
+            ),
+        ),
+    )
+    @test Suslin._validate_laurent_endpoint_reduction_certificate(
+        support_preserving_tamper,
+        exact_column,
+        exact_R,
+    ) == :stale_target_endpoint
+
     nonstrict_operation = merge(
         operation,
         (; operation = merge(operation.operation, (; exponent = (0, -1)))),
@@ -260,12 +301,18 @@ end
             mismatched_identity_status,
             replay_source,
         ) == :identity_replay_failed
+        exact_source_endpoint = Suslin._laurent_endpoint_metadata_from_column(
+            columns.source_column,
+            columns.ring,
+            candidate.endpoint_operation.endpoint_index;
+            case_id = report.case_id,
+        )
         cert = Suslin._laurent_endpoint_reduction_certificate_from_replay(
             context,
             candidate.endpoint_operation,
             columns.source_column,
             columns.ring;
-            source_endpoint = report.source_endpoint,
+            source_endpoint = exact_source_endpoint,
         )
         @test cert.target_endpoint == candidate.source_endpoint
         @test Suslin._validate_laurent_endpoint_reduction_certificate(

@@ -1105,13 +1105,15 @@ end
 
 function _laurent_endpoint_metadata_from_column(column, R, endpoint_index::Int; case_id)
     measure = _laurent_descent_measure_from_column(column, R; case_id)
-    return _laurent_link_endpoint_metadata(
-        column[endpoint_index],
+    entry = _coerce_into_ring(R, column[endpoint_index], "column[$endpoint_index]")
+    metadata = _laurent_link_endpoint_metadata(
+        entry,
         R,
         endpoint_index,
         measure;
         case_id,
     )
+    return merge(metadata, (; entry))
 end
 
 function _laurent_endpoint_reduction_status(endpoint_operation, n::Int, R)::Symbol

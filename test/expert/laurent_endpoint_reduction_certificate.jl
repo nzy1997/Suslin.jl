@@ -111,12 +111,18 @@ function case008_d14_laurent_endpoint_reduction_certificate_summary(
             replay_source,
         )
         candidate = first(report.candidates)
+        exact_source_endpoint = Suslin._laurent_endpoint_metadata_from_column(
+            columns.source_column,
+            columns.ring,
+            candidate.endpoint_operation.endpoint_index;
+            case_id = report.case_id,
+        )
         cert = laurent_endpoint_reduction_certificate(
             context,
             candidate.endpoint_operation,
             columns.source_column,
             columns.ring;
-            source_endpoint = report.source_endpoint,
+            source_endpoint = exact_source_endpoint,
         )
         validate_laurent_endpoint_reduction_certificate(
             cert,
@@ -193,6 +199,8 @@ end
     @test cert.ring_generators == ("u", "v")
     @test cert.context_status == :endpoint_reduction_context
     @test cert.operation == operation
+    @test cert.source_endpoint.entry == column[2]
+    @test cert.target_endpoint.entry == one(R)
     @test cert.source_endpoint.leading_exponent == (1, 0)
     @test cert.target_endpoint.leading_exponent == (0, 0)
     @test cert.replay_status == :ok
@@ -209,6 +217,45 @@ end
         tampered_operation,
         column,
         R,
+    ) == :stale_target_endpoint
+
+    exact_R, (exact_u, exact_v) =
+        Suslin.suslin_laurent_polynomial_ring(QQ, ["u", "v"])
+    exact_column = [one(exact_R), exact_u + one(exact_R)]
+    exact_context = merge(context, (; case_id = "synthetic-exact"))
+    exact_operation = merge(
+        operation,
+        (;
+            operation = merge(
+                operation.operation,
+                (; coefficient = -exact_u, exponent = (0, 0)),
+            ),
+        ),
+    )
+    exact_cert = laurent_endpoint_reduction_certificate(
+        exact_context,
+        exact_operation,
+        exact_column,
+        exact_R,
+    )
+    support_preserving_tamper = merge(
+        exact_cert,
+        (;
+            operation = merge(
+                exact_operation,
+                (;
+                    operation = merge(
+                        exact_operation.operation,
+                        (; coefficient = -exact_u + one(exact_R)),
+                    ),
+                ),
+            ),
+        ),
+    )
+    @test validate_laurent_endpoint_reduction_certificate(
+        support_preserving_tamper,
+        exact_column,
+        exact_R,
     ) == :stale_target_endpoint
 
     wrong_generators = merge(cert, (; ring_generators = ("v", "u")))
