@@ -284,7 +284,7 @@ end
     @testset "support boundary evidence page" begin
         evidence = _read_support_boundary_evidence()
         @test occursin(
-            "| `case_010` ToricBuilder Q-block | `laurent_gl_factorization_certificate` | `gl_certificate_pass`; verified `true`; decomposed base matrices `48` | public `elementary_factorization` remains `staged_boundary` for the original Laurent `GL_n` input |",
+            "| `case_010` ToricBuilder Q-block | `laurent_gl_factorization_certificate` | `gl_certificate_pass`; verified `true`; decomposed base matrices `48` | public `elementary_factorization` reports the intentional determinant contract for the original Laurent `GL_n` input |",
             evidence,
         )
         @test occursin(
@@ -300,8 +300,13 @@ end
             evidence,
         )
         @test occursin(
-            "original-input `elementary_factorization` for Laurent `GL_n` remains a `staged boundary`",
+            "original-input `elementary_factorization` for Laurent `GL_n` is rejected by the determinant-one elementary-only contract",
             evidence,
+        )
+        @test occursin("public `determinant_contract`", evidence)
+        @test occursin(
+            "because elementary factors have determinant one",
+            _squash_whitespace(evidence),
         )
         @test occursin("not arbitrary Park-Woodburn", evidence)
         @test occursin("not arbitrary Laurent `GL_n`", evidence)
