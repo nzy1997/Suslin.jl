@@ -59,6 +59,7 @@ export verify_quillen_patch
 
 include("core/rings.jl")
 include("core/polynomials.jl")
+include("core/laurent_to_polynomial.jl")
 include("core/groebner_tools.jl")
 include("core/laurent_linear_solve.jl")
 include("core/elementary_matrices.jl")

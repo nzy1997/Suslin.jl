@@ -19,6 +19,7 @@ const TEST_GROUP_FILES = Dict(
         "internal/gl_laurent_normalization.jl",
         "internal/laurent_lazy_determinant_fixtures.jl",
         "internal/laurent_to_polynomial_route_fixtures.jl",
+        "internal/laurent_noether_certificate.jl",
         "internal/toricbuilder_contract.jl",
         "internal/toricbuilder_issue38_fixture.jl",
         "internal/toricbuilder_cache_q_blocks.jl",
