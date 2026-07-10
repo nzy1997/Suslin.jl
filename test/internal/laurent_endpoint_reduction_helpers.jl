@@ -142,6 +142,12 @@ end
         length(source_column),
         R,
     ) == :wrong_endpoint_index
+    noninteger_endpoint_index = merge(operation, (; endpoint_index = "2"))
+    @test Suslin._laurent_endpoint_reduction_status(
+        noninteger_endpoint_index,
+        length(source_column),
+        R,
+    ) == :wrong_endpoint_index
 
     malformed_nested = merge(
         operation,
@@ -268,6 +274,27 @@ end
         R,
         nonstrict_candidate,
     )
+
+    missing_candidate_endpoint_case = merge(
+        candidate,
+        (;
+            source_endpoint =
+                _internal_endpoint_without_field(candidate.source_endpoint, :case_id),
+        ),
+    )
+    @test !Suslin._verify_laurent_endpoint_reduction_candidate(
+        source_column,
+        target_column,
+        R,
+        missing_candidate_endpoint_case,
+    )
+
+    uncoercible_column = Any[one(R), nothing]
+    @test Suslin._validate_laurent_endpoint_reduction_certificate(
+        cert,
+        uncoercible_column,
+        R,
+    ) == :operation_replay_failed
 end
 
 if RUN_STANDALONE_LAURENT_ENDPOINT_REDUCTION_D14
