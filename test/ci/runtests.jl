@@ -230,6 +230,23 @@ end
     @test !occursin("name: Instantiate Dependencies", workflow)
 end
 
+nightly_path = joinpath(TEST_ROOT, "..", ".github", "workflows", "Nightly.yml")
+@testset "complete coverage workflow contract" begin
+    @test isfile(nightly_path)
+    nightly = isfile(nightly_path) ? read(nightly_path, String) : ""
+    @test occursin("cron: '0 22 * * *'", nightly)
+    @test occursin("max-parallel: 4", nightly)
+    @test occursin("full-suite", nightly)
+    @test occursin("workflow_dispatch:", nightly)
+    @test occursin("tags: ['*']", nightly)
+
+    codecov = read(joinpath(TEST_ROOT, "..", "codecov.yml"), String)
+    @test occursin("full-suite:", codecov)
+    @test occursin("carryforward: true", codecov)
+    @test occursin("pr-selected:", codecov)
+    @test occursin("carryforward: false", codecov)
+end
+
 function manifest_with_test_entry(
     manifest::Manifest,
     index::Integer;
