@@ -14,15 +14,9 @@ function _laurent_noether_tamper(certificate; kwargs...)
     return Suslin.LaurentNoetherCertificate(values...)
 end
 
-@testset "Laurent Noether variable-change certificate" begin
-    R, x, y, column, certificate = _laurent_noether_test_certificate()
-
+function _assert_laurent_noether_replay(R, column, certificate)
     @test certificate.ring === R
     @test certificate.original_column == tuple(column...)
-    @test certificate.selected_entry_index == 1
-    @test certificate.selected_generator_index == 1
-    @test certificate.selected_generator == x
-    @test certificate.other_generator_index == 2
     @test certificate.validation_status == :ok
     @test Suslin._validate_laurent_noether_certificate(certificate) == :ok
 
@@ -30,6 +24,9 @@ end
     inverse_values = Suslin._laurent_noether_substitution_values(certificate.inverse_substitution)
     for entry in column
         @test evaluate(evaluate(entry, collect(forward_values)), collect(inverse_values)) == entry
+        @test evaluate(evaluate(entry, collect(inverse_values)), collect(forward_values)) == entry
+    end
+    for entry in certificate.transformed_column
         @test evaluate(evaluate(entry, collect(inverse_values)), collect(forward_values)) == entry
     end
     @test certificate.transformed_column == tuple((evaluate(entry, collect(forward_values)) for entry in column)...)
@@ -40,6 +37,21 @@ end
         Suslin._laurent_noether_trailing_coefficient(certificate.replayed_selected_entry, R, certificate.selected_generator_index)
     @test certificate.leading_coefficient_is_unit
     @test certificate.trailing_coefficient_is_unit
+end
+
+@testset "Laurent Noether variable-change certificate" begin
+    R, x, y, column, certificate = _laurent_noether_test_certificate()
+
+    @test certificate.selected_entry_index == 1
+    @test certificate.selected_generator_index == 1
+    @test certificate.selected_generator == x
+    @test certificate.other_generator_index == 2
+    _assert_laurent_noether_replay(R, column, certificate)
+
+    varied_column = [x^-3 * y^4 + x * y^-2 + y^3, one(R) + x^2 * y^-3]
+    varied_certificate = Suslin._laurent_noether_certificate(varied_column, 1, x)
+    @test varied_certificate.noether_power == 5
+    _assert_laurent_noether_replay(R, varied_column, varied_certificate)
 
     @test Suslin._validate_laurent_noether_certificate(_laurent_noether_tamper(
         certificate;

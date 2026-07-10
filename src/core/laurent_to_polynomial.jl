@@ -86,7 +86,7 @@ function _laurent_noether_is_supported_ring(R)::Bool
     _is_laurent_polynomial_ring(R) || return false
     ngens(R) == 2 || return false
     F = coefficient_ring(R)
-    return Oscar.is_exact_type(typeof(zero(F))) && is_field(F)
+    return Oscar.is_exact_type(typeof(zero(F))) && F isa Field
 end
 
 function _laurent_noether_validate_input(column::AbstractVector, selected_entry_index::Int, selected_generator)
