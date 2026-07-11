@@ -242,6 +242,20 @@ end
     @test Suslin._validate_laurent_to_polynomial_ecp_bridge_certificate(
         _bridge_tamper(polynomial_bridge; ordinary_child_certificate = forged_child),
     ) != :ok
+
+    P, (a, b) = polynomial_ring(GF(2), ["a", "b"])
+    @test Suslin._ecp_coordinates_in_ideal_or_nothing(one(P), [zero(P)], P) === nothing
+    @test Suslin._ecp_rank_one_normality_unit_stage(
+        [a, b, a + one(P)],
+        P;
+        target_unit_index = 1,
+    ) === nothing
+    @test_throws ArgumentError Suslin._laurent_to_polynomial_ecp_bridge_child_certificate((
+        polynomial_column = (a, b, a + b),
+        polynomial_ring = P,
+    ))
+    @test Suslin._validate_laurent_to_polynomial_ecp_bridge_certificate((;)) ==
+          :invalid_certificate
 end
 
 @testset "Laurent-to-polynomial ECP bridge catalog probe" begin
