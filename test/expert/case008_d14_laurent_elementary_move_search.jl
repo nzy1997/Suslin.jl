@@ -378,12 +378,6 @@ function case008_d14_laurent_elementary_move_search_report(
 end
 
 @testset "case_008 d=14 Laurent elementary move search" begin
-    runtests = read(joinpath(@__DIR__, "..", "runtests.jl"), String)
-    @test occursin(
-        "\"expert/case008_d14_laurent_elementary_move_search.jl\"",
-        runtests,
-    )
-
     fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture()
     baseline_profile = case008_d14_laurent_descent_profile(fixture)
     baseline_measure = case008_d14_laurent_descent_measure(

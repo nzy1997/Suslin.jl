@@ -1,0 +1,690 @@
+version = 1
+shard_order = [
+  "public",
+  "internal-core",
+  "internal-fixtures",
+  "expert-core",
+  "expert-laurent-a",
+  "expert-laurent-b",
+  "expert-sl3",
+  "expert-quillen",
+  "expert-ecp",
+  "expert-integration",
+]
+documentation_smoke = "expert/documentation_smoke.jl"
+full_run_paths = [
+  "Project.toml",
+  "Manifest.toml",
+  "codecov.yml",
+  "src/Suslin.jl",
+  "test/runtests.jl",
+]
+full_run_prefixes = ["src/core/", "test/ci/", ".github/workflows/"]
+documentation_paths = ["README.md"]
+documentation_prefixes = ["docs/"]
+
+[[tests]]
+path = "public/api_surface.jl"
+group = "public"
+shard = "public"
+
+[[tests]]
+path = "public/laurent_gl_certificate_options.jl"
+group = "public"
+shard = "public"
+
+[[tests]]
+path = "public/factorization_driver_shell.jl"
+group = "public"
+shard = "public"
+
+[[tests]]
+path = "public/park_woodburn_polynomial_factorization.jl"
+group = "public"
+shard = "public"
+
+[[tests]]
+path = "public/laurent_large_acceptance.jl"
+group = "public"
+shard = "public"
+
+[[tests]]
+path = "public/toricbuilder_factor_toric_block_acceptance.jl"
+group = "public"
+shard = "public"
+
+[[tests]]
+path = "internal/rings.jl"
+group = "internal"
+shard = "internal-core"
+
+[[tests]]
+path = "internal/laurent_rings.jl"
+group = "internal"
+shard = "internal-core"
+
+[[tests]]
+path = "internal/laurent_fixtures.jl"
+group = "internal"
+shard = "internal-fixtures"
+
+[[tests]]
+path = "internal/laurent_normalization.jl"
+group = "internal"
+shard = "internal-core"
+
+[[tests]]
+path = "internal/laurent_linear_solve.jl"
+group = "internal"
+shard = "internal-core"
+
+[[tests]]
+path = "internal/gl_laurent_normalization.jl"
+group = "internal"
+shard = "internal-core"
+
+[[tests]]
+path = "internal/laurent_lazy_determinant_fixtures.jl"
+group = "internal"
+shard = "internal-fixtures"
+
+[[tests]]
+path = "internal/laurent_to_polynomial_route_fixtures.jl"
+group = "internal"
+shard = "internal-fixtures"
+
+[[tests]]
+path = "internal/laurent_noether_certificate.jl"
+group = "internal"
+shard = "internal-core"
+
+[[tests]]
+path = "internal/laurent_to_polynomial_certificate.jl"
+group = "internal"
+shard = "internal-core"
+
+[[tests]]
+path = "internal/toricbuilder_contract.jl"
+group = "internal"
+shard = "internal-core"
+
+[[tests]]
+path = "internal/toricbuilder_issue38_fixture.jl"
+group = "internal"
+shard = "internal-fixtures"
+
+[[tests]]
+path = "internal/toricbuilder_cache_q_blocks.jl"
+group = "internal"
+shard = "internal-fixtures"
+
+[[tests]]
+path = "internal/toricbuilder_case010_column_boundary.jl"
+group = "internal"
+shard = "internal-fixtures"
+
+[[tests]]
+path = "internal/toricbuilder_case008_d21_column_boundary.jl"
+group = "internal"
+shard = "internal-fixtures"
+
+[[tests]]
+path = "internal/toricbuilder_case008_d16_column_boundary.jl"
+group = "internal"
+shard = "internal-fixtures"
+
+[[tests]]
+path = "internal/toricbuilder_case008_d15_column_boundary.jl"
+group = "internal"
+shard = "internal-fixtures"
+
+[[tests]]
+path = "internal/toricbuilder_case008_d14_column_boundary.jl"
+group = "internal"
+shard = "internal-fixtures"
+
+[[tests]]
+path = "internal/laurent_descent_measure_helpers.jl"
+group = "internal"
+shard = "internal-core"
+
+[[tests]]
+path = "internal/laurent_link_witness_helpers.jl"
+group = "internal"
+shard = "internal-core"
+
+[[tests]]
+path = "internal/laurent_endpoint_reduction_helpers.jl"
+group = "internal"
+shard = "internal-core"
+
+[[tests]]
+path = "internal/toricbuilder_cache_status_report.jl"
+group = "internal"
+shard = "internal-core"
+
+[[tests]]
+path = "internal/toricbuilder_cache_case010_certificate.jl"
+group = "internal"
+shard = "internal-core"
+
+[[tests]]
+path = "internal/toricbuilder_problem_catalog.jl"
+group = "internal"
+shard = "internal-fixtures"
+
+[[tests]]
+path = "internal/sl3_murthy_gupta_fixtures.jl"
+group = "internal"
+shard = "internal-core"
+
+[[tests]]
+path = "internal/ecp_column_fixtures.jl"
+group = "internal"
+shard = "internal-core"
+
+[[tests]]
+path = "internal/ecp_mainline_fixtures.jl"
+group = "internal"
+shard = "internal-fixtures"
+
+[[tests]]
+path = "internal/quillen_patch_fixtures.jl"
+group = "internal"
+shard = "internal-core"
+
+[[tests]]
+path = "internal/quillen_mainline_fixtures.jl"
+group = "internal"
+shard = "internal-fixtures"
+
+[[tests]]
+path = "internal/park_woodburn_polynomial_fixtures.jl"
+group = "internal"
+shard = "internal-fixtures"
+
+[[tests]]
+path = "internal/park_woodburn_sl3_driver_fixtures.jl"
+group = "internal"
+shard = "internal-core"
+
+[[tests]]
+path = "internal/park_woodburn_sln_driver_fixtures.jl"
+group = "internal"
+shard = "internal-fixtures"
+
+[[tests]]
+path = "internal/park_woodburn_mainline_acceptance_fixtures.jl"
+group = "internal"
+shard = "internal-fixtures"
+
+[[tests]]
+path = "internal/steinberg_optimization_fixtures.jl"
+group = "internal"
+shard = "internal-fixtures"
+
+[[tests]]
+path = "expert/elementary_matrices.jl"
+group = "expert"
+shard = "expert-core"
+
+[[tests]]
+path = "expert/steinberg_factor_count_optimization.jl"
+group = "expert"
+shard = "expert-core"
+
+[[tests]]
+path = "expert/elementary_preconditioning.jl"
+group = "expert"
+shard = "expert-core"
+
+[[tests]]
+path = "expert/block_embeddings.jl"
+group = "expert"
+shard = "expert-core"
+
+[[tests]]
+path = "expert/documentation_smoke.jl"
+group = "expert"
+shard = "expert-integration"
+
+[[tests]]
+path = "expert/factorization_small_examples.jl"
+group = "expert"
+shard = "expert-core"
+
+[[tests]]
+path = "expert/cohn_type.jl"
+group = "expert"
+shard = "expert-core"
+
+[[tests]]
+path = "expert/normality.jl"
+group = "expert"
+shard = "expert-core"
+
+[[tests]]
+path = "expert/normality_rank_one.jl"
+group = "expert"
+shard = "expert-core"
+
+[[tests]]
+path = "expert/polynomial_normality_fixtures.jl"
+group = "expert"
+shard = "expert-integration"
+
+[[tests]]
+path = "expert/polynomial_normality_support_boundary.jl"
+group = "expert"
+shard = "expert-integration"
+
+[[tests]]
+path = "expert/laurent_elementary_core.jl"
+group = "expert"
+shard = "expert-laurent-a"
+
+[[tests]]
+path = "expert/sl3_local.jl"
+group = "expert"
+shard = "expert-sl3"
+
+[[tests]]
+path = "expert/sl3_local_extended.jl"
+group = "expert"
+shard = "expert-sl3"
+
+[[tests]]
+path = "expert/sl3_local_certificate.jl"
+group = "expert"
+shard = "expert-sl3"
+
+[[tests]]
+path = "expert/sl3_local_local_factors.jl"
+group = "expert"
+shard = "expert-sl3"
+
+[[tests]]
+path = "expert/sl3_local_q_degree_normalization.jl"
+group = "expert"
+shard = "expert-sl3"
+
+[[tests]]
+path = "expert/sl3_local_split_lemma.jl"
+group = "expert"
+shard = "expert-sl3"
+
+[[tests]]
+path = "expert/sl3_local_murthy_q_unit.jl"
+group = "expert"
+shard = "expert-sl3"
+
+[[tests]]
+path = "expert/sl3_local_murthy_resultant.jl"
+group = "expert"
+shard = "expert-sl3"
+
+[[tests]]
+path = "expert/sl3_local_murthy_context.jl"
+group = "expert"
+shard = "expert-sl3"
+
+[[tests]]
+path = "expert/sl3_local_murthy_gupta.jl"
+group = "expert"
+shard = "expert-sl3"
+
+[[tests]]
+path = "expert/sln_to_sl3_reduction.jl"
+group = "expert"
+shard = "expert-sl3"
+
+[[tests]]
+path = "expert/park_woodburn_route_certificate.jl"
+group = "expert"
+shard = "expert-integration"
+
+[[tests]]
+path = "expert/park_woodburn_sl3_driver_context.jl"
+group = "expert"
+shard = "expert-sl3"
+
+[[tests]]
+path = "expert/park_woodburn_sl3_witness_selection.jl"
+group = "expert"
+shard = "expert-sl3"
+
+[[tests]]
+path = "expert/park_woodburn_sl3_local_evidence_provider.jl"
+group = "expert"
+shard = "expert-sl3"
+
+[[tests]]
+path = "expert/park_woodburn_sln_peel_step.jl"
+group = "expert"
+shard = "expert-sl3"
+
+[[tests]]
+path = "expert/park_woodburn_polynomial_column_peel.jl"
+group = "expert"
+shard = "expert-integration"
+
+[[tests]]
+path = "expert/park_woodburn_sln_recursive_driver.jl"
+group = "expert"
+shard = "expert-sl3"
+
+[[tests]]
+path = "expert/park_woodburn_sln_driver_context.jl"
+group = "expert"
+shard = "expert-sl3"
+
+[[tests]]
+path = "expert/sln_to_sl3_diagnostics.jl"
+group = "expert"
+shard = "expert-sl3"
+
+[[tests]]
+path = "expert/laurent_column_peel_issue38.jl"
+group = "expert"
+shard = "expert-laurent-b"
+
+[[tests]]
+path = "expert/laurent_lazy_peel_no_initial_det.jl"
+group = "expert"
+shard = "expert-laurent-a"
+
+[[tests]]
+path = "expert/laurent_lazy_peel_certificate.jl"
+group = "expert"
+shard = "expert-laurent-b"
+
+[[tests]]
+path = "expert/laurent_lazy_submatrix_normalization.jl"
+group = "expert"
+shard = "expert-laurent-a"
+
+[[tests]]
+path = "expert/laurent_lazy_correction_hoist.jl"
+group = "expert"
+shard = "expert-laurent-b"
+
+[[tests]]
+path = "expert/laurent_lazy_row_column_correction.jl"
+group = "expert"
+shard = "expert-laurent-a"
+
+[[tests]]
+path = "expert/laurent_column_reduction_diagnostics.jl"
+group = "expert"
+shard = "expert-laurent-b"
+
+[[tests]]
+path = "expert/laurent_native_ecp_boundary_diagnostics.jl"
+group = "expert"
+shard = "expert-laurent-a"
+
+[[tests]]
+path = "expert/case008_d14_laurent_descent_profile.jl"
+group = "expert"
+shard = "expert-laurent-b"
+
+[[tests]]
+path = "expert/case008_d14_laurent_descent_measure_contract.jl"
+group = "expert"
+shard = "expert-laurent-a"
+
+[[tests]]
+path = "expert/case008_d14_laurent_elementary_move_search.jl"
+group = "expert"
+shard = "expert-laurent-b"
+
+[[tests]]
+path = "expert/laurent_descent_step_certificate.jl"
+group = "expert"
+shard = "expert-laurent-a"
+
+[[tests]]
+path = "expert/case008_d14_laurent_post_descent_profile.jl"
+group = "expert"
+shard = "expert-laurent-b"
+
+[[tests]]
+path = "expert/case008_d14_laurent_link_witness_context.jl"
+group = "expert"
+shard = "expert-laurent-a"
+
+[[tests]]
+path = "expert/case008_d14_laurent_link_witness_search.jl"
+group = "expert"
+shard = "expert-laurent-b"
+
+[[tests]]
+path = "expert/laurent_link_witness_certificate.jl"
+group = "expert"
+shard = "expert-laurent-a"
+
+[[tests]]
+path = "expert/case008_d14_laurent_endpoint_reduction_context.jl"
+group = "expert"
+shard = "expert-laurent-b"
+
+[[tests]]
+path = "expert/case008_d14_laurent_endpoint_reduction_search.jl"
+group = "expert"
+shard = "expert-laurent-a"
+
+[[tests]]
+path = "expert/laurent_endpoint_reduction_certificate.jl"
+group = "expert"
+shard = "expert-laurent-b"
+
+[[tests]]
+path = "expert/case008_d21_laurent_column_reduction.jl"
+group = "expert"
+shard = "expert-laurent-a"
+
+[[tests]]
+path = "expert/case008_d15_laurent_column_reduction.jl"
+group = "expert"
+shard = "expert-laurent-b"
+
+[[tests]]
+path = "expert/case008_d16_laurent_column_reduction.jl"
+group = "expert"
+shard = "expert-laurent-a"
+
+[[tests]]
+path = "expert/case010_laurent_column_reduction.jl"
+group = "expert"
+shard = "expert-laurent-b"
+
+[[tests]]
+path = "expert/issue38_laurent_gl_certificate.jl"
+group = "expert"
+shard = "expert-laurent-a"
+
+[[tests]]
+path = "expert/quillen_induction.jl"
+group = "expert"
+shard = "expert-quillen"
+
+[[tests]]
+path = "expert/quillen_patching_exact.jl"
+group = "expert"
+shard = "expert-quillen"
+
+[[tests]]
+path = "expert/quillen_denominator_cover.jl"
+group = "expert"
+shard = "expert-quillen"
+
+[[tests]]
+path = "expert/quillen_denominator_cover_solver.jl"
+group = "expert"
+shard = "expert-quillen"
+
+[[tests]]
+path = "expert/quillen_patch_substitution_chain.jl"
+group = "expert"
+shard = "expert-quillen"
+
+[[tests]]
+path = "expert/quillen_supplied_evidence_patch_assembly.jl"
+group = "expert"
+shard = "expert-quillen"
+
+[[tests]]
+path = "expert/quillen_local_factor_sequence.jl"
+group = "expert"
+shard = "expert-quillen"
+
+[[tests]]
+path = "expert/quillen_denominator_extraction.jl"
+group = "expert"
+shard = "expert-quillen"
+
+[[tests]]
+path = "expert/quillen_local_certificate.jl"
+group = "expert"
+shard = "expert-quillen"
+
+[[tests]]
+path = "expert/quillen_contribution_normalization.jl"
+group = "expert"
+shard = "expert-quillen"
+
+[[tests]]
+path = "expert/quillen_global_patch_assembly.jl"
+group = "expert"
+shard = "expert-quillen"
+
+[[tests]]
+path = "expert/quillen_patch_verification_hardening.jl"
+group = "expert"
+shard = "expert-quillen"
+
+[[tests]]
+path = "expert/quillen_induction_constructive.jl"
+group = "expert"
+shard = "expert-quillen"
+
+[[tests]]
+path = "expert/park_woodburn_quillen_route_adapter.jl"
+group = "expert"
+shard = "expert-quillen"
+
+[[tests]]
+path = "expert/quillen_murthy_adapter_consumption.jl"
+group = "expert"
+shard = "expert-quillen"
+
+[[tests]]
+path = "expert/unimodular_columns.jl"
+group = "expert"
+shard = "expert-core"
+
+[[tests]]
+path = "expert/unimodular_reduction_exact.jl"
+group = "expert"
+shard = "expert-core"
+
+[[tests]]
+path = "expert/ecp_input_context.jl"
+group = "expert"
+shard = "expert-ecp"
+
+[[tests]]
+path = "expert/ecp_column_certificate.jl"
+group = "expert"
+shard = "expert-ecp"
+
+[[tests]]
+path = "expert/ecp_variable_change_replay.jl"
+group = "expert"
+shard = "expert-ecp"
+
+[[tests]]
+path = "expert/ecp_monicity_normalization.jl"
+group = "expert"
+shard = "expert-ecp"
+
+[[tests]]
+path = "expert/ecp_monicity_search.jl"
+group = "expert"
+shard = "expert-ecp"
+
+[[tests]]
+path = "expert/ecp_link_witness_general.jl"
+group = "expert"
+shard = "expert-ecp"
+
+[[tests]]
+path = "expert/ecp_link_witnesses.jl"
+group = "expert"
+shard = "expert-ecp"
+
+[[tests]]
+path = "expert/ecp_link_step.jl"
+group = "expert"
+shard = "expert-ecp"
+
+[[tests]]
+path = "expert/ecp_link_step_general.jl"
+group = "expert"
+shard = "expert-ecp"
+
+[[tests]]
+path = "expert/ecp_induction_normality_general.jl"
+group = "expert"
+shard = "expert-ecp"
+
+[[tests]]
+path = "expert/ecp_induction_normality.jl"
+group = "expert"
+shard = "expert-ecp"
+
+[[tests]]
+path = "expert/elementary_column_property.jl"
+group = "expert"
+shard = "expert-ecp"
+
+[source_impacts]
+"src/algorithm/cohn_type.jl" = ["public", "expert-core"]
+"src/algorithm/column_reduction.jl" = ["public", "internal-core", "internal-fixtures", "expert-core", "expert-laurent-a", "expert-laurent-b", "expert-sl3", "expert-quillen", "expert-ecp", "expert-integration"]
+"src/algorithm/column_reduction_case010.jl" = ["public", "internal-fixtures", "expert-laurent-b"]
+"src/algorithm/factorization.jl" = ["public", "internal-core", "internal-fixtures", "expert-core", "expert-laurent-a", "expert-laurent-b", "expert-sl3", "expert-quillen", "expert-ecp", "expert-integration"]
+"src/algorithm/laurent_column_peel.jl" = ["public", "internal-core", "internal-fixtures", "expert-laurent-a", "expert-laurent-b", "expert-integration"]
+"src/algorithm/laurent_gl_certificate.jl" = ["public", "internal-core", "internal-fixtures", "expert-laurent-a", "expert-laurent-b"]
+"src/algorithm/normality.jl" = ["public", "expert-core", "expert-ecp", "expert-integration"]
+"src/algorithm/polynomial_column_peel.jl" = ["public", "expert-sl3", "expert-quillen", "expert-ecp", "expert-integration"]
+"src/algorithm/quillen_induction.jl" = ["public", "internal-core", "internal-fixtures", "expert-quillen", "expert-ecp", "expert-integration"]
+"src/algorithm/redundancy.jl" = ["public", "expert-core"]
+"src/algorithm/sl3_local.jl" = ["public", "internal-core", "internal-fixtures", "expert-sl3", "expert-quillen", "expert-integration"]
+"src/algorithm/sln_to_sl3_reduction.jl" = ["public", "expert-sl3", "expert-integration"]
+
+[fixture_impacts]
+"test/fixtures/laurent_cases.jl" = ["internal-fixtures", "expert-laurent-a", "expert-laurent-b"]
+"test/fixtures/laurent_large_acceptance_cases.jl" = ["public", "expert-integration"]
+"test/fixtures/laurent_lazy_determinant_cases.jl" = ["internal-fixtures", "expert-laurent-a", "expert-laurent-b"]
+"test/fixtures/polynomial_normality_cases.jl" = ["expert-core", "expert-integration"]
+"test/fixtures/quillen_mainline_cases.jl" = ["internal-fixtures", "expert-quillen", "expert-integration"]
+"test/fixtures/quillen_patch_cases.jl" = ["internal-core", "expert-quillen"]
+"test/fixtures/ecp_column_cases.jl" = ["internal-core", "expert-ecp"]
+"test/fixtures/ecp_mainline_cases.jl" = ["internal-fixtures", "expert-ecp", "expert-integration"]
+"test/fixtures/sl3_murthy_gupta_cases.jl" = ["internal-core", "expert-sl3", "expert-quillen"]
+"test/fixtures/park_woodburn_polynomial_cases.jl" = ["internal-fixtures", "expert-quillen", "expert-ecp", "expert-integration"]
+"test/fixtures/park_woodburn_sl3_driver_cases.jl" = ["internal-core", "expert-sl3", "expert-quillen", "expert-integration"]
+"test/fixtures/park_woodburn_sln_driver_cases.jl" = ["internal-fixtures", "expert-sl3", "expert-ecp", "expert-integration"]
+"test/fixtures/park_woodburn_mainline_acceptance_cases.jl" = ["internal-fixtures", "expert-sl3", "expert-quillen", "expert-ecp", "expert-integration"]
+"test/fixtures/steinberg_optimization_cases.jl" = ["internal-fixtures", "expert-core"]
+"test/fixtures/toricbuilder_cache_q_blocks.jl" = ["internal-fixtures", "expert-laurent-a", "expert-laurent-b"]
+"test/fixtures/toricbuilder_case008_d14_column_boundary.jl" = ["internal-fixtures", "expert-laurent-a", "expert-laurent-b"]
+"test/fixtures/toricbuilder_case008_d15_column_boundary.jl" = ["internal-fixtures", "expert-laurent-b"]
+"test/fixtures/toricbuilder_case008_d15_matrix_boundary.jl" = ["expert-laurent-b"]
+"test/fixtures/toricbuilder_case008_d16_column_boundary.jl" = ["internal-fixtures", "expert-laurent-a"]
+"test/fixtures/toricbuilder_case008_d16_matrix_boundary.jl" = ["expert-laurent-a"]
+"test/fixtures/toricbuilder_case008_d21_column_boundary.jl" = ["internal-fixtures", "expert-laurent-a"]
+"test/fixtures/toricbuilder_case010_column_boundary.jl" = ["internal-fixtures", "expert-laurent-b"]
+"test/fixtures/toricbuilder_factor_toric_block_3.jl" = ["public", "expert-integration"]
+"test/fixtures/toricbuilder_issue38_cases.jl" = ["internal-fixtures", "expert-laurent-a", "expert-laurent-b"]
+"test/fixtures/toricbuilder_laurent_problem_catalog.jl" = ["internal-fixtures", "expert-laurent-a", "expert-laurent-b"]

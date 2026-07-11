@@ -499,12 +499,6 @@ function _case008_d14_endpoint_reduction_report_with_candidate(report, candidate
 end
 
 @testset "case_008 d=14 Laurent endpoint reduction search report" begin
-    runtests = read(joinpath(@__DIR__, "..", "runtests.jl"), String)
-    @test occursin(
-        "\"expert/case008_d14_laurent_endpoint_reduction_search.jl\"",
-        runtests,
-    )
-
     replay_source = _case008_d14_endpoint_reduction_replay_source()
     fixture = replay_source.fixture
     @test hasmethod(

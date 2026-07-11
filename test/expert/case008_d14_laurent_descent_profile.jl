@@ -249,12 +249,6 @@ function validate_laurent_descent_profile(
 end
 
 @testset "case_008 d=14 Laurent descent profile" begin
-    runtests = read(joinpath(@__DIR__, "..", "runtests.jl"), String)
-    @test occursin(
-        "\"expert/case008_d14_laurent_descent_profile.jl\"",
-        runtests,
-    )
-
     fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture()
     @test ToricBuilderCase008D14ColumnBoundary.validate_boundary_fixture(fixture) == :ok
 

@@ -253,12 +253,6 @@ function validate_case008_d14_laurent_post_descent_profile_report(
 end
 
 @testset "case_008 d=14 Laurent post-descent profile report" begin
-    runtests = read(joinpath(@__DIR__, "..", "runtests.jl"), String)
-    @test occursin(
-        "\"expert/case008_d14_laurent_post_descent_profile.jl\"",
-        runtests,
-    )
-
     fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture()
     @test _case008_d14_post_descent_fixture_validation(fixture) == :ok
 

@@ -19,9 +19,6 @@ function _internal_link_without_field(value::NamedTuple, field::Symbol)
 end
 
 @testset "internal Laurent link-witness helpers" begin
-    runtests = read(joinpath(@__DIR__, "..", "runtests.jl"), String)
-    @test occursin("\"internal/laurent_link_witness_helpers.jl\"", runtests)
-
     R, (u, v) = Suslin.suslin_laurent_polynomial_ring(GF(2), ["u", "v"])
     column = [one(R), u + v]
     context = (;

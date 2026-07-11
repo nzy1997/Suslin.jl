@@ -87,16 +87,3 @@ end
         @test _normality_boundary_contains(audit, phrase)
     end
 end
-
-@testset "polynomial normality certificate expert gate registration" begin
-    runtests = _normality_boundary_read("test", "runtests.jl")
-    for expert_file in (
-        "expert/cohn_type.jl",
-        "expert/normality_rank_one.jl",
-        "expert/normality.jl",
-        "expert/ecp_induction_normality.jl",
-    )
-        @test occursin("\"$(expert_file)\"", runtests)
-    end
-    @test occursin("\"expert/polynomial_normality_support_boundary.jl\"", runtests)
-end
