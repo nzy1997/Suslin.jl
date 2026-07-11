@@ -94,6 +94,16 @@ group = "internal"
 shard = "internal-fixtures"
 
 [[tests]]
+path = "internal/laurent_noether_certificate.jl"
+group = "internal"
+shard = "internal-core"
+
+[[tests]]
+path = "internal/laurent_to_polynomial_certificate.jl"
+group = "internal"
+shard = "internal-core"
+
+[[tests]]
 path = "internal/toricbuilder_contract.jl"
 group = "internal"
 shard = "internal-core"
