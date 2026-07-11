@@ -97,6 +97,10 @@ function _bridge_drop_last(factors)
     return factors[1:(end - 1)]
 end
 
+function _bridge_throwing_normality_builder(_v, _w, _g, _R)
+    throw(ArgumentError("forced rank-one normality fallback"))
+end
+
 function _bridge_conversion_certificate(column, selected_entry_index::Int, selected_generator)
     noether = Suslin._laurent_noether_certificate(column, selected_entry_index, selected_generator)
     return Suslin._laurent_to_polynomial_certificate(
@@ -274,6 +278,12 @@ end
     bridge = Suslin._laurent_to_polynomial_ecp_bridge_certificate(conversion)
     _bridge_assert_common_certificate(bridge)
     @test bridge.ordinary_child_certificate.stages[end].kind == :rank_one_normality_unit
+    @test Suslin._ecp_rank_one_normality_unit_stage(
+        collect(conversion.polynomial_column),
+        conversion.polynomial_ring;
+        target_unit_index = bridge.ordinary_child_certificate.stages[end].target_unit_index,
+        normality_certificate_builder = _bridge_throwing_normality_builder,
+    ) === nothing
     @test _bridge_apply_factors(
         bridge.complete_factor_sequence,
         conversion.original_column,

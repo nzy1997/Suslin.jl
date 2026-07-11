@@ -2633,6 +2633,7 @@ function _ecp_rank_one_normality_unit_stage(
     column::AbstractVector,
     R;
     target_unit_index = nothing,
+    normality_certificate_builder = realize_rank_one_normality_certificate,
 )
     _is_laurent_polynomial_ring(R) && return nothing
     length(column) >= 3 || return nothing
@@ -2664,7 +2665,7 @@ function _ecp_rank_one_normality_unit_stage(
         _dot(normality_witness, normality_vector, R) == one(R) || continue
 
         normality_certificate = try
-            realize_rank_one_normality_certificate(
+            normality_certificate_builder(
                 normality_vector,
                 witness,
                 normality_witness,
