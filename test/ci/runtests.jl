@@ -145,6 +145,7 @@ const EXPECTED_TESTS = [
     ("expert/ecp_induction_normality.jl", "expert", "expert-ecp"),
     ("expert/elementary_column_property.jl", "expert", "expert-ecp"),
     ("expert/laurent_to_polynomial_ecp_bridge.jl", "expert", "expert-core"),
+    ("expert/case008_d14_laurent_to_polynomial_bridge.jl", "expert", "expert-core"),
 ]
 const EXPECTED_FULL_RUN_PATHS = Set([
     "Manifest.toml",
@@ -333,9 +334,9 @@ end
     @test shard_ids(manifest) == EXPECTED_SHARDS
     @test length(files_for_group(manifest, "public")) == 6
     @test length(files_for_group(manifest, "internal")) == 34
-    @test length(files_for_group(manifest, "expert")) == 86
-    @test length(all_test_files(manifest)) == 126
-    @test length(unique(all_test_files(manifest))) == 126
+    @test length(files_for_group(manifest, "expert")) == 87
+    @test length(all_test_files(manifest)) == 127
+    @test length(unique(all_test_files(manifest))) == 127
     @test owner_shard(manifest, "expert/documentation_smoke.jl") == "expert-integration"
     @test manifest.documentation_smoke == "expert/documentation_smoke.jl"
 end
@@ -595,7 +596,7 @@ using .TestRunner
 
     all_targets = requested_targets(["all"], manifest)
     @test first.(all_targets) == ["public", "internal", "expert"]
-    @test sum(length(last(target)) for target in all_targets) == 126
+    @test sum(length(last(target)) for target in all_targets) == 127
     @test first.(requested_targets(["all,public"], manifest)) ==
           ["public", "internal", "expert"]
     @test_throws ArgumentError requested_targets(["all,not-a-group"], manifest)

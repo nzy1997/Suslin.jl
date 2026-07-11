@@ -653,6 +653,11 @@ path = "expert/laurent_to_polynomial_ecp_bridge.jl"
 group = "expert"
 shard = "expert-core"
 
+[[tests]]
+path = "expert/case008_d14_laurent_to_polynomial_bridge.jl"
+group = "expert"
+shard = "expert-core"
+
 [source_impacts]
 "src/algorithm/cohn_type.jl" = ["public", "expert-core"]
 "src/algorithm/column_reduction.jl" = ["public", "internal-core", "internal-fixtures", "expert-core", "expert-laurent-a", "expert-laurent-b", "expert-sl3", "expert-quillen", "expert-ecp", "expert-integration"]
