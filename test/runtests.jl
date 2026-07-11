@@ -132,6 +132,7 @@ const TEST_GROUP_FILES = Dict(
         "expert/ecp_induction_normality_general.jl",
         "expert/ecp_induction_normality.jl",
         "expert/elementary_column_property.jl",
+        "expert/laurent_to_polynomial_ecp_bridge.jl",
     ],
 )
 

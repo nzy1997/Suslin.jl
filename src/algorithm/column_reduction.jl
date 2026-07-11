@@ -2598,6 +2598,129 @@ function _embedded_three_block_reduction_certificate_stage(column::AbstractVecto
     return (; factors, stage)
 end
 
+function _ecp_coordinates_in_ideal_or_nothing(target, generators, R)
+    try
+        coordinates = Oscar.coordinates(target, ideal(R, generators))
+        return [coordinates[1, idx] for idx in 1:ncols(coordinates)]
+    catch err
+        err isa InterruptException && rethrow()
+        err isa ErrorException || err isa ArgumentError || rethrow()
+        return nothing
+    end
+end
+
+function _ecp_rank_one_target_unit_column(column::AbstractVector, R, witness, pivot_idx::Int)
+    n = length(column)
+    1 <= pivot_idx <= n || return nothing
+    other_indices = [idx for idx in 1:n if idx != pivot_idx]
+    rhs = one(R) - witness[pivot_idx]
+    coordinates = _ecp_coordinates_in_ideal_or_nothing(rhs, witness[other_indices], R)
+    coordinates === nothing && return nothing
+    length(coordinates) == length(other_indices) || return nothing
+
+    target = zero_matrix(R, n, 1)
+    target[pivot_idx, 1] = one(R)
+    for (coord_idx, column_idx) in enumerate(other_indices)
+        target[column_idx, 1] = coordinates[coord_idx]
+    end
+
+    target_column = collect(_ecp_matrix_column_to_tuple(target))
+    _dot(witness, target_column, R) == one(R) || return nothing
+    return target_column
+end
+
+function _ecp_rank_one_normality_unit_stage(
+    column::AbstractVector,
+    R;
+    target_unit_index = nothing,
+)
+    _is_laurent_polynomial_ring(R) && return nothing
+    length(column) >= 3 || return nothing
+    is_unimodular_column(column, R) || return nothing
+
+    witness = _unimodular_witness(column, R)
+    _dot(witness, column, R) == one(R) || return nothing
+    n = length(column)
+    candidate_indices = if target_unit_index === nothing
+        reverse(1:n)
+    else
+        target_unit_index isa Integer || return nothing
+        idx = Int(target_unit_index)
+        1 <= idx <= n || return nothing
+        (idx,)
+    end
+
+    for pivot_idx in candidate_indices
+        target_unit_column =
+            _ecp_rank_one_target_unit_column(column, R, witness, pivot_idx)
+        target_unit_column === nothing && continue
+        normality_vector = [
+            target_unit_column[idx] - column[idx]
+            for idx in 1:n
+        ]
+        _dot(witness, normality_vector, R) == zero(R) || continue
+        is_unimodular_column(normality_vector, R) || continue
+        normality_witness = _unimodular_witness(normality_vector, R)
+        _dot(normality_witness, normality_vector, R) == one(R) || continue
+
+        normality_certificate = try
+            realize_rank_one_normality_certificate(
+                normality_vector,
+                witness,
+                normality_witness,
+                R,
+            )
+        catch err
+            err isa InterruptException && rethrow()
+            err isa ArgumentError || rethrow()
+            nothing
+        end
+        normality_certificate === nothing && continue
+        verify_rank_one_normality_certificate(normality_certificate) || continue
+
+        normality_output = _apply_reduction_factors(
+            normality_certificate.factors,
+            column,
+            R,
+        )
+        normality_output == matrix(R, n, 1, target_unit_column) || continue
+
+        unit_stage =
+            _unit_entry_reduction_certificate_stage(target_unit_column, pivot_idx, R).stage
+        factors = _checked_reduction_factors(
+            vcat(unit_stage.factors, normality_certificate.factors),
+            column,
+            R,
+            "rank-one normality unit reduction",
+        )
+        stage = (;
+            kind = :rank_one_normality_unit,
+            input_column = _ecp_column_tuple(column),
+            unimodularity_witness = _ecp_column_tuple(witness),
+            target_unit_index = pivot_idx,
+            target_unit_column = _ecp_column_tuple(target_unit_column),
+            normality_vector = _ecp_column_tuple(normality_vector),
+            normality_witness = _ecp_column_tuple(normality_witness),
+            normality_certificate,
+            normality_factors = normality_certificate.factors,
+            normality_output_column = _ecp_matrix_column_to_tuple(normality_output),
+            unit_stage,
+            unit_factors = unit_stage.factors,
+            factors,
+            output_column = _apply_reduction_factors(factors, column, R),
+        )
+        return (; factors, stage)
+    end
+
+    return nothing
+end
+
+function _ecp_rank_one_normality_unit_child_certificate(column::AbstractVector, R)
+    result = _ecp_rank_one_normality_unit_stage(column, R)
+    result === nothing && return nothing
+    return _ecp_certificate_from_stage(column, R, result.stage)
+end
+
 function _reduce_after_monicity_normalization(column::AbstractVector, R)
     result = _reduce_after_monicity_normalization_certificate(column, R)
     return result === nothing ? nothing : result.factors
@@ -5767,6 +5890,87 @@ function _ecp_replay_stage(stage, input_column, R)
                 stage.inverse_substituted_induction_factors,
                 inverse_substituted_induction_factors,
             ) &&
+            _ecp_factor_sequences_equal(stage.factors, expected_factors) &&
+            stage.output_column == expected_output
+        return (; ok, factors = expected_factors, output_column = expected_output)
+    elseif stage.kind == :rank_one_normality_unit
+        invalid_replay = (; ok = false, factors = Any[], output_column = matrix(R, length(input_column), 1, collect(input_column)))
+        _ecp_stage_keys_ok(
+            stage,
+            (
+                :kind,
+                :input_column,
+                :unimodularity_witness,
+                :target_unit_index,
+                :target_unit_column,
+                :normality_vector,
+                :normality_witness,
+                :normality_certificate,
+                :normality_factors,
+                :normality_output_column,
+                :unit_stage,
+                :unit_factors,
+                :factors,
+                :output_column,
+            ),
+        ) || return invalid_replay
+
+        target_idx = stage.target_unit_index
+        target_idx isa Integer || return invalid_replay
+        candidate = _ecp_rank_one_normality_unit_stage(
+            collect(input_column),
+            R;
+            target_unit_index = Int(target_idx),
+        )
+        candidate === nothing && return invalid_replay
+        candidate_stage = candidate.stage
+        unit_replay = _ecp_replay_stage(
+            stage.unit_stage,
+            collect(candidate_stage.target_unit_column),
+            R,
+        )
+        unit_replay.ok || return invalid_replay
+
+        normality_certificate_ok =
+            verify_rank_one_normality_certificate(stage.normality_certificate) &&
+            stage.normality_certificate.n == candidate_stage.normality_certificate.n &&
+            stage.normality_certificate.v == candidate_stage.normality_certificate.v &&
+            stage.normality_certificate.w == candidate_stage.normality_certificate.w &&
+            stage.normality_certificate.g == candidate_stage.normality_certificate.g &&
+            _same_base_ring(
+                stage.normality_certificate.ring,
+                candidate_stage.normality_certificate.ring,
+            ) &&
+            stage.normality_certificate.target ==
+                candidate_stage.normality_certificate.target &&
+            stage.normality_certificate.product ==
+                candidate_stage.normality_certificate.product &&
+            stage.normality_certificate.verification ==
+                candidate_stage.normality_certificate.verification &&
+            _ecp_factor_sequences_equal(
+                stage.normality_certificate.factors,
+                candidate_stage.normality_certificate.factors,
+            )
+        expected_factors = vcat(
+            candidate_stage.unit_factors,
+            candidate_stage.normality_factors,
+        )
+        expected_output = _apply_reduction_factors(expected_factors, input_column, R)
+        ok = stage.input_column == _ecp_column_tuple(input_column) &&
+            stage.unimodularity_witness == candidate_stage.unimodularity_witness &&
+            Int(stage.target_unit_index) == candidate_stage.target_unit_index &&
+            stage.target_unit_column == candidate_stage.target_unit_column &&
+            stage.normality_vector == candidate_stage.normality_vector &&
+            stage.normality_witness == candidate_stage.normality_witness &&
+            normality_certificate_ok &&
+            _ecp_factor_sequences_equal(
+                stage.normality_factors,
+                candidate_stage.normality_factors,
+            ) &&
+            stage.normality_output_column == candidate_stage.normality_output_column &&
+            _ecp_factor_sequences_equal(stage.unit_factors, candidate_stage.unit_factors) &&
+            _ecp_factor_sequences_equal(stage.unit_stage.factors, candidate_stage.unit_factors) &&
+            _ecp_factor_sequences_equal(unit_replay.factors, candidate_stage.unit_factors) &&
             _ecp_factor_sequences_equal(stage.factors, expected_factors) &&
             stage.output_column == expected_output
         return (; ok, factors = expected_factors, output_column = expected_output)
