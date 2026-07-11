@@ -651,7 +651,7 @@ shard = "expert-ecp"
 [[tests]]
 path = "expert/laurent_to_polynomial_ecp_bridge.jl"
 group = "expert"
-shard = "expert-ecp"
+shard = "expert-core"
 
 [source_impacts]
 "src/algorithm/cohn_type.jl" = ["public", "expert-core"]

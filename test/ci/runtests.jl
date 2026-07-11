@@ -144,7 +144,7 @@ const EXPECTED_TESTS = [
     ("expert/ecp_induction_normality_general.jl", "expert", "expert-ecp"),
     ("expert/ecp_induction_normality.jl", "expert", "expert-ecp"),
     ("expert/elementary_column_property.jl", "expert", "expert-ecp"),
-    ("expert/laurent_to_polynomial_ecp_bridge.jl", "expert", "expert-ecp"),
+    ("expert/laurent_to_polynomial_ecp_bridge.jl", "expert", "expert-core"),
 ]
 const EXPECTED_FULL_RUN_PATHS = Set([
     "Manifest.toml",
