@@ -205,6 +205,21 @@ struct LaurentToPolynomialColumnCertificate
     validation_status::Symbol
 end
 
+struct LaurentToPolynomialECPBridgeCertificate
+    conversion_certificate
+    ordinary_child_certificate
+    ordinary_factors::Vector
+    raw_lifted_laurent_factors::Vector
+    inverse_substituted_lifted_factors::Vector
+    laurent_conversion_factors::Vector
+    inverse_substituted_conversion_factors::Vector
+    complete_factor_sequence::Vector
+    target_basis_column
+    recomputed_product
+    replay_summary
+    validation_status::Symbol
+end
+
 function _laurent_to_polynomial_validate_input(
     column::AbstractVector,
     noether_certificate,
@@ -654,6 +669,333 @@ function _validate_laurent_to_polynomial_certificate(certificate)::Symbol
         expected_replay = _laurent_to_polynomial_expected_replay(certificate)
         certificate.replay == expected_replay || return :stale_replay
         expected_replay.overall_ok || return :invalid_replay
+        certificate.validation_status == :ok || return :invalid_validation_status
+        return :ok
+    catch err
+        err isa InterruptException && rethrow()
+        return :invalid_certificate
+    end
+end
+
+function _laurent_to_polynomial_target_basis_column(R, n::Int)
+    target = zero_matrix(R, n, 1)
+    target[n, 1] = one(R)
+    return target
+end
+
+function _laurent_to_polynomial_ecp_bridge_product(factors, R, n::Int)
+    return _laurent_to_polynomial_factor_sequence_product(factors, R, n)
+end
+
+function _laurent_to_polynomial_ecp_bridge_lifted_factors(conversion_certificate, ordinary_factors)
+    return [
+        _laurent_to_polynomial_lift_factor(factor, conversion_certificate.factor_lift_metadata)
+        for factor in ordinary_factors
+    ]
+end
+
+function _laurent_to_polynomial_ecp_bridge_inverse_substituted_factors(factors, conversion_certificate)
+    return _ecp_substitute_factor_sequence(
+        factors,
+        conversion_certificate.noether_certificate.inverse_substitution,
+        conversion_certificate.ring,
+    )
+end
+
+function _laurent_to_polynomial_ecp_bridge_replay_summary(certificate)
+    conversion_certificate = certificate.conversion_certificate
+    conversion_status = _validate_laurent_to_polynomial_certificate(conversion_certificate)
+    R = conversion_certificate.ring
+    n = length(conversion_certificate.original_column)
+    target = _laurent_to_polynomial_target_basis_column(R, n)
+
+    ordinary_child_ok = verify_ecp_column_reduction(certificate.ordinary_child_certificate)
+    ordinary_child_column_ok = ordinary_child_ok &&
+        certificate.ordinary_child_certificate.original_column ==
+        collect(conversion_certificate.polynomial_column)
+    ordinary_child_ring_ok = ordinary_child_ok &&
+        certificate.ordinary_child_certificate.ring === conversion_certificate.polynomial_ring
+    ordinary_factors_ok = ordinary_child_ok &&
+        certificate.ordinary_factors == certificate.ordinary_child_certificate.factors
+
+    expected_raw_lifted = ordinary_factors_ok ?
+        _laurent_to_polynomial_ecp_bridge_lifted_factors(
+            conversion_certificate,
+            certificate.ordinary_child_certificate.factors,
+        ) :
+        Any[]
+    raw_lifted_factors_ok =
+        _laurent_to_polynomial_factor_sequences_equal(
+            certificate.raw_lifted_laurent_factors,
+            expected_raw_lifted,
+        )
+    raw_lifted_factors_are_elementary = all(
+        factor -> _is_elementary_matrix_factor(factor, R, n),
+        certificate.raw_lifted_laurent_factors,
+    )
+
+    expected_inverse_lifted = raw_lifted_factors_ok ?
+        _laurent_to_polynomial_ecp_bridge_inverse_substituted_factors(
+            expected_raw_lifted,
+            conversion_certificate,
+        ) :
+        Any[]
+    inverse_substituted_lifted_factors_ok =
+        _laurent_to_polynomial_factor_sequences_equal(
+            certificate.inverse_substituted_lifted_factors,
+            expected_inverse_lifted,
+        )
+    inverse_substituted_lifted_factors_are_elementary = all(
+        factor -> _is_elementary_matrix_factor(factor, R, n),
+        certificate.inverse_substituted_lifted_factors,
+    )
+
+    laurent_conversion_factors_ok =
+        _laurent_to_polynomial_factor_sequences_equal(
+            certificate.laurent_conversion_factors,
+            conversion_certificate.conversion_factors,
+        )
+    expected_inverse_conversion = laurent_conversion_factors_ok ?
+        _laurent_to_polynomial_ecp_bridge_inverse_substituted_factors(
+            conversion_certificate.conversion_factors,
+            conversion_certificate,
+        ) :
+        Any[]
+    inverse_substituted_conversion_factors_ok =
+        _laurent_to_polynomial_factor_sequences_equal(
+            certificate.inverse_substituted_conversion_factors,
+            expected_inverse_conversion,
+        )
+    inverse_substituted_conversion_factors_are_elementary = all(
+        factor -> _is_elementary_matrix_factor(factor, R, n),
+        certificate.inverse_substituted_conversion_factors,
+    )
+
+    expected_complete_sequence = vcat(expected_inverse_lifted, expected_inverse_conversion)
+    complete_factor_sequence_ok =
+        _laurent_to_polynomial_factor_sequences_equal(
+            certificate.complete_factor_sequence,
+            expected_complete_sequence,
+        )
+    complete_factors_are_elementary = all(
+        factor -> _is_elementary_matrix_factor(factor, R, n),
+        certificate.complete_factor_sequence,
+    )
+
+    expected_product = complete_factor_sequence_ok ?
+        _laurent_to_polynomial_ecp_bridge_product(expected_complete_sequence, R, n) :
+        identity_matrix(R, n)
+    recomputed_product_ok = certificate.recomputed_product == expected_product
+    target_basis_column_ok = certificate.target_basis_column == target
+    replayed_column = certificate.recomputed_product *
+        _laurent_to_polynomial_column_matrix(conversion_certificate.original_column, R)
+    replay_ok = replayed_column == target
+
+    overall_ok = conversion_status == :ok &&
+        ordinary_child_ok &&
+        ordinary_child_column_ok &&
+        ordinary_child_ring_ok &&
+        ordinary_factors_ok &&
+        raw_lifted_factors_ok &&
+        raw_lifted_factors_are_elementary &&
+        inverse_substituted_lifted_factors_ok &&
+        inverse_substituted_lifted_factors_are_elementary &&
+        laurent_conversion_factors_ok &&
+        inverse_substituted_conversion_factors_ok &&
+        inverse_substituted_conversion_factors_are_elementary &&
+        complete_factor_sequence_ok &&
+        complete_factors_are_elementary &&
+        recomputed_product_ok &&
+        target_basis_column_ok &&
+        replay_ok
+
+    return (;
+        conversion_status,
+        ordinary_child_ok,
+        ordinary_child_column_ok,
+        ordinary_child_ring_ok,
+        ordinary_factors_ok,
+        raw_lifted_factors_ok,
+        raw_lifted_factors_are_elementary,
+        inverse_substituted_lifted_factors_ok,
+        inverse_substituted_lifted_factors_are_elementary,
+        laurent_conversion_factors_ok,
+        inverse_substituted_conversion_factors_ok,
+        inverse_substituted_conversion_factors_are_elementary,
+        complete_factor_sequence_ok,
+        complete_factors_are_elementary,
+        recomputed_product_ok,
+        target_basis_column_ok,
+        replay_ok,
+        overall_ok,
+        replayed_column,
+    )
+end
+
+function _laurent_to_polynomial_ecp_bridge_child_certificate(conversion_certificate)
+    child_error = nothing
+    ordinary_child_certificate = try
+        ecp_column_reduction_certificate(
+            collect(conversion_certificate.polynomial_column),
+            conversion_certificate.polynomial_ring,
+        )
+    catch err
+        err isa InterruptException && rethrow()
+        err isa ArgumentError || rethrow()
+        child_error = err
+        nothing
+    end
+    ordinary_child_certificate !== nothing && return ordinary_child_certificate
+
+    fallback_child_certificate = _ecp_rank_one_normality_unit_child_certificate(
+        collect(conversion_certificate.polynomial_column),
+        conversion_certificate.polynomial_ring,
+    )
+    fallback_child_certificate !== nothing && return fallback_child_certificate
+    throw(child_error)
+end
+
+function _laurent_to_polynomial_ecp_bridge_certificate(conversion_certificate)
+    status = _validate_laurent_to_polynomial_certificate(conversion_certificate)
+    status == :ok ||
+        throw(ArgumentError("Laurent-to-polynomial ECP bridge requires a verified conversion certificate"))
+
+    ordinary_child_certificate =
+        _laurent_to_polynomial_ecp_bridge_child_certificate(conversion_certificate)
+    verify_ecp_column_reduction(ordinary_child_certificate) ||
+        throw(ArgumentError("ordinary ECP child certificate does not verify"))
+
+    ordinary_factors = collect(ordinary_child_certificate.factors)
+    raw_lifted_laurent_factors =
+        _laurent_to_polynomial_ecp_bridge_lifted_factors(
+            conversion_certificate,
+            ordinary_factors,
+        )
+    inverse_substituted_lifted_factors =
+        _laurent_to_polynomial_ecp_bridge_inverse_substituted_factors(
+            raw_lifted_laurent_factors,
+            conversion_certificate,
+        )
+    laurent_conversion_factors = collect(conversion_certificate.conversion_factors)
+    inverse_substituted_conversion_factors =
+        _laurent_to_polynomial_ecp_bridge_inverse_substituted_factors(
+            laurent_conversion_factors,
+            conversion_certificate,
+        )
+    complete_factor_sequence = vcat(
+        inverse_substituted_lifted_factors,
+        inverse_substituted_conversion_factors,
+    )
+    R = conversion_certificate.ring
+    n = length(conversion_certificate.original_column)
+    target_basis_column = _laurent_to_polynomial_target_basis_column(R, n)
+    recomputed_product =
+        _laurent_to_polynomial_ecp_bridge_product(complete_factor_sequence, R, n)
+    provisional = LaurentToPolynomialECPBridgeCertificate(
+        conversion_certificate,
+        ordinary_child_certificate,
+        ordinary_factors,
+        raw_lifted_laurent_factors,
+        inverse_substituted_lifted_factors,
+        laurent_conversion_factors,
+        inverse_substituted_conversion_factors,
+        complete_factor_sequence,
+        target_basis_column,
+        recomputed_product,
+        nothing,
+        :ok,
+    )
+    replay_summary = _laurent_to_polynomial_ecp_bridge_replay_summary(provisional)
+    replay_summary.overall_ok ||
+        error("internal Laurent-to-polynomial ECP bridge replay failed")
+    certificate = LaurentToPolynomialECPBridgeCertificate(
+        conversion_certificate,
+        ordinary_child_certificate,
+        ordinary_factors,
+        raw_lifted_laurent_factors,
+        inverse_substituted_lifted_factors,
+        laurent_conversion_factors,
+        inverse_substituted_conversion_factors,
+        complete_factor_sequence,
+        target_basis_column,
+        recomputed_product,
+        replay_summary,
+        :ok,
+    )
+    _validate_laurent_to_polynomial_ecp_bridge_certificate(certificate) == :ok ||
+        error("internal Laurent-to-polynomial ECP bridge certificate verification failed")
+    return certificate
+end
+
+function _validate_laurent_to_polynomial_ecp_bridge_certificate(certificate)::Symbol
+    try
+        conversion_status =
+            _validate_laurent_to_polynomial_certificate(certificate.conversion_certificate)
+        conversion_status == :ok || return :invalid_conversion_certificate
+        verify_ecp_column_reduction(certificate.ordinary_child_certificate) ||
+            return :invalid_ordinary_child_certificate
+        certificate.ordinary_child_certificate.original_column ==
+            collect(certificate.conversion_certificate.polynomial_column) ||
+            return :stale_ordinary_child_certificate
+        certificate.ordinary_child_certificate.ring ===
+            certificate.conversion_certificate.polynomial_ring ||
+            return :stale_ordinary_child_certificate
+        certificate.ordinary_factors == certificate.ordinary_child_certificate.factors ||
+            return :stale_ordinary_factors
+
+        expected_raw_lifted =
+            _laurent_to_polynomial_ecp_bridge_lifted_factors(
+                certificate.conversion_certificate,
+                certificate.ordinary_child_certificate.factors,
+            )
+        _laurent_to_polynomial_factor_sequences_equal(
+            certificate.raw_lifted_laurent_factors,
+            expected_raw_lifted,
+        ) || return :stale_lifted_laurent_factors
+
+        expected_inverse_lifted =
+            _laurent_to_polynomial_ecp_bridge_inverse_substituted_factors(
+                expected_raw_lifted,
+                certificate.conversion_certificate,
+            )
+        _laurent_to_polynomial_factor_sequences_equal(
+            certificate.inverse_substituted_lifted_factors,
+            expected_inverse_lifted,
+        ) || return :stale_inverse_substituted_lifted_factors
+
+        _laurent_to_polynomial_factor_sequences_equal(
+            certificate.laurent_conversion_factors,
+            certificate.conversion_certificate.conversion_factors,
+        ) || return :stale_laurent_conversion_factors
+        expected_inverse_conversion =
+            _laurent_to_polynomial_ecp_bridge_inverse_substituted_factors(
+                certificate.conversion_certificate.conversion_factors,
+                certificate.conversion_certificate,
+            )
+        _laurent_to_polynomial_factor_sequences_equal(
+            certificate.inverse_substituted_conversion_factors,
+            expected_inverse_conversion,
+        ) || return :stale_inverse_substituted_conversion_factors
+
+        expected_complete_sequence = vcat(expected_inverse_lifted, expected_inverse_conversion)
+        _laurent_to_polynomial_factor_sequences_equal(
+            certificate.complete_factor_sequence,
+            expected_complete_sequence,
+        ) || return :stale_complete_factor_sequence
+
+        R = certificate.conversion_certificate.ring
+        n = length(certificate.conversion_certificate.original_column)
+        expected_target = _laurent_to_polynomial_target_basis_column(R, n)
+        certificate.target_basis_column == expected_target ||
+            return :stale_target_basis_column
+        expected_product =
+            _laurent_to_polynomial_ecp_bridge_product(expected_complete_sequence, R, n)
+        certificate.recomputed_product == expected_product ||
+            return :stale_recomputed_product
+
+        expected_replay = _laurent_to_polynomial_ecp_bridge_replay_summary(certificate)
+        expected_replay.overall_ok || return :invalid_replay
+        certificate.replay_summary == expected_replay || return :stale_replay
         certificate.validation_status == :ok || return :invalid_validation_status
         return :ok
     catch err
