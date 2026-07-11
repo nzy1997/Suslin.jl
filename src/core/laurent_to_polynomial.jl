@@ -183,3 +183,481 @@ function _validate_laurent_noether_certificate(certificate)::Symbol
         return :invalid_certificate
     end
 end
+
+struct LaurentToPolynomialColumnCertificate
+    original_column
+    ring
+    noether_certificate
+    selected_entry_index::Int
+    selected_generator_index::Int
+    selected_generator
+    elementary_source_column
+    conversion_factors::Vector
+    conversion_product
+    intermediate_laurent_column
+    polynomial_ring
+    polynomial_generators
+    forward_polynomialization
+    inverse_lift
+    polynomial_column
+    factor_lift_metadata
+    replay
+    validation_status::Symbol
+end
+
+function _laurent_to_polynomial_validate_input(
+    column::AbstractVector,
+    noether_certificate,
+    selected_entry_index::Int,
+    selected_generator,
+)
+    length(column) >= 3 ||
+        throw(ArgumentError("Laurent-to-polynomial conversion requires a column of length at least three"))
+    R = _require_same_laurent_parent(column; label="Laurent-to-polynomial column")
+    _laurent_noether_is_supported_ring(R) ||
+        throw(ArgumentError("Laurent-to-polynomial conversion requires an exact field-backed Laurent ring with exactly two generators"))
+    is_unimodular_column(column, R) ||
+        throw(ArgumentError("Laurent-to-polynomial conversion requires a unimodular Laurent column"))
+    _validate_laurent_noether_certificate(noether_certificate) == :ok ||
+        throw(ArgumentError("Laurent-to-polynomial conversion requires a valid Laurent Noether certificate"))
+    original_column = tuple(column...)
+    noether_certificate.original_column == original_column ||
+        throw(ArgumentError("Laurent Noether certificate is attached to a different source column"))
+    noether_certificate.ring === R ||
+        throw(ArgumentError("Laurent Noether certificate is attached to a different Laurent ring"))
+    noether_certificate.selected_entry_index == selected_entry_index ||
+        throw(ArgumentError("selected entry metadata does not match the Laurent Noether certificate"))
+    variables = tuple(gens(R)...)
+    selected_generator_index = findfirst(==(selected_generator), variables)
+    selected_generator_index !== nothing ||
+        throw(ArgumentError("selected Laurent generator must be a generator of the Laurent ring"))
+    noether_certificate.selected_generator_index == selected_generator_index ||
+        throw(ArgumentError("selected generator metadata does not match the Laurent Noether certificate"))
+    noether_certificate.selected_generator == selected_generator ||
+        throw(ArgumentError("selected generator does not match the Laurent Noether certificate"))
+    _laurent_to_polynomial_is_supported_elementary_source_column(noether_certificate.transformed_column) ||
+        throw(ArgumentError(
+            "unsupported Laurent-to-polynomial conversion: Noether column must already be polynomial or contain a Laurent unit entry",
+        ))
+    return R, selected_generator_index
+end
+
+function _laurent_to_polynomial_column_matrix(column, R)
+    return matrix(R, length(column), 1, collect(column))
+end
+
+function _laurent_to_polynomial_matrix_column_to_tuple(column_matrix)
+    ncols(column_matrix) == 1 || throw(ArgumentError("expected a column matrix"))
+    return tuple((column_matrix[row, 1] for row in 1:nrows(column_matrix))...)
+end
+
+function _laurent_to_polynomial_factor_sequence_product(factors, R, n::Int)
+    product = identity_matrix(R, n)
+    for factor in factors
+        _is_elementary_matrix_factor(factor, R, n) ||
+            throw(ArgumentError("Laurent conversion factor must be elementary over the Laurent ring"))
+        product *= factor
+    end
+    return product
+end
+
+function _laurent_to_polynomial_apply_factors(factors, column, R)
+    product = _laurent_to_polynomial_factor_sequence_product(factors, R, length(column))
+    return product * _laurent_to_polynomial_column_matrix(column, R)
+end
+
+function _laurent_to_polynomial_factor_sequences_equal(left, right)::Bool
+    length(left) == length(right) || return false
+    return all(index -> left[index] == right[index], eachindex(left))
+end
+
+function _laurent_to_polynomial_has_negative_exponent(entry)::Bool
+    iszero(entry) && return false
+    return any(exponent_vector -> any(<(0), Int.(collect(exponent_vector))), collect(exponents(entry)))
+end
+
+function _laurent_to_polynomial_is_polynomial_entry(entry)::Bool
+    return !_laurent_to_polynomial_has_negative_exponent(entry)
+end
+
+function _laurent_to_polynomial_is_polynomial_column(column)::Bool
+    return all(_laurent_to_polynomial_is_polynomial_entry, column)
+end
+
+function _laurent_to_polynomial_is_supported_elementary_source_column(column)::Bool
+    return _laurent_to_polynomial_is_polynomial_column(column) || any(is_unit, column)
+end
+
+function _laurent_to_polynomial_unit_normalization_factors(n::Int, u, uinv, R)
+    factors = typeof(identity_matrix(R, n))[]
+    u == one(R) && return factors
+
+    i = n - 1
+    j = n
+    for (row, col, coefficient) in (
+        (i, j, u - one(R)),
+        (j, i, one(R)),
+        (i, j, uinv - one(R)),
+        (j, i, -u),
+    )
+        push!(factors, elementary_matrix(n, row, col, coefficient, R))
+    end
+    return factors
+end
+
+function _laurent_to_polynomial_unit_preprocessing_factors(column, R)
+    n = length(column)
+    pivot_idx = findfirst(is_unit, column)
+    pivot_idx === nothing &&
+        throw(ArgumentError("unsupported Laurent-to-polynomial conversion: non-polynomial Noether column has no Laurent unit entry"))
+
+    pivot = column[pivot_idx]
+    pivot_inverse = inv(pivot)
+    elimination_factors = typeof(identity_matrix(R, n))[]
+    for row in 1:n
+        row == pivot_idx && continue
+        coefficient = -column[row] * pivot_inverse
+        coefficient == zero(R) && continue
+        push!(elimination_factors, elementary_matrix(n, row, pivot_idx, coefficient, R))
+    end
+
+    move_factors = typeof(identity_matrix(R, n))[]
+    if pivot_idx != n
+        push!(move_factors, elementary_matrix(n, pivot_idx, n, -one(R), R))
+        push!(move_factors, elementary_matrix(n, n, pivot_idx, one(R), R))
+    end
+
+    normalization_factors = _laurent_to_polynomial_unit_normalization_factors(n, pivot, pivot_inverse, R)
+    return vcat(normalization_factors, move_factors, elimination_factors)
+end
+
+function _laurent_to_polynomial_conversion_factors(elementary_source_column, R)
+    factors = if _laurent_to_polynomial_is_polynomial_column(elementary_source_column)
+        typeof(identity_matrix(R, length(elementary_source_column)))[]
+    else
+        _laurent_to_polynomial_unit_preprocessing_factors(elementary_source_column, R)
+    end
+    intermediate = _laurent_to_polynomial_matrix_column_to_tuple(
+        _laurent_to_polynomial_apply_factors(factors, elementary_source_column, R),
+    )
+    _laurent_to_polynomial_is_polynomial_column(intermediate) ||
+        throw(ArgumentError("unsupported Laurent-to-polynomial conversion: elementary preprocessing did not produce a polynomial column"))
+    return factors
+end
+
+function _laurent_to_polynomial_target_ring(R)
+    names = String.(string.(gens(R)))
+    P, variables = suslin_polynomial_ring(coefficient_ring(R), names)
+    return P, tuple(variables...)
+end
+
+function _laurent_to_polynomial_forward_map(R, P, polynomial_generators)
+    laurent_generators = tuple(gens(R)...)
+    return tuple((
+        (; generator_index = index,
+            laurent_generator = laurent_generators[index],
+            polynomial_generator = polynomial_generators[index])
+        for index in eachindex(laurent_generators)
+    )...)
+end
+
+function _laurent_to_polynomial_inverse_lift_map(R, polynomial_generators)
+    laurent_generators = tuple(gens(R)...)
+    return tuple((
+        (; generator_index = index,
+            polynomial_generator = polynomial_generators[index],
+            laurent_value = laurent_generators[index])
+        for index in eachindex(laurent_generators)
+    )...)
+end
+
+function _laurent_to_polynomial_factor_lift_metadata(R, P, inverse_lift, n::Int)
+    return (;
+        source_ring = R,
+        polynomial_ring = P,
+        inverse_lift,
+        matrix_size = n,
+        purpose = :ordinary_factor_lift_to_laurent_ring,
+    )
+end
+
+function _laurent_to_polynomial_entry(entry, P, polynomial_generators)
+    total = zero(P)
+    iszero(entry) && return total
+    for (coefficient, exponent_vector) in zip(collect(coefficients(entry)), collect(exponents(entry)))
+        exponents_int = Int.(collect(exponent_vector))
+        any(<(0), exponents_int) &&
+            throw(ArgumentError("Laurent entry has a negative exponent and cannot be polynomialized"))
+        term = P(coefficient)
+        for index in eachindex(exponents_int)
+            exponent = exponents_int[index]
+            exponent == 0 && continue
+            term *= polynomial_generators[index]^exponent
+        end
+        total += term
+    end
+    return total
+end
+
+function _laurent_to_polynomial_column(column, P, polynomial_generators)
+    return tuple((_laurent_to_polynomial_entry(entry, P, polynomial_generators) for entry in column)...)
+end
+
+function _laurent_to_polynomial_lift_entry(entry, inverse_lift)
+    isempty(inverse_lift) && throw(ArgumentError("inverse lift metadata must be nonempty"))
+    R = parent(first(inverse_lift).laurent_value)
+    total = zero(R)
+    iszero(entry) && return total
+    lift_values = tuple((map_entry.laurent_value for map_entry in inverse_lift)...)
+    for (coefficient, exponent_vector) in zip(AbstractAlgebra.coefficients(entry), AbstractAlgebra.exponent_vectors(entry))
+        term = R(coefficient)
+        for index in eachindex(lift_values)
+            exponent = Int(exponent_vector[index])
+            exponent == 0 && continue
+            term *= lift_values[index]^exponent
+        end
+        total += term
+    end
+    return total
+end
+
+function _laurent_to_polynomial_lift_factor(factor, factor_lift_metadata)
+    P = factor_lift_metadata.polynomial_ring
+    R = factor_lift_metadata.source_ring
+    nrows(factor) == factor_lift_metadata.matrix_size ||
+        throw(ArgumentError("ordinary factor has the wrong row count for Laurent lift metadata"))
+    ncols(factor) == factor_lift_metadata.matrix_size ||
+        throw(ArgumentError("ordinary factor has the wrong column count for Laurent lift metadata"))
+    base_ring(factor) === P ||
+        throw(ArgumentError("ordinary factor belongs to the wrong polynomial ring"))
+    entries = [
+        _laurent_to_polynomial_lift_entry(factor[row, col], factor_lift_metadata.inverse_lift)
+        for col in 1:ncols(factor), row in 1:nrows(factor)
+    ]
+    return matrix(R, nrows(factor), ncols(factor), vec(entries))
+end
+
+function _laurent_to_polynomial_replay_summary(
+    noether_status::Symbol,
+    elementary_factors_are_elementary::Bool,
+    elementary_replay_ok::Bool,
+    polynomial_entries_in_ring::Bool,
+    inverse_lift_ok::Bool,
+    polynomial_unimodular::Bool,
+)
+    return (;
+        noether_status,
+        elementary_factors_are_elementary,
+        elementary_replay_ok,
+        polynomial_entries_in_ring,
+        inverse_lift_ok,
+        polynomial_unimodular,
+        overall_ok = noether_status == :ok &&
+            elementary_factors_are_elementary &&
+            elementary_replay_ok &&
+            polynomial_entries_in_ring &&
+            inverse_lift_ok &&
+            polynomial_unimodular,
+    )
+end
+
+function _laurent_to_polynomial_expected_replay(certificate)
+    R = certificate.ring
+    P = certificate.polynomial_ring
+    n = length(certificate.original_column)
+    noether_status = _validate_laurent_noether_certificate(certificate.noether_certificate)
+    elementary_factors_are_elementary = all(
+        factor -> _is_elementary_matrix_factor(factor, R, n),
+        certificate.conversion_factors,
+    )
+    replayed = _laurent_to_polynomial_matrix_column_to_tuple(
+        _laurent_to_polynomial_apply_factors(
+            certificate.conversion_factors,
+            certificate.elementary_source_column,
+            R,
+        ),
+    )
+    elementary_replay_ok = replayed == certificate.intermediate_laurent_column
+    polynomial_entries_in_ring = all(entry -> parent(entry) === P, certificate.polynomial_column)
+    lifted_column = tuple((
+        _laurent_to_polynomial_lift_entry(entry, certificate.inverse_lift)
+        for entry in certificate.polynomial_column
+    )...)
+    inverse_lift_ok = lifted_column == certificate.intermediate_laurent_column
+    polynomial_unimodular = polynomial_entries_in_ring &&
+        is_unimodular_column(collect(certificate.polynomial_column), P)
+    return _laurent_to_polynomial_replay_summary(
+        noether_status,
+        elementary_factors_are_elementary,
+        elementary_replay_ok,
+        polynomial_entries_in_ring,
+        inverse_lift_ok,
+        polynomial_unimodular,
+    )
+end
+
+function _laurent_to_polynomial_certificate(
+    column::AbstractVector,
+    noether_certificate,
+    selected_entry_index::Int,
+    selected_generator,
+)
+    R, selected_generator_index = _laurent_to_polynomial_validate_input(
+        column,
+        noether_certificate,
+        selected_entry_index,
+        selected_generator,
+    )
+    original_column = tuple(column...)
+    elementary_source_column = noether_certificate.transformed_column
+    conversion_factors = _laurent_to_polynomial_conversion_factors(elementary_source_column, R)
+    conversion_product =
+        _laurent_to_polynomial_factor_sequence_product(conversion_factors, R, length(original_column))
+    intermediate_laurent_column = _laurent_to_polynomial_matrix_column_to_tuple(
+        conversion_product * _laurent_to_polynomial_column_matrix(elementary_source_column, R),
+    )
+    P, polynomial_generators = _laurent_to_polynomial_target_ring(R)
+    forward_polynomialization =
+        _laurent_to_polynomial_forward_map(R, P, polynomial_generators)
+    inverse_lift = _laurent_to_polynomial_inverse_lift_map(R, polynomial_generators)
+    polynomial_column =
+        _laurent_to_polynomial_column(intermediate_laurent_column, P, polynomial_generators)
+    factor_lift_metadata =
+        _laurent_to_polynomial_factor_lift_metadata(R, P, inverse_lift, length(original_column))
+    provisional = LaurentToPolynomialColumnCertificate(
+        original_column,
+        R,
+        noether_certificate,
+        selected_entry_index,
+        selected_generator_index,
+        selected_generator,
+        elementary_source_column,
+        conversion_factors,
+        conversion_product,
+        intermediate_laurent_column,
+        P,
+        polynomial_generators,
+        forward_polynomialization,
+        inverse_lift,
+        polynomial_column,
+        factor_lift_metadata,
+        nothing,
+        :ok,
+    )
+    replay = _laurent_to_polynomial_expected_replay(provisional)
+    certificate = LaurentToPolynomialColumnCertificate(
+        original_column,
+        R,
+        noether_certificate,
+        selected_entry_index,
+        selected_generator_index,
+        selected_generator,
+        elementary_source_column,
+        conversion_factors,
+        conversion_product,
+        intermediate_laurent_column,
+        P,
+        polynomial_generators,
+        forward_polynomialization,
+        inverse_lift,
+        polynomial_column,
+        factor_lift_metadata,
+        replay,
+        :ok,
+    )
+    status = _validate_laurent_to_polynomial_certificate(certificate)
+    status == :ok || error("internal Laurent-to-polynomial certificate replay failed with $(status)")
+    return certificate
+end
+
+function _validate_laurent_to_polynomial_certificate(certificate)::Symbol
+    try
+        R = certificate.ring
+        _laurent_noether_is_supported_ring(R) || return :invalid_ring
+        original_column = certificate.original_column
+        original_column isa Tuple || return :invalid_column
+        length(original_column) >= 3 || return :invalid_column_length
+        all(entry -> parent(entry) === R, original_column) || return :wrong_ring
+        is_unimodular_column(collect(original_column), R) || return :nonunimodular_input
+
+        noether_status = _validate_laurent_noether_certificate(certificate.noether_certificate)
+        noether_status == :ok || return :invalid_noether_certificate
+        certificate.noether_certificate.original_column == original_column ||
+            return :invalid_noether_certificate
+        certificate.noether_certificate.ring === R || return :invalid_noether_certificate
+
+        variables = tuple(gens(R)...)
+        1 <= certificate.selected_entry_index <= length(original_column) ||
+            return :invalid_selected_entry_index
+        1 <= certificate.selected_generator_index <= 2 ||
+            return :invalid_selected_generator
+        certificate.selected_generator == variables[certificate.selected_generator_index] ||
+            return :invalid_generator_metadata
+        certificate.noether_certificate.selected_entry_index == certificate.selected_entry_index ||
+            return :invalid_noether_metadata
+        certificate.noether_certificate.selected_generator_index == certificate.selected_generator_index ||
+            return :invalid_noether_metadata
+        certificate.noether_certificate.selected_generator == certificate.selected_generator ||
+            return :invalid_noether_metadata
+
+        elementary_source_column = certificate.noether_certificate.transformed_column
+        certificate.elementary_source_column == elementary_source_column ||
+            return :stale_elementary_source_column
+        expected_factors = _laurent_to_polynomial_conversion_factors(elementary_source_column, R)
+        _laurent_to_polynomial_factor_sequences_equal(certificate.conversion_factors, expected_factors) ||
+            return :stale_conversion_factors
+        n = length(original_column)
+        expected_product =
+            _laurent_to_polynomial_factor_sequence_product(certificate.conversion_factors, R, n)
+        certificate.conversion_product == expected_product ||
+            return :stale_conversion_product
+        expected_intermediate = _laurent_to_polynomial_matrix_column_to_tuple(
+            expected_product * _laurent_to_polynomial_column_matrix(elementary_source_column, R),
+        )
+        certificate.intermediate_laurent_column == expected_intermediate ||
+            return :stale_intermediate_laurent_column
+
+        P = certificate.polynomial_ring
+        ngens(P) == ngens(R) || return :invalid_polynomial_ring
+        coefficient_ring(P) == coefficient_ring(R) ||
+            return :invalid_polynomial_ring
+        polynomial_generators = tuple(gens(P)...)
+        certificate.polynomial_generators == polynomial_generators ||
+            return :invalid_polynomial_generators
+        tuple(string.(polynomial_generators)...) == tuple(string.(gens(R))...) ||
+            return :invalid_polynomial_ring
+
+        expected_forward = _laurent_to_polynomial_forward_map(R, P, polynomial_generators)
+        certificate.forward_polynomialization == expected_forward ||
+            return :invalid_polynomialization_map
+        expected_inverse = _laurent_to_polynomial_inverse_lift_map(R, polynomial_generators)
+        certificate.inverse_lift == expected_inverse || return :invalid_inverse_lift
+        expected_metadata =
+            _laurent_to_polynomial_factor_lift_metadata(R, P, expected_inverse, n)
+        certificate.factor_lift_metadata == expected_metadata ||
+            return :invalid_factor_lift_metadata
+
+        expected_polynomial_column =
+            _laurent_to_polynomial_column(expected_intermediate, P, polynomial_generators)
+        certificate.polynomial_column == expected_polynomial_column ||
+            return :stale_polynomial_column
+        all(entry -> parent(entry) === P, certificate.polynomial_column) ||
+            return :wrong_polynomial_ring
+        lifted_column = tuple((
+            _laurent_to_polynomial_lift_entry(entry, certificate.inverse_lift)
+            for entry in certificate.polynomial_column
+        )...)
+        lifted_column == expected_intermediate || return :invalid_inverse_lift
+        is_unimodular_column(collect(certificate.polynomial_column), P) ||
+            return :polynomial_column_not_unimodular
+
+        expected_replay = _laurent_to_polynomial_expected_replay(certificate)
+        certificate.replay == expected_replay || return :stale_replay
+        expected_replay.overall_ok || return :invalid_replay
+        certificate.validation_status == :ok || return :invalid_validation_status
+        return :ok
+    catch err
+        err isa InterruptException && rethrow()
+        return :invalid_certificate
+    end
+end
