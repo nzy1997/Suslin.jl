@@ -18,30 +18,63 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
 jobs:
-  instantiate:
-    name: Instantiate Dependencies
+  select-tests:
+    name: Select Tests
+    if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+      documentation_only: ${{ steps.select.outputs.documentation_only }}
+      selector_fallback: ${{ steps.select.outputs.selector_fallback }}
     permissions:
       actions: write
       contents: read
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: julia-actions/setup-julia@v3
         with:
           version: '1.12'
           arch: x64
       - uses: julia-actions/cache@v3
-      - name: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+      - name: Instantiate dependencies
         run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+      - name: Validate shard manifest
+        run: |
+          julia --startup-file=no --project=. -e 'include("test/ci/TestManifest.jl"); using .TestManifest; validate_manifest(load_manifest("test/ci/shards.toml"), "test")'
+      - name: Select affected tests
+        id: select
+        shell: bash
+        run: |
+          all='["public","internal-core","internal-fixtures","expert-core","expert-laurent-a","expert-laurent-b","expert-sl3","expert-quillen","expert-ecp","expert-integration"]'
+          if julia --startup-file=no --project=. test/ci/select_shards.jl \
+              --base='${{ github.event.pull_request.base.sha }}' \
+              --head='${{ github.event.pull_request.head.sha }}' \
+              --github-output="$GITHUB_OUTPUT"; then
+            echo 'selector_fallback=false' >> "$GITHUB_OUTPUT"
+          else
+            echo "matrix=$all" >> "$GITHUB_OUTPUT"
+            echo 'documentation_only=false' >> "$GITHUB_OUTPUT"
+            echo 'selector_fallback=true' >> "$GITHUB_OUTPUT"
+          fi
 
-  default-tests:
-    name: Default Fast Tests
+  selected-tests:
+    name: Selected Tests (${{ matrix.target }})
+    if: ${{ github.event_name == 'pull_request' }}
+    needs: select-tests
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 120
     permissions:
       actions: write
       contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        target: ${{ fromJSON(needs.select-tests.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v6
       - uses: julia-actions/setup-julia@v3
@@ -51,38 +84,87 @@ jobs:
       - uses: julia-actions/cache@v3
       - name: Instantiate dependencies
         run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
-      - name: julia --project=. test/runtests.jl
-        run: julia --project=. test/runtests.jl
-
-  full-suite-tests:
-    name: Full Suite Tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 150
-    permissions:
-      actions: write
-      contents: read
-    steps:
-      - uses: actions/checkout@v6
-      - uses: julia-actions/setup-julia@v3
-        with:
-          version: '1.12'
-          arch: x64
-      - uses: julia-actions/cache@v3
-      - name: Instantiate dependencies
-        run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
-      - name: julia --project=. test/runtests.jl all
-        run: julia --project=. --code-coverage=user test/runtests.jl all
-      - uses: julia-actions/julia-processcoverage@v1
+      - name: Run documentation smoke
+        if: ${{ matrix.target == 'documentation-smoke' }}
+        run: julia --startup-file=no --project=. test/runtests.jl documentation-smoke
+      - name: Run selected shard with coverage
+        if: ${{ matrix.target != 'documentation-smoke' }}
+        run: |
+          julia --startup-file=no --project=. --code-coverage=@src \
+            test/runtests.jl 'shard:${{ matrix.target }}'
+      - name: Process coverage
+        if: ${{ matrix.target != 'documentation-smoke' }}
+        uses: julia-actions/julia-processcoverage@v1
         with:
           directories: src
-      - name: Upload coverage to Codecov
+      - name: Rename coverage report
+        if: ${{ matrix.target != 'documentation-smoke' }}
+        run: mv lcov.info 'lcov-${{ matrix.target }}.info'
+      - name: Upload coverage artifact
+        if: ${{ matrix.target != 'documentation-smoke' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.target }}
+          path: lcov-${{ matrix.target }}.info
+          retention-days: 1
+      - name: Upload selected coverage to Codecov
+        if: ${{ matrix.target != 'documentation-smoke' }}
         uses: codecov/codecov-action@v6
         with:
-          files: lcov.info
-          flags: full-suite
-          name: suslin-full-suite
+          files: lcov-${{ matrix.target }}.info
+          flags: pr-selected
+          name: suslin-pr-selected-${{ matrix.target }}
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
+
+  pr-gate:
+    name: PR Gate
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    needs: [select-tests, selected-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Check required jobs
+        shell: bash
+        run: |
+          if [[ '${{ needs.select-tests.result }}' != 'success' ]]; then
+            echo "select-tests result: ${{ needs.select-tests.result }}" >&2
+            exit 1
+          fi
+          if [[ '${{ needs.selected-tests.result }}' != 'success' ]]; then
+            echo "selected-tests result: ${{ needs.selected-tests.result }}" >&2
+            exit 1
+          fi
+      - name: Skip patch coverage for documentation-only changes
+        if: ${{ needs.select-tests.outputs.documentation_only == 'true' }}
+        run: echo "documentation-only selection; patch coverage skipped"
+      - name: Download coverage artifacts
+        if: ${{ needs.select-tests.outputs.documentation_only != 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-*
+          path: coverage
+          merge-multiple: true
+      - uses: julia-actions/setup-julia@v3
+        if: ${{ needs.select-tests.outputs.documentation_only != 'true' }}
+        with:
+          version: '1.12'
+          arch: x64
+      - name: Install diff-cover
+        if: ${{ needs.select-tests.outputs.documentation_only != 'true' }}
+        run: python -m pip install --disable-pip-version-check diff-cover==10.1.0
+      - name: Check patch coverage
+        if: ${{ needs.select-tests.outputs.documentation_only != 'true' }}
+        shell: bash
+        run: |
+          DIFF_COVER_BIN=diff-cover test/ci/check_patch_coverage.sh \
+            --base='${{ github.event.pull_request.base.sha }}' coverage/*.info
   docs:
     name: Documentation
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_docs }}

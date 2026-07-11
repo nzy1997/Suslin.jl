@@ -1,0 +1,58 @@
+name: Complete Coverage
+on:
+  schedule:
+    - cron: '0 22 * * *'
+  workflow_dispatch:
+  push:
+    tags: ['*']
+concurrency:
+  group: complete-coverage-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  complete-coverage:
+    name: Complete Coverage (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: write
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        target:
+          - public
+          - internal-core
+          - internal-fixtures
+          - expert-core
+          - expert-laurent-a
+          - expert-laurent-b
+          - expert-sl3
+          - expert-quillen
+          - expert-ecp
+          - expert-integration
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.12'
+          arch: x64
+      - uses: julia-actions/cache@v3
+      - name: Instantiate dependencies
+        run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+      - name: Run complete coverage shard
+        run: |
+          julia --startup-file=no --project=. --code-coverage=@src \
+            test/runtests.jl "shard:${{ matrix.target }}"
+      - uses: julia-actions/julia-processcoverage@v1
+        with:
+          directories: src
+      - name: Upload complete coverage to Codecov
+        uses: codecov/codecov-action@v6
+        with:
+          files: lcov.info
+          flags: full-suite
+          name: suslin-full-${{ matrix.target }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true

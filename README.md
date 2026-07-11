@@ -130,9 +130,28 @@ The test runner separates routine checks from expert algorithm checks:
 | `julia --project=. test/runtests.jl all` | Full suite: `public`, `internal`, and `expert` groups |
 | `julia --project=. -e 'using Pkg; Pkg.test()'` | Package test entry point; runs the default fast tests |
 
-CI uploads full-suite coverage to Codecov for the `main` branch and pull
-requests. Private repositories need a `CODECOV_TOKEN` GitHub Actions secret for
-coverage uploads.
+For fast coverage feedback on the current branch, run only the affected test
+shards and check changed executable lines:
+
+```bash
+test/ci/coverage_changed.sh --base=origin/main
+```
+
+Pull requests use the same fail-closed selector, run at most four test shards
+concurrently, and require at least 99% fresh coverage on changed source lines.
+Unknown source changes and shared core changes fall back to every shard.
+
+The complete test and coverage suite runs daily at 06:00 Asia/Shanghai
+(`0 22 * * *` UTC), on release tags, and on manual dispatch. Codecov carries
+the most recent complete `full-suite` report between scheduled runs, so the
+project-wide percentage may be up to 24 hours old; pull-request patch coverage
+always comes from the current commit.
+
+After the workflow lands and the first hosted baseline is verified, configure
+the stable `PR Gate` check as required branch protection. The repository
+configuration does not perform that branch-protection change automatically.
+Private repositories need a `CODECOV_TOKEN` GitHub Actions secret for coverage
+uploads.
 
 ## Related Implementations
 

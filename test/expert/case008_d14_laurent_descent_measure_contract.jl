@@ -36,12 +36,6 @@ strictly_decreases_laurent_measure(before, after) =
     Suslin._strictly_decreases_laurent_measure(before, after)
 
 @testset "case_008 d=14 Laurent descent measure contract" begin
-    runtests = read(joinpath(@__DIR__, "..", "runtests.jl"), String)
-    @test occursin(
-        "\"expert/case008_d14_laurent_descent_measure_contract.jl\"",
-        runtests,
-    )
-
     fixture = ToricBuilderCase008D14ColumnBoundary.boundary_fixture()
     profile = case008_d14_laurent_descent_profile(fixture)
 

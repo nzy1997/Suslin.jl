@@ -35,12 +35,6 @@ function _assert_laurent_native_ecp_boundary_detail(
 end
 
 @testset "Laurent native ECP boundary diagnostics" begin
-    runtests = read(joinpath(@__DIR__, "..", "runtests.jl"), String)
-    @test occursin(
-        "\"expert/laurent_native_ecp_boundary_diagnostics.jl\"",
-        runtests,
-    )
-
     coefficient_failure_entry = _EntryWithoutCoefficientIterator()
     @test Suslin._column_reduction_entry_term_count(coefficient_failure_entry) === nothing
     @test Suslin._column_reduction_max_entry_term_count([coefficient_failure_entry]) === nothing

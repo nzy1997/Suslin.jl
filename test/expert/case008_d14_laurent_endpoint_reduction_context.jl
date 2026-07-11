@@ -187,12 +187,6 @@ function validate_case008_d14_laurent_endpoint_reduction_context(
 end
 
 @testset "case_008 d=14 Laurent endpoint reduction context" begin
-    runtests = read(joinpath(@__DIR__, "..", "runtests.jl"), String)
-    @test occursin(
-        "\"expert/case008_d14_laurent_endpoint_reduction_context.jl\"",
-        runtests,
-    )
-
     replay_source = _case008_d14_endpoint_reduction_replay_source()
     fixture = replay_source.fixture
     summary = replay_source.summary

@@ -117,12 +117,6 @@ function case008_d14_laurent_link_witness_certificate_summary(fixture)
 end
 
 @testset "Laurent link-witness certificate shell" begin
-    runtests = read(joinpath(@__DIR__, "..", "runtests.jl"), String)
-    @test occursin(
-        "\"expert/laurent_link_witness_certificate.jl\"",
-        runtests,
-    )
-
     R, (u, v) = Suslin.suslin_laurent_polynomial_ring(GF(2), ["u", "v"])
     column = [one(R), u + v]
     context = (;
