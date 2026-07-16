@@ -31,7 +31,7 @@ jobs:
       actions: write
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: julia-actions/setup-julia@v3
@@ -76,7 +76,7 @@ jobs:
       matrix:
         target: ${{ fromJSON(needs.select-tests.outputs.matrix) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3
         with:
           version: '1.12'
@@ -102,14 +102,14 @@ jobs:
         run: mv lcov.info 'lcov-${{ matrix.target }}.info'
       - name: Upload coverage artifact
         if: ${{ matrix.target != 'documentation-smoke' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-${{ matrix.target }}
           path: lcov-${{ matrix.target }}.info
           retention-days: 1
       - name: Upload selected coverage to Codecov
         if: ${{ matrix.target != 'documentation-smoke' }}
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           files: lcov-${{ matrix.target }}.info
           flags: pr-selected
@@ -127,7 +127,7 @@ jobs:
       actions: read
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Check required jobs
@@ -146,7 +146,7 @@ jobs:
         run: echo "documentation-only selection; patch coverage skipped"
       - name: Download coverage artifacts
         if: ${{ needs.select-tests.outputs.documentation_only != 'true' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: coverage-*
           path: coverage
@@ -174,7 +174,7 @@ jobs:
       contents: write
       statuses: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3
         with:
           version: '1'
