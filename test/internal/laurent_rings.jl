@@ -19,6 +19,9 @@ using Oscar
     @test parent(mixed) === R
     @test string(x_inv) == "x^-1"
     @test string(mixed) == "x^-1*y"
+
+    ring_profile = Suslin._column_reduction_ring_profile(R)
+    @test ring_profile.coefficient_ring == string(coefficient_ring(R))
 end
 
 @testset "Laurent validators" begin

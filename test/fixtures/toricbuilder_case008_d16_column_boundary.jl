@@ -106,7 +106,7 @@ end
 function _is_expected_uv_laurent_ring(R)::Bool
     try
         return Suslin._is_laurent_polynomial_ring(R) &&
-            base_ring(R) == GF(2) &&
+            coefficient_ring(R) == GF(2) &&
             _ring_generator_names(R) == ("u", "v")
     catch err
         err isa InterruptException && rethrow()
