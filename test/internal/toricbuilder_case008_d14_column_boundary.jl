@@ -20,7 +20,7 @@ const TORICBUILDER_CASE008_D14_COLUMN_BOUNDARY_PATH =
     @test length(fixture.failing_column) == 14
     @test fixture.ring_description == "GF(2)[u^+/-1, v^+/-1]"
     @test Tuple(string.(gens(fixture.ring))) == ("u", "v")
-    @test base_ring(fixture.ring) == GF(2)
+    @test coefficient_ring(fixture.ring) == GF(2)
     @test Suslin.is_unimodular_column(fixture.failing_column, fixture.ring)
     @test count(!iszero, fixture.failing_column) == 14
     @test count(is_unit, fixture.failing_column) == 0

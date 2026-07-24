@@ -240,6 +240,7 @@ nightly_path = joinpath(TEST_ROOT, "..", ".github", "workflows", "Nightly.yml")
     nightly = isfile(nightly_path) ? read(nightly_path, String) : ""
     @test occursin("cron: '0 22 * * *'", nightly)
     @test occursin("max-parallel: 4", nightly)
+    @test occursin("timeout-minutes: 60", nightly)
     @test occursin("full-suite", nightly)
     @test occursin("workflow_dispatch:", nightly)
     @test occursin("tags: ['*']", nightly)

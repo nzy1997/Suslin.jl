@@ -141,7 +141,7 @@ function validate_laurent_to_poly_route_fixture(entry)
         throw(ArgumentError("route $(entry.id) column has the wrong ring"))
     length(ring.generators) == 2 ||
         throw(ArgumentError("route $(entry.id) does not have two Laurent generators"))
-    base_ring(ring.object) == GF(2) ||
+    coefficient_ring(ring.object) == GF(2) ||
         throw(ArgumentError("route $(entry.id) does not have GF(2) coefficients"))
     ring.description == "GF(2)[$(ring.generators[1])^+/-1, $(ring.generators[2])^+/-1]" ||
         throw(ArgumentError("route $(entry.id) ring description is stale"))

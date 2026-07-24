@@ -461,8 +461,8 @@ function _column_reduction_ring_profile(R)
         err isa InterruptException && rethrow()
         :unknown
     end
-    coefficient_ring = try
-        string(base_ring(R))
+    coefficient_ring_description = try
+        string(coefficient_ring(R))
     catch err
         err isa InterruptException && rethrow()
         ""
@@ -473,7 +473,11 @@ function _column_reduction_ring_profile(R)
         err isa InterruptException && rethrow()
         ()
     end
-    return (; kind, coefficient_ring, generators = generator_names)
+    return (;
+        kind,
+        coefficient_ring = coefficient_ring_description,
+        generators = generator_names,
+    )
 end
 
 function _column_reduction_ring_kind(R)
