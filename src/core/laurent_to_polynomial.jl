@@ -199,7 +199,10 @@ struct LaurentToPolynomialColumnCertificate
     polynomial_generators
     forward_polynomialization
     inverse_lift
+    polynomialization_power::Int
     polynomial_column
+    polynomial_witness
+    polynomial_witness_metadata
     factor_lift_metadata
     replay
     validation_status::Symbol
@@ -250,10 +253,6 @@ function _laurent_to_polynomial_validate_input(
         throw(ArgumentError("selected generator metadata does not match the Laurent Noether certificate"))
     noether_certificate.selected_generator == selected_generator ||
         throw(ArgumentError("selected generator does not match the Laurent Noether certificate"))
-    _laurent_to_polynomial_is_supported_elementary_source_column(noether_certificate.transformed_column) ||
-        throw(ArgumentError(
-            "unsupported Laurent-to-polynomial conversion: Noether column must already be polynomial or contain a Laurent unit entry",
-        ))
     return R, selected_generator_index
 end
 
@@ -267,18 +266,25 @@ function _laurent_to_polynomial_matrix_column_to_tuple(column_matrix)
 end
 
 function _laurent_to_polynomial_factor_sequence_product(factors, R, n::Int)
+    records = _laurent_to_polynomial_elementary_factor_records(factors, R, n)
     product = identity_matrix(R, n)
-    for factor in factors
-        _is_elementary_matrix_factor(factor, R, n) ||
-            throw(ArgumentError("Laurent conversion factor must be elementary over the Laurent ring"))
-        product *= factor
+    for record in Iterators.reverse(records)
+        record.kind == :identity && continue
+        for col in 1:n
+            product[record.row, col] += record.coefficient * product[record.col, col]
+        end
     end
     return product
 end
 
 function _laurent_to_polynomial_apply_factors(factors, column, R)
-    product = _laurent_to_polynomial_factor_sequence_product(factors, R, length(column))
-    return product * _laurent_to_polynomial_column_matrix(column, R)
+    n = length(column)
+    records = _laurent_to_polynomial_elementary_factor_records(factors, R, n)
+    current = collect(column)
+    for record in Iterators.reverse(records)
+        _laurent_to_polynomial_apply_record_to_column!(current, record)
+    end
+    return _laurent_to_polynomial_column_matrix(current, R)
 end
 
 function _laurent_to_polynomial_factor_sequences_equal(left, right)::Bool
@@ -286,9 +292,25 @@ function _laurent_to_polynomial_factor_sequences_equal(left, right)::Bool
     return all(index -> left[index] == right[index], eachindex(left))
 end
 
+function _laurent_to_polynomial_elementary_factor_records(factors, R, n::Int)
+    records = Any[]
+    for factor in factors
+        _is_elementary_matrix_factor(factor, R, n) ||
+            throw(ArgumentError("Laurent conversion factor must be elementary over the Laurent ring"))
+        push!(records, _canonical_elementary_factor_record(factor))
+    end
+    return records
+end
+
+function _laurent_to_polynomial_apply_record_to_column!(column, record)
+    record.kind == :identity && return column
+    column[record.row] += record.coefficient * column[record.col]
+    return column
+end
+
 function _laurent_to_polynomial_has_negative_exponent(entry)::Bool
     iszero(entry) && return false
-    return any(exponent_vector -> any(<(0), Int.(collect(exponent_vector))), collect(exponents(entry)))
+    return any(exponent_vector -> any(<(0), Int.(collect(exponent_vector))), exponents(entry))
 end
 
 function _laurent_to_polynomial_is_polynomial_entry(entry)::Bool
@@ -301,6 +323,316 @@ end
 
 function _laurent_to_polynomial_is_supported_elementary_source_column(column)::Bool
     return _laurent_to_polynomial_is_polynomial_column(column) || any(is_unit, column)
+end
+
+function _laurent_to_polynomial_other_generator_index(selected_generator_index::Int)::Int
+    1 <= selected_generator_index <= 2 ||
+        throw(ArgumentError("selected generator index must be 1 or 2"))
+    return 3 - selected_generator_index
+end
+
+function _laurent_to_polynomial_selected_degree_coefficients(
+    entry,
+    R,
+    selected_generator_index::Int,
+)
+    other_generator_index = _laurent_to_polynomial_other_generator_index(selected_generator_index)
+    coefficients_by_degree = Dict{Int, typeof(zero(R))}()
+    iszero(entry) && return coefficients_by_degree
+
+    other_generator = gen(R, other_generator_index)
+    for (coefficient, exponent_vector) in zip(coefficients(entry), exponents(entry))
+        degree = Int(exponent_vector[selected_generator_index])
+        other_exponent = Int(exponent_vector[other_generator_index])
+        term = R(coefficient)
+        other_exponent == 0 || (term *= other_generator^other_exponent)
+        coefficients_by_degree[degree] = get(coefficients_by_degree, degree, zero(R)) + term
+        iszero(coefficients_by_degree[degree]) && delete!(coefficients_by_degree, degree)
+    end
+    return coefficients_by_degree
+end
+
+function _laurent_to_polynomial_selected_degree_term_coefficients(
+    entry,
+    R,
+    selected_generator_index::Int,
+)
+    other_generator_index = _laurent_to_polynomial_other_generator_index(selected_generator_index)
+    F = coefficient_ring(R)
+    zero_F = zero(F)
+    coefficients_by_degree = Dict{Int, Dict{Int, typeof(zero_F)}}()
+    iszero(entry) && return coefficients_by_degree
+
+    for (coefficient, exponent_vector) in zip(coefficients(entry), exponents(entry))
+        selected_degree = Int(exponent_vector[selected_generator_index])
+        other_exponent = Int(exponent_vector[other_generator_index])
+        degree_terms = get!(coefficients_by_degree, selected_degree) do
+            Dict{Int, typeof(zero_F)}()
+        end
+        value = get(degree_terms, other_exponent, zero_F) + F(coefficient)
+        if iszero(value)
+            delete!(degree_terms, other_exponent)
+            isempty(degree_terms) && delete!(coefficients_by_degree, selected_degree)
+        else
+            degree_terms[other_exponent] = value
+        end
+    end
+    return coefficients_by_degree
+end
+
+function _laurent_to_polynomial_term_coefficients_are_one(terms, F)::Bool
+    return length(terms) == 1 && get(terms, 0, zero(F)) == one(F)
+end
+
+function _laurent_to_polynomial_add_term_coefficients!(target, source, F)
+    zero_F = zero(F)
+    for (exponent, coefficient) in source
+        value = get(target, exponent, zero_F) + coefficient
+        if iszero(value)
+            delete!(target, exponent)
+        else
+            target[exponent] = value
+        end
+    end
+    return target
+end
+
+function _laurent_to_polynomial_multiply_term_coefficients(left, right, F)
+    zero_F = zero(F)
+    product = Dict{Int, typeof(zero_F)}()
+    (isempty(left) || isempty(right)) && return product
+    for (left_exponent, left_coefficient) in left
+        for (right_exponent, right_coefficient) in right
+            exponent = left_exponent + right_exponent
+            value = get(product, exponent, zero_F) + left_coefficient * right_coefficient
+            if iszero(value)
+                delete!(product, exponent)
+            else
+                product[exponent] = value
+            end
+        end
+    end
+    return product
+end
+
+function _laurent_to_polynomial_negate_term_coefficients(source, F)
+    zero_F = zero(F)
+    negated = Dict{Int, typeof(zero_F)}()
+    for (exponent, coefficient) in source
+        value = -coefficient
+        iszero(value) || (negated[exponent] = value)
+    end
+    return negated
+end
+
+function _laurent_to_polynomial_selected_terms_to_laurent(
+    coefficients_by_degree,
+    R,
+    selected_generator_index::Int,
+)
+    F = coefficient_ring(R)
+    zero(F) # force coefficient ring validation for callers using exact fields
+    other_generator_index = _laurent_to_polynomial_other_generator_index(selected_generator_index)
+    output_coefficients = typeof(zero(F))[]
+    output_exponents = Vector{Int}[]
+    for (selected_degree, terms) in coefficients_by_degree
+        for (other_exponent, coefficient) in terms
+            push!(output_coefficients, coefficient)
+            exponent_vector = zeros(Int, 2)
+            exponent_vector[selected_generator_index] = selected_degree
+            exponent_vector[other_generator_index] = other_exponent
+            push!(output_exponents, exponent_vector)
+        end
+    end
+    isempty(output_coefficients) && return zero(R)
+    return R(output_coefficients, output_exponents)
+end
+
+function _laurent_to_polynomial_selected_degree_bounds(entry, selected_generator_index::Int)
+    iszero(entry) && return nothing
+    degrees = [Int(exponent_vector[selected_generator_index]) for exponent_vector in exponents(entry)]
+    isempty(degrees) && return nothing
+    return minimum(degrees), maximum(degrees)
+end
+
+function _laurent_to_polynomial_lowest_selected_coefficient(
+    entry,
+    R,
+    selected_generator_index::Int,
+)
+    coefficients_by_degree =
+        _laurent_to_polynomial_selected_degree_coefficients(entry, R, selected_generator_index)
+    isempty(coefficients_by_degree) &&
+        throw(ArgumentError("selected Laurent-to-polynomial entry must be nonzero"))
+    lowest_degree = minimum(keys(coefficients_by_degree))
+    return lowest_degree, coefficients_by_degree[lowest_degree]
+end
+
+function _laurent_to_polynomial_diagonal_scaling_factors(
+    n::Int,
+    row_i::Int,
+    row_j::Int,
+    scale,
+    R,
+)
+    row_i == row_j && throw(ArgumentError("diagonal scaling rows must differ"))
+    scale == zero(R) && throw(ArgumentError("diagonal scaling factor must be nonzero"))
+    scale_inverse = inv(scale)
+    return [
+        elementary_matrix(n, row_i, row_j, scale - one(R), R),
+        elementary_matrix(n, row_j, row_i, one(R), R),
+        elementary_matrix(n, row_i, row_j, scale_inverse - one(R), R),
+        elementary_matrix(n, row_j, row_i, -scale, R),
+    ]
+end
+
+function _laurent_to_polynomial_row_clearing_coefficient(
+    row_entry,
+    selected_entry,
+    R,
+    selected_generator_index::Int,
+)
+    zero_R = zero(R)
+    one_R = one(R)
+    iszero(row_entry) && return zero_R
+    F = coefficient_ring(R)
+    selected_coefficients =
+        _laurent_to_polynomial_selected_degree_term_coefficients(selected_entry, R, selected_generator_index)
+    _laurent_to_polynomial_term_coefficients_are_one(
+        get(selected_coefficients, 0, Dict{Int, typeof(zero(F))}()),
+        F,
+    ) ||
+        throw(ArgumentError("Park preprocessing requires selected entry constant coefficient one"))
+    all(degree -> degree >= 0, keys(selected_coefficients)) ||
+        throw(ArgumentError("Park preprocessing selected entry has negative selected degree"))
+    selected_positive_coefficients = sort!(
+        [
+            (degree, coefficient)
+            for (degree, coefficient) in selected_coefficients
+            if degree > 0
+        ],
+        by = first,
+    )
+
+    row_coefficients =
+        _laurent_to_polynomial_selected_degree_term_coefficients(row_entry, R, selected_generator_index)
+    isempty(row_coefficients) && return zero_R
+    min_row_degree = minimum(keys(row_coefficients))
+    min_row_degree > 0 && return zero_R
+
+    correction_coefficients = Dict{Int, Dict{Int, typeof(zero(F))}}()
+    for degree in min_row_degree:0
+        coefficient = copy(get(row_coefficients, degree, Dict{Int, typeof(zero(F))}()))
+        for (selected_degree, selected_coefficient) in selected_positive_coefficients
+            previous_degree = degree - selected_degree
+            previous_degree < min_row_degree && break
+            previous = get(correction_coefficients, previous_degree, nothing)
+            previous === nothing && continue
+            product = _laurent_to_polynomial_multiply_term_coefficients(
+                previous,
+                selected_coefficient,
+                F,
+            )
+            _laurent_to_polynomial_add_term_coefficients!(coefficient, product, F)
+        end
+        correction = _laurent_to_polynomial_negate_term_coefficients(coefficient, F)
+        isempty(correction) || (correction_coefficients[degree] = correction)
+    end
+
+    return _laurent_to_polynomial_selected_terms_to_laurent(
+        correction_coefficients,
+        R,
+        selected_generator_index,
+    )
+end
+
+function _laurent_to_polynomial_park_selected_degree_shape(
+    column,
+    R,
+    selected_entry_index::Int,
+    selected_generator_index::Int,
+)::Bool
+    try
+        selected_coefficients = _laurent_to_polynomial_selected_degree_coefficients(
+            column[selected_entry_index],
+            R,
+            selected_generator_index,
+        )
+        get(selected_coefficients, 0, zero(R)) == one(R) || return false
+        all(degree -> degree >= 0, keys(selected_coefficients)) || return false
+
+        for row in eachindex(column)
+            row == selected_entry_index && continue
+            bounds = _laurent_to_polynomial_selected_degree_bounds(
+                column[row],
+                selected_generator_index,
+            )
+            bounds === nothing && continue
+            bounds[1] > 0 || return false
+        end
+        _laurent_to_polynomial_polynomialization_power(
+            column,
+            selected_entry_index,
+            selected_generator_index,
+        )
+        return true
+    catch err
+        err isa InterruptException && rethrow()
+        return false
+    end
+end
+
+function _laurent_to_polynomial_park_preprocessing_factors(
+    elementary_source_column,
+    R,
+    selected_entry_index::Int,
+    selected_generator_index::Int,
+)
+    n = length(elementary_source_column)
+    1 <= selected_entry_index <= n ||
+        throw(ArgumentError("selected entry index is out of bounds for Park preprocessing"))
+    partner_row = selected_entry_index == 1 ? 2 : 1
+    selected_generator = gen(R, selected_generator_index)
+    lowest_degree, lowest_coefficient = _laurent_to_polynomial_lowest_selected_coefficient(
+        elementary_source_column[selected_entry_index],
+        R,
+        selected_generator_index,
+    )
+    is_unit(lowest_coefficient) ||
+        throw(ArgumentError("Park preprocessing requires a unit lowest selected coefficient"))
+
+    scale = inv(lowest_coefficient) * selected_generator^(-lowest_degree)
+    scaling_factors = _laurent_to_polynomial_diagonal_scaling_factors(
+        n,
+        selected_entry_index,
+        partner_row,
+        scale,
+        R,
+    )
+
+    current_matrix = _laurent_to_polynomial_apply_factors(scaling_factors, elementary_source_column, R)
+    current = collect(_laurent_to_polynomial_matrix_column_to_tuple(current_matrix))
+    row_clearing_factors = typeof(identity_matrix(R, n))[]
+    for row in 1:n
+        row == selected_entry_index && continue
+        coefficient = _laurent_to_polynomial_row_clearing_coefficient(
+            current[row],
+            current[selected_entry_index],
+            R,
+            selected_generator_index,
+        )
+        coefficient == zero(R) && continue
+        push!(row_clearing_factors, elementary_matrix(n, row, selected_entry_index, coefficient, R))
+        current[row] += coefficient * current[selected_entry_index]
+    end
+
+    _laurent_to_polynomial_park_selected_degree_shape(
+        tuple(current...),
+        R,
+        selected_entry_index,
+        selected_generator_index,
+    ) || throw(ArgumentError("Park preprocessing did not produce a polynomializable Laurent column"))
+    return vcat(row_clearing_factors, scaling_factors)
 end
 
 function _laurent_to_polynomial_unit_normalization_factors(n::Int, u, uinv, R)
@@ -346,17 +678,36 @@ function _laurent_to_polynomial_unit_preprocessing_factors(column, R)
     return vcat(normalization_factors, move_factors, elimination_factors)
 end
 
-function _laurent_to_polynomial_conversion_factors(elementary_source_column, R)
+function _laurent_to_polynomial_conversion_factors(
+    elementary_source_column,
+    R,
+    selected_entry_index::Int,
+    selected_generator_index::Int,
+)
     factors = if _laurent_to_polynomial_is_polynomial_column(elementary_source_column)
         typeof(identity_matrix(R, length(elementary_source_column)))[]
-    else
+    elseif any(is_unit, elementary_source_column)
         _laurent_to_polynomial_unit_preprocessing_factors(elementary_source_column, R)
+    else
+        _laurent_to_polynomial_park_preprocessing_factors(
+            elementary_source_column,
+            R,
+            selected_entry_index,
+            selected_generator_index,
+        )
     end
     intermediate = _laurent_to_polynomial_matrix_column_to_tuple(
         _laurent_to_polynomial_apply_factors(factors, elementary_source_column, R),
     )
-    _laurent_to_polynomial_is_polynomial_column(intermediate) ||
-        throw(ArgumentError("unsupported Laurent-to-polynomial conversion: elementary preprocessing did not produce a polynomial column"))
+    (
+        _laurent_to_polynomial_is_polynomial_column(intermediate) ||
+        _laurent_to_polynomial_park_selected_degree_shape(
+            intermediate,
+            R,
+            selected_entry_index,
+            selected_generator_index,
+        )
+    ) || throw(ArgumentError("unsupported Laurent-to-polynomial conversion: elementary preprocessing did not produce a polynomializable column"))
     return factors
 end
 
@@ -366,24 +717,83 @@ function _laurent_to_polynomial_target_ring(R)
     return P, tuple(variables...)
 end
 
-function _laurent_to_polynomial_forward_map(R, P, polynomial_generators)
+function _laurent_to_polynomial_polynomialization_power(
+    column,
+    selected_entry_index::Int,
+    selected_generator_index::Int,
+)::Int
+    other_generator_index = _laurent_to_polynomial_other_generator_index(selected_generator_index)
+    power = 0
+    for entry in column
+        iszero(entry) && continue
+        for exponent_vector in exponents(entry)
+            selected_exponent = Int(exponent_vector[selected_generator_index])
+            other_exponent = Int(exponent_vector[other_generator_index])
+            selected_exponent >= 0 ||
+                throw(ArgumentError("Laurent entry has negative selected-variable exponent after preprocessing"))
+            if selected_exponent == 0
+                other_exponent >= 0 ||
+                    throw(ArgumentError("Laurent entry has unfixable negative exponent at selected degree zero"))
+            elseif other_exponent < 0
+                power = max(power, cld(-other_exponent, selected_exponent))
+            end
+        end
+    end
+    return power
+end
+
+function _laurent_to_polynomial_forward_map(
+    R,
+    P,
+    polynomial_generators,
+    selected_generator_index::Int,
+    polynomialization_power::Int,
+)
     laurent_generators = tuple(gens(R)...)
+    other_generator_index = _laurent_to_polynomial_other_generator_index(selected_generator_index)
     return tuple((
-        (; generator_index = index,
-            laurent_generator = laurent_generators[index],
-            polynomial_generator = polynomial_generators[index])
+        begin
+            polynomial_value = polynomial_generators[index]
+            if index == selected_generator_index && polynomialization_power != 0
+                polynomial_value *= polynomial_generators[other_generator_index]^polynomialization_power
+            end
+            (; generator_index = index,
+                laurent_generator = laurent_generators[index],
+                polynomial_generator = polynomial_generators[index],
+                polynomial_value)
+        end
+        for index in eachindex(laurent_generators)
+    )...)
+end
+
+function _laurent_to_polynomial_forward_map(R, P, polynomial_generators)
+    return _laurent_to_polynomial_forward_map(R, P, polynomial_generators, 1, 0)
+end
+
+function _laurent_to_polynomial_inverse_lift_map(
+    R,
+    polynomial_generators,
+    selected_generator_index::Int,
+    polynomialization_power::Int,
+)
+    laurent_generators = tuple(gens(R)...)
+    other_generator_index = _laurent_to_polynomial_other_generator_index(selected_generator_index)
+    return tuple((
+        begin
+            laurent_value = laurent_generators[index]
+            if index == selected_generator_index && polynomialization_power != 0
+                laurent_value *= laurent_generators[other_generator_index]^(-polynomialization_power)
+            end
+            (; generator_index = index,
+                polynomial_generator = polynomial_generators[index],
+                laurent_value)
+        end
         for index in eachindex(laurent_generators)
     )...)
 end
 
 function _laurent_to_polynomial_inverse_lift_map(R, polynomial_generators)
-    laurent_generators = tuple(gens(R)...)
-    return tuple((
-        (; generator_index = index,
-            polynomial_generator = polynomial_generators[index],
-            laurent_value = laurent_generators[index])
-        for index in eachindex(laurent_generators)
-    )...)
+    return _laurent_to_polynomial_inverse_lift_map(R, polynomial_generators, 1, 0)
 end
 
 function _laurent_to_polynomial_factor_lift_metadata(R, P, inverse_lift, n::Int)
@@ -396,33 +806,124 @@ function _laurent_to_polynomial_factor_lift_metadata(R, P, inverse_lift, n::Int)
     )
 end
 
-function _laurent_to_polynomial_entry(entry, P, polynomial_generators)
-    total = zero(P)
-    iszero(entry) && return total
-    for (coefficient, exponent_vector) in zip(collect(coefficients(entry)), collect(exponents(entry)))
+function _laurent_to_polynomial_entry(
+    entry,
+    P,
+    polynomial_generators,
+    selected_generator_index::Int,
+    polynomialization_power::Int,
+)
+    other_generator_index = _laurent_to_polynomial_other_generator_index(selected_generator_index)
+    iszero(entry) && return zero(P)
+    F = coefficient_ring(P)
+    zero_F = zero(F)
+    terms = Dict{Tuple{Vararg{Int}}, typeof(zero_F)}()
+    for (coefficient, exponent_vector) in zip(coefficients(entry), exponents(entry))
         exponents_int = Int.(collect(exponent_vector))
+        exponents_int[other_generator_index] +=
+            polynomialization_power * exponents_int[selected_generator_index]
         any(<(0), exponents_int) &&
             throw(ArgumentError("Laurent entry has a negative exponent and cannot be polynomialized"))
-        term = P(coefficient)
-        for index in eachindex(exponents_int)
-            exponent = exponents_int[index]
-            exponent == 0 && continue
-            term *= polynomial_generators[index]^exponent
+        key = Tuple(exponents_int)
+        value = get(terms, key, zero_F) + F(coefficient)
+        if iszero(value)
+            delete!(terms, key)
+        else
+            terms[key] = value
         end
-        total += term
     end
-    return total
+    isempty(terms) && return zero(P)
+
+    output_coefficients = typeof(zero_F)[]
+    output_exponents = Vector{Int}[]
+    for (exponent_tuple, coefficient) in terms
+        push!(output_coefficients, coefficient)
+        push!(output_exponents, collect(exponent_tuple))
+    end
+    return P(output_coefficients, output_exponents)
+end
+
+function _laurent_to_polynomial_entry(entry, P, polynomial_generators)
+    return _laurent_to_polynomial_entry(entry, P, polynomial_generators, 1, 0)
+end
+
+function _laurent_to_polynomial_column(
+    column,
+    P,
+    polynomial_generators,
+    selected_generator_index::Int,
+    polynomialization_power::Int,
+)
+    return tuple((
+        _laurent_to_polynomial_entry(
+            entry,
+            P,
+            polynomial_generators,
+            selected_generator_index,
+            polynomialization_power,
+        )
+        for entry in column
+    )...)
 end
 
 function _laurent_to_polynomial_column(column, P, polynomial_generators)
-    return tuple((_laurent_to_polynomial_entry(entry, P, polynomial_generators) for entry in column)...)
+    return _laurent_to_polynomial_column(column, P, polynomial_generators, 1, 0)
 end
 
-function _laurent_to_polynomial_lift_entry(entry, inverse_lift)
-    isempty(inverse_lift) && throw(ArgumentError("inverse lift metadata must be nonempty"))
-    R = parent(first(inverse_lift).laurent_value)
+function _laurent_to_polynomial_legacy_forward_map(R, P, polynomial_generators)
+    laurent_generators = tuple(gens(R)...)
+    return tuple((
+        (; generator_index = index,
+            laurent_generator = laurent_generators[index],
+            polynomial_generator = polynomial_generators[index])
+        for index in eachindex(laurent_generators)
+    )...)
+end
+
+function _laurent_to_polynomial_monomial_lift_data(value)
+    iszero(value) && return nothing
+    coefficient_list = collect(coefficients(value))
+    exponent_list = collect(exponents(value))
+    length(coefficient_list) == 1 || return nothing
+    length(exponent_list) == 1 || return nothing
+    return (; coefficient = first(coefficient_list), exponents = Int.(collect(first(exponent_list))))
+end
+
+function _laurent_to_polynomial_lift_entry_by_monomials(entry, inverse_lift, R, lift_data)
+    F = coefficient_ring(R)
+    zero_F = zero(F)
+    terms = Dict{Tuple{Vararg{Int}}, typeof(zero_F)}()
+    for (coefficient, exponent_vector) in zip(AbstractAlgebra.coefficients(entry), AbstractAlgebra.exponent_vectors(entry))
+        exponents_int = Int.(collect(exponent_vector))
+        lifted_exponents = zeros(Int, length(lift_data))
+        lifted_coefficient = F(coefficient)
+        for index in eachindex(exponents_int)
+            exponent = exponents_int[index]
+            exponent == 0 && continue
+            lifted_exponents .+= exponent .* lift_data[index].exponents
+            lifted_coefficient *= F(lift_data[index].coefficient)^exponent
+        end
+        key = Tuple(lifted_exponents)
+        value = get(terms, key, zero_F) + lifted_coefficient
+        if iszero(value)
+            delete!(terms, key)
+        else
+            terms[key] = value
+        end
+    end
+    isempty(terms) && return zero(R)
+
+    output_coefficients = typeof(zero_F)[]
+    output_exponents = Vector{Int}[]
+    for (exponent_tuple, coefficient) in terms
+        push!(output_coefficients, coefficient)
+        push!(output_exponents, collect(exponent_tuple))
+    end
+    return R(output_coefficients, output_exponents)
+end
+
+function _laurent_to_polynomial_lift_entry_by_evaluation(entry, inverse_lift, R)
     total = zero(R)
-    iszero(entry) && return total
     lift_values = tuple((map_entry.laurent_value for map_entry in inverse_lift)...)
     for (coefficient, exponent_vector) in zip(AbstractAlgebra.coefficients(entry), AbstractAlgebra.exponent_vectors(entry))
         term = R(coefficient)
@@ -434,6 +935,20 @@ function _laurent_to_polynomial_lift_entry(entry, inverse_lift)
         total += term
     end
     return total
+end
+
+function _laurent_to_polynomial_lift_entry(entry, inverse_lift)
+    isempty(inverse_lift) && throw(ArgumentError("inverse lift metadata must be nonempty"))
+    R = parent(first(inverse_lift).laurent_value)
+    iszero(entry) && return zero(R)
+    lift_data = tuple((
+        _laurent_to_polynomial_monomial_lift_data(map_entry.laurent_value)
+        for map_entry in inverse_lift
+    )...)
+    if all(data -> data !== nothing, lift_data)
+        return _laurent_to_polynomial_lift_entry_by_monomials(entry, inverse_lift, R, lift_data)
+    end
+    return _laurent_to_polynomial_lift_entry_by_evaluation(entry, inverse_lift, R)
 end
 
 function _laurent_to_polynomial_lift_factor(factor, factor_lift_metadata)
@@ -452,25 +967,211 @@ function _laurent_to_polynomial_lift_factor(factor, factor_lift_metadata)
     return matrix(R, nrows(factor), ncols(factor), vec(entries))
 end
 
+function _laurent_to_polynomial_term_count(entry)::Int
+    iszero(entry) && return 0
+    return length(collect(terms(entry)))
+end
+
+function _laurent_to_polynomial_column_term_count(column)::Int
+    return sum(_laurent_to_polynomial_term_count, column; init = 0)
+end
+
+function _laurent_to_polynomial_witness_identity(polynomial_column, polynomial_witness, P)
+    length(polynomial_column) == length(polynomial_witness) ||
+        throw(ArgumentError("polynomial witness length must match polynomial column length"))
+    total = zero(P)
+    for index in eachindex(polynomial_column)
+        parent(polynomial_column[index]) === P ||
+            throw(ArgumentError("polynomial column entry belongs to the wrong ring"))
+        parent(polynomial_witness[index]) === P ||
+            throw(ArgumentError("polynomial witness entry belongs to the wrong ring"))
+        total += polynomial_witness[index] * polynomial_column[index]
+    end
+    return total
+end
+
+function _laurent_to_polynomial_witness_metadata(
+    polynomial_column,
+    polynomial_witness,
+    P;
+    provenance::Symbol,
+)
+    identity = _laurent_to_polynomial_witness_identity(polynomial_column, polynomial_witness, P)
+    return (;
+        provenance,
+        witness_length = length(polynomial_witness),
+        column_terms = _laurent_to_polynomial_column_term_count(polynomial_column),
+        witness_terms = _laurent_to_polynomial_column_term_count(polynomial_witness),
+        identity_terms = _laurent_to_polynomial_term_count(identity),
+        identity_is_one = identity == one(P),
+    )
+end
+
+function _laurent_to_polynomial_unit_witness(polynomial_column, P)
+    unit_index = findfirst(is_unit, polynomial_column)
+    unit_index === nothing && return nothing
+    witness = [zero(P) for _ in eachindex(polynomial_column)]
+    witness[unit_index] = inv(polynomial_column[unit_index])
+    witness_tuple = tuple(witness...)
+    return (;
+        witness = witness_tuple,
+        metadata = _laurent_to_polynomial_witness_metadata(
+            polynomial_column,
+            witness_tuple,
+            P;
+            provenance = :unit_entry,
+        ),
+    )
+end
+
+function _laurent_to_polynomial_checked_divexact(entry, divisor)
+    try
+        return divexact(entry, divisor; check = true)
+    catch err
+        err isa InterruptException && rethrow()
+        return nothing
+    end
+end
+
+function _laurent_to_polynomial_park_shape_witness(
+    polynomial_column,
+    P,
+    selected_entry_index::Int,
+    selected_generator_index::Int,
+    ;
+    coordinates_term_budget::Int = 100_000,
+)
+    1 <= selected_entry_index <= length(polynomial_column) || return nothing
+    1 <= selected_generator_index <= ngens(P) || return nothing
+
+    selected_variable = gen(P, selected_generator_index)
+    selected_tail =
+        polynomial_column[selected_entry_index] - one(P)
+    h = _laurent_to_polynomial_checked_divexact(selected_tail, selected_variable)
+    h === nothing && return nothing
+
+    witness = [zero(P) for _ in eachindex(polynomial_column)]
+    witness[selected_entry_index] = one(P)
+    iszero(h) && begin
+        witness_tuple = tuple(witness...)
+        return (;
+            witness = witness_tuple,
+            metadata = _laurent_to_polynomial_witness_metadata(
+                polynomial_column,
+                witness_tuple,
+                P;
+                provenance = :park_shape_selected_variable,
+            ),
+        )
+    end
+
+    quotient_generators = typeof(zero(P))[]
+    quotient_indices = Int[]
+    for index in eachindex(polynomial_column)
+        index == selected_entry_index && continue
+        quotient = _laurent_to_polynomial_checked_divexact(
+            polynomial_column[index],
+            selected_variable,
+        )
+        quotient === nothing && return nothing
+        push!(quotient_generators, quotient)
+        push!(quotient_indices, index)
+    end
+    coordinate_problem_terms =
+        _laurent_to_polynomial_term_count(h) +
+        _laurent_to_polynomial_column_term_count(quotient_generators)
+    coordinate_problem_terms <= coordinates_term_budget || return nothing
+
+    coordinates_matrix = try
+        Oscar.coordinates(h, ideal(P, quotient_generators))
+    catch err
+        err isa InterruptException && rethrow()
+        return nothing
+    end
+    ncols(coordinates_matrix) == length(quotient_indices) || return nothing
+    for (coordinate_index, column_index) in enumerate(quotient_indices)
+        witness[column_index] = -coordinates_matrix[1, coordinate_index]
+    end
+    witness_tuple = tuple(witness...)
+    _laurent_to_polynomial_witness_identity(polynomial_column, witness_tuple, P) == one(P) ||
+        return nothing
+    return (;
+        witness = witness_tuple,
+        metadata = _laurent_to_polynomial_witness_metadata(
+            polynomial_column,
+            witness_tuple,
+            P;
+            provenance = :park_shape_selected_variable,
+        ),
+    )
+end
+
+function _laurent_to_polynomial_coordinates_witness(polynomial_column, P)
+    witness_tuple = tuple(_unimodular_witness(collect(polynomial_column), P)...)
+    return (;
+        witness = witness_tuple,
+        metadata = _laurent_to_polynomial_witness_metadata(
+            polynomial_column,
+            witness_tuple,
+            P;
+            provenance = :coordinates,
+        ),
+    )
+end
+
+function _laurent_to_polynomial_polynomial_witness(
+    polynomial_column,
+    P,
+    selected_entry_index::Int,
+    selected_generator_index::Int,
+    ;
+    coordinates_term_budget::Int = 100_000,
+)
+    unit_witness = _laurent_to_polynomial_unit_witness(polynomial_column, P)
+    unit_witness === nothing || return unit_witness
+
+    park_witness = _laurent_to_polynomial_park_shape_witness(
+        polynomial_column,
+        P,
+        selected_entry_index,
+        selected_generator_index,
+        coordinates_term_budget = coordinates_term_budget,
+    )
+    park_witness === nothing || return park_witness
+
+    polynomial_terms = _laurent_to_polynomial_column_term_count(polynomial_column)
+    polynomial_terms <= coordinates_term_budget ||
+        throw(ArgumentError("polynomial witness coordinates fallback exceeds term budget"))
+    return _laurent_to_polynomial_coordinates_witness(polynomial_column, P)
+end
+
 function _laurent_to_polynomial_replay_summary(
     noether_status::Symbol,
     elementary_factors_are_elementary::Bool,
     elementary_replay_ok::Bool,
     polynomial_entries_in_ring::Bool,
+    polynomial_witness_entries_in_ring::Bool,
+    polynomial_witness_replay_ok::Bool,
     inverse_lift_ok::Bool,
     polynomial_unimodular::Bool,
+    polynomial_witness_metadata,
 )
     return (;
         noether_status,
         elementary_factors_are_elementary,
         elementary_replay_ok,
         polynomial_entries_in_ring,
+        polynomial_witness_entries_in_ring,
+        polynomial_witness_replay_ok,
         inverse_lift_ok,
         polynomial_unimodular,
+        polynomial_witness_metadata,
         overall_ok = noether_status == :ok &&
             elementary_factors_are_elementary &&
             elementary_replay_ok &&
             polynomial_entries_in_ring &&
+            polynomial_witness_entries_in_ring &&
+            polynomial_witness_replay_ok &&
             inverse_lift_ok &&
             polynomial_unimodular,
     )
@@ -494,20 +1195,38 @@ function _laurent_to_polynomial_expected_replay(certificate)
     )
     elementary_replay_ok = replayed == certificate.intermediate_laurent_column
     polynomial_entries_in_ring = all(entry -> parent(entry) === P, certificate.polynomial_column)
+    polynomial_witness_entries_in_ring =
+        certificate.polynomial_witness isa Tuple &&
+        length(certificate.polynomial_witness) == length(certificate.polynomial_column) &&
+        all(entry -> parent(entry) === P, certificate.polynomial_witness)
+    polynomial_witness_replay_ok = false
+    polynomial_witness_metadata = certificate.polynomial_witness_metadata
+    if polynomial_entries_in_ring && polynomial_witness_entries_in_ring
+        witness_identity = _laurent_to_polynomial_witness_identity(
+            certificate.polynomial_column,
+            certificate.polynomial_witness,
+            P,
+        )
+        polynomial_witness_replay_ok = witness_identity == one(P)
+    end
     lifted_column = tuple((
         _laurent_to_polynomial_lift_entry(entry, certificate.inverse_lift)
         for entry in certificate.polynomial_column
     )...)
     inverse_lift_ok = lifted_column == certificate.intermediate_laurent_column
     polynomial_unimodular = polynomial_entries_in_ring &&
-        is_unimodular_column(collect(certificate.polynomial_column), P)
+        polynomial_witness_entries_in_ring &&
+        polynomial_witness_replay_ok
     return _laurent_to_polynomial_replay_summary(
         noether_status,
         elementary_factors_are_elementary,
         elementary_replay_ok,
         polynomial_entries_in_ring,
+        polynomial_witness_entries_in_ring,
+        polynomial_witness_replay_ok,
         inverse_lift_ok,
         polynomial_unimodular,
+        polynomial_witness_metadata,
     )
 end
 
@@ -525,18 +1244,49 @@ function _laurent_to_polynomial_certificate(
     )
     original_column = tuple(column...)
     elementary_source_column = noether_certificate.transformed_column
-    conversion_factors = _laurent_to_polynomial_conversion_factors(elementary_source_column, R)
+    conversion_factors = _laurent_to_polynomial_conversion_factors(
+        elementary_source_column,
+        R,
+        selected_entry_index,
+        selected_generator_index,
+    )
     conversion_product =
         _laurent_to_polynomial_factor_sequence_product(conversion_factors, R, length(original_column))
     intermediate_laurent_column = _laurent_to_polynomial_matrix_column_to_tuple(
-        conversion_product * _laurent_to_polynomial_column_matrix(elementary_source_column, R),
+        _laurent_to_polynomial_apply_factors(conversion_factors, elementary_source_column, R),
+    )
+    polynomialization_power = _laurent_to_polynomial_polynomialization_power(
+        intermediate_laurent_column,
+        selected_entry_index,
+        selected_generator_index,
     )
     P, polynomial_generators = _laurent_to_polynomial_target_ring(R)
-    forward_polynomialization =
-        _laurent_to_polynomial_forward_map(R, P, polynomial_generators)
-    inverse_lift = _laurent_to_polynomial_inverse_lift_map(R, polynomial_generators)
-    polynomial_column =
-        _laurent_to_polynomial_column(intermediate_laurent_column, P, polynomial_generators)
+    forward_polynomialization = _laurent_to_polynomial_forward_map(
+        R,
+        P,
+        polynomial_generators,
+        selected_generator_index,
+        polynomialization_power,
+    )
+    inverse_lift = _laurent_to_polynomial_inverse_lift_map(
+        R,
+        polynomial_generators,
+        selected_generator_index,
+        polynomialization_power,
+    )
+    polynomial_column = _laurent_to_polynomial_column(
+        intermediate_laurent_column,
+        P,
+        polynomial_generators,
+        selected_generator_index,
+        polynomialization_power,
+    )
+    witness_data = _laurent_to_polynomial_polynomial_witness(
+        polynomial_column,
+        P,
+        selected_entry_index,
+        selected_generator_index,
+    )
     factor_lift_metadata =
         _laurent_to_polynomial_factor_lift_metadata(R, P, inverse_lift, length(original_column))
     provisional = LaurentToPolynomialColumnCertificate(
@@ -554,7 +1304,10 @@ function _laurent_to_polynomial_certificate(
         polynomial_generators,
         forward_polynomialization,
         inverse_lift,
+        polynomialization_power,
         polynomial_column,
+        witness_data.witness,
+        witness_data.metadata,
         factor_lift_metadata,
         nothing,
         :ok,
@@ -575,7 +1328,10 @@ function _laurent_to_polynomial_certificate(
         polynomial_generators,
         forward_polynomialization,
         inverse_lift,
+        polynomialization_power,
         polynomial_column,
+        witness_data.witness,
+        witness_data.metadata,
         factor_lift_metadata,
         replay,
         :ok,
@@ -618,16 +1374,17 @@ function _validate_laurent_to_polynomial_certificate(certificate)::Symbol
         elementary_source_column = certificate.noether_certificate.transformed_column
         certificate.elementary_source_column == elementary_source_column ||
             return :stale_elementary_source_column
-        expected_factors = _laurent_to_polynomial_conversion_factors(elementary_source_column, R)
-        _laurent_to_polynomial_factor_sequences_equal(certificate.conversion_factors, expected_factors) ||
-            return :stale_conversion_factors
         n = length(original_column)
         expected_product =
             _laurent_to_polynomial_factor_sequence_product(certificate.conversion_factors, R, n)
         certificate.conversion_product == expected_product ||
             return :stale_conversion_product
         expected_intermediate = _laurent_to_polynomial_matrix_column_to_tuple(
-            expected_product * _laurent_to_polynomial_column_matrix(elementary_source_column, R),
+            _laurent_to_polynomial_apply_factors(
+                certificate.conversion_factors,
+                elementary_source_column,
+                R,
+            ),
         )
         certificate.intermediate_laurent_column == expected_intermediate ||
             return :stale_intermediate_laurent_column
@@ -642,30 +1399,69 @@ function _validate_laurent_to_polynomial_certificate(certificate)::Symbol
         tuple(string.(polynomial_generators)...) == tuple(string.(gens(R))...) ||
             return :invalid_polynomial_ring
 
-        expected_forward = _laurent_to_polynomial_forward_map(R, P, polynomial_generators)
+        expected_polynomialization_power = _laurent_to_polynomial_polynomialization_power(
+            expected_intermediate,
+            certificate.selected_entry_index,
+            certificate.selected_generator_index,
+        )
+        certificate.polynomialization_power == expected_polynomialization_power ||
+            return :invalid_polynomialization_power
+        expected_forward = _laurent_to_polynomial_forward_map(
+            R,
+            P,
+            polynomial_generators,
+            certificate.selected_generator_index,
+            expected_polynomialization_power,
+        )
         certificate.forward_polynomialization == expected_forward ||
             return :invalid_polynomialization_map
-        expected_inverse = _laurent_to_polynomial_inverse_lift_map(R, polynomial_generators)
+        expected_inverse = _laurent_to_polynomial_inverse_lift_map(
+            R,
+            polynomial_generators,
+            certificate.selected_generator_index,
+            expected_polynomialization_power,
+        )
         certificate.inverse_lift == expected_inverse || return :invalid_inverse_lift
         expected_metadata =
             _laurent_to_polynomial_factor_lift_metadata(R, P, expected_inverse, n)
         certificate.factor_lift_metadata == expected_metadata ||
             return :invalid_factor_lift_metadata
 
-        expected_polynomial_column =
-            _laurent_to_polynomial_column(expected_intermediate, P, polynomial_generators)
+        expected_polynomial_column = _laurent_to_polynomial_column(
+            expected_intermediate,
+            P,
+            polynomial_generators,
+            certificate.selected_generator_index,
+            expected_polynomialization_power,
+        )
         certificate.polynomial_column == expected_polynomial_column ||
             return :stale_polynomial_column
         all(entry -> parent(entry) === P, certificate.polynomial_column) ||
             return :wrong_polynomial_ring
+        certificate.polynomial_witness isa Tuple ||
+            return :invalid_polynomial_witness
+        length(certificate.polynomial_witness) == n ||
+            return :invalid_polynomial_witness
+        all(entry -> parent(entry) === P, certificate.polynomial_witness) ||
+            return :wrong_polynomial_witness_ring
+        _laurent_to_polynomial_witness_identity(
+            certificate.polynomial_column,
+            certificate.polynomial_witness,
+            P,
+        ) == one(P) || return :invalid_polynomial_witness
+        expected_witness_metadata = _laurent_to_polynomial_witness_metadata(
+            certificate.polynomial_column,
+            certificate.polynomial_witness,
+            P;
+            provenance = certificate.polynomial_witness_metadata.provenance,
+        )
+        certificate.polynomial_witness_metadata == expected_witness_metadata ||
+            return :stale_polynomial_witness_metadata
         lifted_column = tuple((
             _laurent_to_polynomial_lift_entry(entry, certificate.inverse_lift)
             for entry in certificate.polynomial_column
         )...)
         lifted_column == expected_intermediate || return :invalid_inverse_lift
-        is_unimodular_column(collect(certificate.polynomial_column), P) ||
-            return :polynomial_column_not_unimodular
-
         expected_replay = _laurent_to_polynomial_expected_replay(certificate)
         certificate.replay == expected_replay || return :stale_replay
         expected_replay.overall_ok || return :invalid_replay

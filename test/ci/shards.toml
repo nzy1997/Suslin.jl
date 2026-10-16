@@ -654,7 +654,7 @@ group = "expert"
 shard = "expert-core"
 
 [[tests]]
-path = "expert/case008_d14_laurent_to_polynomial_bridge.jl"
+path = "expert/case008_d14_laurent_to_polynomial_conversion.jl"
 group = "expert"
 shard = "expert-core"
 

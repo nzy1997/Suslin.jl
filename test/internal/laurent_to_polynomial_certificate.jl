@@ -51,6 +51,15 @@ function _ltp_modify_first_factor_coefficient(certificate)
     return modified
 end
 
+function _ltp_witness_identity(certificate)
+    P = certificate.polynomial_ring
+    return sum(
+        (certificate.polynomial_witness[index] * certificate.polynomial_column[index]
+         for index in eachindex(certificate.polynomial_column));
+        init = zero(P),
+    )
+end
+
 function _ltp_assert_common_certificate(certificate)
     @test certificate.validation_status == :ok
     @test Suslin._validate_laurent_to_polynomial_certificate(certificate) == :ok
@@ -58,6 +67,8 @@ function _ltp_assert_common_certificate(certificate)
     @test certificate.replay.elementary_factors_are_elementary
     @test certificate.replay.elementary_replay_ok
     @test certificate.replay.polynomial_entries_in_ring
+    @test certificate.replay.polynomial_witness_entries_in_ring
+    @test certificate.replay.polynomial_witness_replay_ok
     @test certificate.replay.inverse_lift_ok
     @test certificate.replay.polynomial_unimodular
     @test certificate.replay.overall_ok
@@ -66,6 +77,11 @@ function _ltp_assert_common_certificate(certificate)
     P = certificate.polynomial_ring
     n = length(certificate.original_column)
     @test length(certificate.original_column) >= 3
+    @test certificate.polynomialization_power == Suslin._laurent_to_polynomial_polynomialization_power(
+        certificate.intermediate_laurent_column,
+        certificate.selected_entry_index,
+        certificate.selected_generator_index,
+    )
     @test certificate.conversion_product == _ltp_factor_product(certificate.conversion_factors, R, n)
     replayed = _ltp_matrix_column_to_tuple(_ltp_apply_factors(
         certificate.conversion_factors,
@@ -75,6 +91,12 @@ function _ltp_assert_common_certificate(certificate)
     @test replayed == certificate.intermediate_laurent_column
     @test all(factor -> Suslin._is_elementary_matrix_factor(factor, R, n), certificate.conversion_factors)
     @test all(entry -> parent(entry) === P, certificate.polynomial_column)
+    @test length(certificate.polynomial_witness) == n
+    @test all(entry -> parent(entry) === P, certificate.polynomial_witness)
+    @test _ltp_witness_identity(certificate) == one(P)
+    @test certificate.polynomial_witness_metadata.identity_is_one
+    @test certificate.polynomial_witness_metadata.witness_terms ==
+          Suslin._laurent_to_polynomial_column_term_count(certificate.polynomial_witness)
     @test Suslin.is_unimodular_column(collect(certificate.polynomial_column), P)
     @test tuple((
         Suslin._laurent_to_polynomial_lift_entry(entry, certificate.inverse_lift)
@@ -87,7 +109,8 @@ function _ltp_assert_common_certificate(certificate)
         certificate.factor_lift_metadata,
     )
     @test base_ring(lifted_factor) === R
-    @test lifted_factor[1, 2] == gens(R)[1] + gens(R)[2]
+    @test lifted_factor[1, 2] ==
+          Suslin._laurent_to_polynomial_lift_entry(gens(P)[1] + gens(P)[2], certificate.inverse_lift)
     @test all(row == col || lifted_factor[row, col] == zero(R) || (row == 1 && col == 2)
         for row in 1:n, col in 1:n)
 end
@@ -107,6 +130,7 @@ end
     @test polynomial_certificate.elementary_source_column == polynomial_noether.transformed_column
     @test polynomial_certificate.intermediate_laurent_column == polynomial_noether.transformed_column
     @test tuple(string.(gens(polynomial_certificate.polynomial_ring))...) == ("x", "y")
+    @test polynomial_certificate.polynomial_witness_metadata.provenance == :coordinates
 
     U, (u, v) = suslin_laurent_polynomial_ring(QQ, ["u", "v"])
     unit_column = [u^-1, v^-1 + u, one(U) + v]
@@ -116,6 +140,7 @@ end
     @test length(unit_certificate.conversion_factors) >= 2
     @test unit_certificate.intermediate_laurent_column == (zero(U), zero(U), one(U))
     @test tuple(string.(unit_certificate.polynomial_column)...) == ("0", "0", "1")
+    @test unit_certificate.polynomial_witness_metadata.provenance == :unit_entry
     @test any(entry -> any(exp -> any(<(0), exp), collect(exponents(entry))), unit_certificate.elementary_source_column)
 
     reordered_factors = reverse(unit_certificate.conversion_factors)
@@ -160,6 +185,24 @@ end
         unit_certificate;
         polynomial_column = (one(P), zero(P), zero(P)),
     )) != :ok
+    @test Suslin._validate_laurent_to_polynomial_certificate(_ltp_tamper(
+        unit_certificate;
+        polynomialization_power = unit_certificate.polynomialization_power + 1,
+    )) == :invalid_polynomialization_power
+
+    modified_witness = collect(unit_certificate.polynomial_witness)
+    modified_witness[3] += one(P)
+    @test Suslin._validate_laurent_to_polynomial_certificate(_ltp_tamper(
+        unit_certificate;
+        polynomial_witness = tuple(modified_witness...),
+    )) == :invalid_polynomial_witness
+    @test Suslin._validate_laurent_to_polynomial_certificate(_ltp_tamper(
+        unit_certificate;
+        polynomial_witness_metadata = merge(
+            unit_certificate.polynomial_witness_metadata,
+            (; witness_terms = unit_certificate.polynomial_witness_metadata.witness_terms + 1),
+        ),
+    )) == :stale_polynomial_witness_metadata
 
     stale_noether = _ltp_tamper_noether(
         unit_noether;
@@ -197,12 +240,22 @@ end
     @test !any(is_unit, unsupported_noether.transformed_column)
     @test any(entry -> any(exp -> any(<(0), Int.(collect(exp))), collect(exponents(entry))),
         unsupported_noether.transformed_column)
-    unsupported_error = _ltp_captured_error(() -> Suslin._laurent_to_polynomial_certificate(
+    park_certificate = Suslin._laurent_to_polynomial_certificate(
         unsupported_column,
         unsupported_noether,
         1,
         u,
-    ))
-    @test unsupported_error isa ArgumentError
-    @test occursin("must already be polynomial or contain a Laurent unit entry", sprint(showerror, unsupported_error))
+    )
+    _ltp_assert_common_certificate(park_certificate)
+    @test !isempty(park_certificate.conversion_factors)
+    @test park_certificate.polynomial_witness_metadata.provenance in
+          (:coordinates, :park_shape_selected_variable)
+    @test !any(is_unit, park_certificate.elementary_source_column)
+    @test !Suslin._laurent_to_polynomial_is_polynomial_column(
+        park_certificate.elementary_source_column,
+    )
+    @test tuple((
+        Suslin._laurent_to_polynomial_lift_entry(entry, park_certificate.inverse_lift)
+        for entry in park_certificate.polynomial_column
+    )...) == park_certificate.intermediate_laurent_column
 end
